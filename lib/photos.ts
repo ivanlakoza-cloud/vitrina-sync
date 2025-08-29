@@ -1,10 +1,11 @@
+// lib/photos.ts
 import { supabase, BUCKET } from './supabase';
 
 const IMG_RE = /\.(jpe?g|png|webp|gif)$/i;
 
 // Папка формируется из external_id: "id<external_id>"
 function folderForExternalId(external_id: string | number) {
-  const id = String(external_id).replace(/^id/i, ''); // на входе может быть "30" или "id30"
+  const id = String(external_id).replace(/^id/i, '');
   return `id${id}`;
 }
 
@@ -15,7 +16,6 @@ function publicUrl(key: string) {
 /** Первая картинка для карточки на главной */
 export async function getCoverMapByExternalId(items: Array<{ external_id: string | number }>) {
   const map = new Map<string | number, string | null>();
-  // Немного ограничим параллелизм, чтобы не бомбить сторедж
   const poolSize = 10;
   let i = 0;
 
@@ -25,7 +25,7 @@ export async function getCoverMapByExternalId(items: Array<{ external_id: string
       const folder = folderForExternalId(cur.external_id);
 
       const { data, error } = await supabase.storage.from(BUCKET).list(folder, {
-        sortBy: { column: 'name', order: 'asc' }, // имена у тебя детерминированные (img_<md5>.jpg)
+        sortBy: { column: 'name', order: 'asc' },
         limit: 1000,
       });
 

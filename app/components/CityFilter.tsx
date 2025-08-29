@@ -1,34 +1,33 @@
+// app/components/CityFilter.tsx
 'use client';
-
-import { useRouter } from 'next/navigation';
-
-type City = { id: string; name: string };
 
 export default function CityFilter({
   cities,
   current,
 }: {
-  cities: City[];
+  cities: { id: string; name: string }[];
   current?: string;
 }) {
-  const router = useRouter();
-
   function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const v = e.target.value;
-    router.replace(v ? `/?city=${encodeURIComponent(v)}` : '/');
+    const url = new URL(window.location.href);
+    if (v) url.searchParams.set('city', v);
+    else url.searchParams.delete('city');
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
   }
 
   return (
-    <div className="mb-6">
-      <label className="mr-2 text-sm text-gray-600">Город:</label>
+    <div className="flex items-center gap-2">
+      <label className="text-sm text-gray-600">Город:</label>
       <select
-        className="border rounded px-2 py-1"
-        defaultValue={current ?? ''}
+        className="border rounded-md px-2 py-1 text-sm"
+        value={current ?? ''}
         onChange={onChange}
       >
         <option value="">Все города</option>
         {cities.map((c) => (
-          <option key={c.id} value={c.name}>
+          <option key={c.id} value={c.id}>
             {c.name}
           </option>
         ))}
