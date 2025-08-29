@@ -1,95 +1,198 @@
 // lib/data.ts
-import { SUPABASE_URL } from './supabase';
-import { getCoverMapByExternalId } from './photos';
+// Серверные утилиты для каталога: Supabase + Directus
 
-type UnitRow = {
-  id: number | string;
-  name?: string | null;
-  area_m2?: number | null;
-  available?: boolean | null;
-  property_id?: number | string | null;
+const DIRECTUS_URL =
+  process.env.NEXT_PUBLIC_DIRECTUS_URL ||
+  process.env.DIRECTUS_URL ||
+  "https://cms.vitran.ru";
+
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  "";
+
+const SUPABASE_ANON =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "";
+
+type UiConfig = {
+  card_fields_order: string[] | null;
+  show_city_filter: boolean;
 };
 
-export type PropertyRow = {
-  id: number | string;
-  external_id: string | number;
+export type CatalogItem = {
+  external_id: string;
   title?: string | null;
   address?: string | null;
   city?: string | null;
   type?: string | null;
-  floor?: string | number | null;
-  price20?: string | number | null;
-  price50?: string | number | null;
-  price100?: string | number | null;
-  price400?: string | number | null;
-  price700?: string | number | null;
-  price1500?: string | number | null;
-  is_public?: boolean | null;
-  coverUrl?: string | null;
-  price_text?: string;
-  units?: UnitRow[];
+  available_area?: number | string | null;
+  total_area?: number | string | null;
+  cover_url?: string | null;
+  // возможные прайс-ключи (берём что найдём)
+  price_per_m2_20?: number | string | null;
+  price_per_m2_50?: number | string | null;
+  price_per_m2_100?: number | string | null;
+  price_per_m2_400?: number | string | null;
+  price_per_m2_700?: number | string | null;
+  price_per_m2_1500?: number | string | null;
 };
 
-const SB_HEADERS = {
-  apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
-  Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string}`,
+export type CatalogResponse = {
+  items: CatalogItem[];
+  cities: string[];
+  ui: UiConfig;
 };
 
-/** Читает публичные объекты из Supabase */
-export async function getCatalog(): Promise<(PropertyRow)[]> {
-  const qs = new URLSearchParams();
-  qs.set('select', '*'); // универсально
-  // если в схеме есть is_public — фильтруем
-  qs.set('is_public', 'eq.true');
+const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
 
-  const url = `${SUPABASE_URL}/rest/v1/properties?${qs.toString()}`;
-  const res = await fetch(url, { headers: SB_HEADERS, cache: 'no-store' });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Supabase properties fetch failed: ${res.status} ${res.statusText} — ${body}`);
+function supaHeaders(): HeadersInit {
+  const h: HeadersInit = { "Content-Type": "application/json" };
+  if (SUPABASE_ANON) {
+    h["apikey"] = SUPABASE_ANON;
+    h["Authorization"] = `Bearer ${SUPABASE_ANON}`;
   }
-
-  const items = (await res.json()) as PropertyRow[];
-
-  const coverMap = await getCoverMapByExternalId(items.map((p) => ({ external_id: p.external_id })));
-
-  const withCovers = items.map((p) => {
-    const priceLines: string[] = [];
-    if ((p as any).price20 != null && (p as any).price20 !== '') priceLines.push(`от 20: ${(p as any).price20}`);
-    if ((p as any).price50 != null && (p as any).price50 !== '') priceLines.push(`от 50: ${(p as any).price50}`);
-    if ((p as any).price100 != null && (p as any).price100 !== '') priceLines.push(`от 100: ${(p as any).price100}`);
-    if ((p as any).price400 != null && (p as any).price400 !== '') priceLines.push(`от 400: ${(p as any).price400}`);
-    if ((p as any).price700 != null && (p as any).price700 !== '') priceLines.push(`от 700: ${(p as any).price700}`);
-    if ((p as any).price1500 != null && (p as any).price1500 !== '') priceLines.push(`от 1500: ${(p as any).price1500}`);
-
-    return {
-      ...p,
-      coverUrl: coverMap.get(p.external_id) ?? null,
-      price_text: priceLines.join('\n') || undefined,
-    };
-  });
-
-  return withCovers;
+  return h;
 }
 
-async function fetchUnitsForProperty(propertyId: string | number): Promise<UnitRow[]> {
+function withTimeout<T>(p: Promise<T>, ms = 500): Promise<T> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return new Promise<T>((resolve, reject) => {
+    p.then((v) => {
+      clearTimeout(t);
+      resolve(v);
+    }).catch((e) => {
+      clearTimeout(t);
+      reject(e);
+    });
+  });
+}
+
+async function fetchJSON<T>(input: string, init?: RequestInit & { revalidate?: number }): Promise<T> {
+  const { revalidate, ...rest } = init || {};
+  const res = await withTimeout(
+    fetch(input, {
+      ...rest,
+      next: { revalidate: revalidate ?? 300 },
+    }),
+    500
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${input}`);
+  return res.json() as Promise<T>;
+}
+
+function storagePublicUrl(storagePath?: string | null): string | null {
+  if (!storagePath || !SUPABASE_URL) return null;
+  return `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/photos/${String(storagePath).replace(/^\/+/, "")}`;
+}
+
+// --- Directus UI config -----------------------------------------------------
+
+async function getUiConfig(): Promise<UiConfig> {
+  try {
+    const url = `${DIRECTUS_URL.replace(
+      /\/+$/,
+      ""
+    )}/items/ui_home_config?limit=1&fields=card_fields_order,show_city_filter`;
+    const data = await fetchJSON<{
+      data?: Array<{ card_fields_order?: any; show_city_filter?: boolean }>;
+    }>(url, { revalidate: 300, cache: "force-cache" });
+
+    const row = data?.data?.[0] ?? {};
+    const order = Array.isArray(row.card_fields_order) ? (row.card_fields_order as string[]) : null;
+    const show = typeof row.show_city_filter === "boolean" ? row.show_city_filter : true;
+
+    return { card_fields_order: order, show_city_filter: show };
+  } catch {
+    return { card_fields_order: null, show_city_filter: true };
+  }
+}
+
+// --- Supabase data ----------------------------------------------------------
+
+async function getCities(): Promise<string[]> {
+  if (!SUPABASE_URL) return [];
+  // вью с фасетами по городам (city_name,count)
+  const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
+  const url = `${base}?select=city_name,count&order=count.desc`;
+  const rows = await fetchJSON<Array<{ city_name: string; count: number }>>(url, {
+    headers: supaHeaders(),
+    revalidate: 300,
+  });
+  return rows.map((r) => r.city_name).filter((x) => !!x && x.trim().length > 0);
+}
+
+async function getItems(city: string): Promise<CatalogItem[]> {
+  if (!SUPABASE_URL) return [];
+  const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
+
+  // выбираем безопасный набор полей, который точно пригодится на карточке
+  const select = [
+    "external_id",
+    "title",
+    "address",
+    "city",
+    "type",
+    "total_area",
+    "available_area",
+    "cover_storage_path",
+    "cover_ext_url",
+    // прайсы — если есть во вью, просто придут null/undefined, это ок
+    "price_per_m2_20",
+    "price_per_m2_50",
+    "price_per_m2_100",
+    "price_per_m2_400",
+    "price_per_m2_700",
+    "price_per_m2_1500",
+    "updated_at",
+  ].join(",");
+
   const qs = new URLSearchParams();
-  qs.set('select', '*');
-  qs.set('property_id', `eq.${propertyId}`);
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/units?${qs.toString()}`, {
-    headers: SB_HEADERS,
-    cache: 'no-store',
-  });
-  if (!res.ok) return [];
-  return (await res.json()) as UnitRow[];
+  qs.set("select", select);
+  qs.set("order", "updated_at.desc,nullslast");
+  if (city) qs.set("city", `eq.${city}`); // серверная фильтрация
+
+  const url = `${base}?${qs.toString()}`;
+  const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 300 });
+
+  return rows.map((r) => ({
+    external_id: r.external_id,
+    title: r.title ?? null,
+    address: r.address ?? null,
+    city: r.city ?? null,
+    type: r.type ?? null,
+    available_area: r.available_area ?? null,
+    total_area: r.total_area ?? null,
+    cover_url: r.cover_ext_url || storagePublicUrl(r.cover_storage_path),
+    price_per_m2_20: r.price_per_m2_20 ?? null,
+    price_per_m2_50: r.price_per_m2_50 ?? null,
+    price_per_m2_100: r.price_per_m2_100 ?? null,
+    price_per_m2_400: r.price_per_m2_400 ?? null,
+    price_per_m2_700: r.price_per_m2_700 ?? null,
+    price_per_m2_1500: r.price_per_m2_1500 ?? null,
+  }));
 }
 
-/** Один объект по external_id (для страницы /p/[external_id]) */
-export async function getProperty(external_id: string) {
-  const list = await getCatalog();
-  const p = list.find((x) => String(x.external_id) === String(external_id));
-  if (!p) return null;
+export async function getCatalog({ city }: { city: string }): Promise<CatalogResponse> {
+  const [ui, cities, items] = await Promise.all([
+    getUiConfig(),
+    getCities(),
+    getItems(city),
+  ]);
 
-  const units = await fetchUnitsForProperty(p.id);
-  return { ...p, units };
+  return {
+    items,
+    cities: cities.length
+      ? cities
+      : Array.from(new Set(items.map((i) => i.city).filter(Boolean) as string[])),
+    ui: {
+      card_fields_order:
+        (Array.isArray(ui.card_fields_order) && ui.card_fields_order.length
+          ? ui.card_fields_order
+          : DEFAULT_ORDER),
+      show_city_filter: !!ui.show_city_filter,
+    },
+  };
 }
