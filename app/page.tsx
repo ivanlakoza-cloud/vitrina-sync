@@ -35,6 +35,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
     <main style={{ maxWidth: 1280, margin: "0 auto", padding: "16px" }}>
       <style>{`
         :root { --gap:16px; --radius:16px; --shadow:0 1px 2px rgba(0,0,0,.06); }
+        body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", "Helvetica Neue", Arial; }
         .grid { display:grid; gap:var(--gap); grid-template-columns: repeat(1, minmax(0,1fr)); }
         @media (min-width:640px){ .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
         @media (min-width:768px){ .grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
@@ -42,13 +43,13 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         .card { border:1px solid #e5e7eb; border-radius:var(--radius); overflow:hidden; background:#fff; box-shadow:var(--shadow); }
         .img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#f3f4f6; }
         .body { padding:12px; font-size:16px; line-height:1.35; }
-        .title { font-weight:600; color:#111827; text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .title { font-weight:700; color:#111827; text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .line { color:#4b5563; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:4px; }
         .line-strong { color:#111827; font-weight:600; }
         .more { display:inline-block; margin-top:8px; color:#2563eb; text-decoration:none; }
         .more:hover, .title:hover { text-decoration:underline; }
-        .filter { display:flex; align-items:center; gap:8px; margin-bottom:16px; position:relative; z-index:1000; }
-        .select { font-size:16px; padding:6px 10px; border:1px solid #d1d5db; border-radius:8px; background:#fff; }
+        .filter { display:flex; align-items:center; gap:12px; margin-bottom:16px; position:relative; z-index:1000; }
+        .select { font-size:16px; padding:8px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; }
         .empty { color:#6b7280; font-size:16px; margin-top:16px; }
       `}</style>
 
@@ -65,7 +66,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         </select>
       </div>
 
-      {/* JS для смены города */}
+      {/* JS для смены города (без onChange на серверной компоненте) */}
       <Script id="city-filter-change">{`
         (function(){
           var sel = document.getElementById('city-select');
@@ -86,7 +87,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         {items.map((it) => {
           const href = `/p/${encodeURIComponent(it.external_id)}`;
 
-          // «старая» логика выбора фото + новые алиасы
+          // «старая» логика выбора фото (совместимость) + новые алиасы
           const cover =
             (it as any).coverUrl ||
             (it as any).cover_url ||
