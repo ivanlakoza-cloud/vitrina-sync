@@ -1,21 +1,26 @@
 // lib/data.ts
 // Серверные утилиты для каталога: Supabase + Directus
 
+// ---------- Константы и ENV ----------
 const DIRECTUS_URL =
   process.env.NEXT_PUBLIC_DIRECTUS_URL ||
   process.env.DIRECTUS_URL ||
   "https://cms.vitran.ru";
 
+// Жёсткий fallback на ваш project-ref (виден в SQL-видах)
+const SUPABASE_URL_FALLBACK = "https://bhabvutmbxxcqgtmtudv.supabase.co";
+
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.SUPABASE_URL ||
-  "";
+  SUPABASE_URL_FALLBACK;
 
 const SUPABASE_ANON =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   "";
 
+// ---------- Типы ----------
 type UiConfig = {
   card_fields_order: string[] | null;
   show_city_filter: boolean;
@@ -30,6 +35,7 @@ export type CatalogItem = {
   available_area?: number | string | null;
   total_area?: number | string | null;
   cover_url?: string | null;
+  // возможные прайсы (могут быть null — просто не покажем)
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -46,8 +52,7 @@ export type CatalogResponse = {
 
 const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
 
-// -------------------------- helpers -----------------------------------------
-
+// ---------- helpers ----------
 function supaHeaders(): HeadersInit {
   const h: HeadersInit = { "Content-Type": "application/json" };
   if (SUPABASE_ANON) {
@@ -57,8 +62,9 @@ function supaHeaders(): HeadersInit {
   return h;
 }
 
-function maybeAttachApikey(qs: URLSearchParams) {
-  if (SUPABASE_ANON) qs.set("apikey", SUPABASE_ANON); // дублируем ключ в URL, на случай потери заголовков
+// дублируем ключ в query (иногда прокси режут заголовки)
+function attachApikey(qs: URLSearchParams) {
+  if (SUPABASE_ANON && !qs.has("apikey")) qs.set("apikey", SUPABASE_ANON);
 }
 
 function withTimeout<T>(p: Promise<T>, ms = 500): Promise<T> {
@@ -93,8 +99,7 @@ function storagePublicUrl(storagePath?: string | null): string | null {
   return `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/photos/${String(storagePath).replace(/^\/+/, "")}`;
 }
 
-// -------------------------- Directus UI config ------------------------------
-
+// ---------- Directus UI config ----------
 async function getUiConfig(): Promise<UiConfig> {
   try {
     const url = `${DIRECTUS_URL.replace(
@@ -115,15 +120,14 @@ async function getUiConfig(): Promise<UiConfig> {
   }
 }
 
-// -------------------------- Supabase data -----------------------------------
-
+// ---------- Supabase data ----------
 async function getCities(): Promise<string[]> {
   if (!SUPABASE_URL) return [];
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
   const qs = new URLSearchParams();
   qs.set("select", "city_name,count");
   qs.set("order", "count.desc");
-  maybeAttachApikey(qs);
+  attachApikey(qs);
   const url = `${base}?${qs.toString()}`;
   const rows = await fetchJSON<Array<{ city_name: string; count: number }>>(url, {
     headers: supaHeaders(),
@@ -132,32 +136,29 @@ async function getCities(): Promise<string[]> {
   return rows.map((r) => r.city_name).filter((x) => !!x && x.trim().length > 0);
 }
 
-// Универсальная попытка забора строк с fallback по order
+// единая функция выборки с порядком и фоллбэками
 async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promise<any[]> {
-  // 1) правильный синтаксис: desc.nullslast
   const p1 = new URLSearchParams(qsBase);
-  p1.set("order", "updated_at.desc.nullslast");
-  maybeAttachApikey(p1);
+  p1.set("order", "updated_at.desc.nullslast"); // правильный синтаксис
+  attachApikey(p1);
   try {
     return await fetchJSON<any[]>(`${base}?${p1.toString()}`, {
       headers: supaHeaders(),
       revalidate: 300,
     });
   } catch {
-    // 2) fallback: только desc
     const p2 = new URLSearchParams(qsBase);
     p2.set("order", "updated_at.desc");
-    maybeAttachApikey(p2);
+    attachApikey(p2);
     try {
       return await fetchJSON<any[]>(`${base}?${p2.toString()}`, {
         headers: supaHeaders(),
         revalidate: 300,
       });
     } catch {
-      // 3) без order
       const p3 = new URLSearchParams(qsBase);
       p3.delete("order");
-      maybeAttachApikey(p3);
+      attachApikey(p3);
       return await fetchJSON<any[]>(`${base}?${p3.toString()}`, {
         headers: supaHeaders(),
         revalidate: 300,
@@ -180,6 +181,7 @@ async function getItems(city: string): Promise<CatalogItem[]> {
     "available_area",
     "cover_storage_path",
     "cover_ext_url",
+    // поля цен могут отсутствовать — ок
     "price_per_m2_20",
     "price_per_m2_50",
     "price_per_m2_100",
@@ -235,8 +237,7 @@ export async function getCatalog({ city }: { city: string }): Promise<CatalogRes
   };
 }
 
-// -------------------------- Детальная карточка ------------------------------
-
+// ---------- Детальная карточка ----------
 export async function getProperty(external_id: string): Promise<CatalogItem | null> {
   if (!SUPABASE_URL || !external_id) return null;
 
