@@ -1,7 +1,8 @@
 // lib/data.ts
 // Серверные утилиты для каталога: Supabase + Directus
+// Версия: robust-select + smart field mapping
 
-// ---------- Константы и ENV ----------
+// ---------- ENV / constants ----------
 const DIRECTUS_URL =
   process.env.NEXT_PUBLIC_DIRECTUS_URL ||
   process.env.DIRECTUS_URL ||
@@ -20,7 +21,7 @@ const SUPABASE_ANON =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   "";
 
-// ---------- Типы ----------
+// ---------- types ----------
 type UiConfig = {
   card_fields_order: string[] | null;
   show_city_filter: boolean;
@@ -35,6 +36,7 @@ export type CatalogItem = {
   available_area?: number | string | null;
   total_area?: number | string | null;
   cover_url?: string | null;
+  // опциональные прайсы
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -61,7 +63,7 @@ function supaHeaders(): HeadersInit {
   return h;
 }
 
-// дублируем ключ в query (на случай потери заголовков)
+// на случай, если прокси срежут заголовки
 function attachApikey(qs: URLSearchParams) {
   if (SUPABASE_ANON && !qs.has("apikey")) qs.set("apikey", SUPABASE_ANON);
 }
@@ -96,6 +98,14 @@ async function fetchJSON<T>(input: string, init?: RequestInit & { revalidate?: n
 function storagePublicUrl(storagePath?: string | null): string | null {
   if (!storagePath || !SUPABASE_URL) return null;
   return `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/photos/${String(storagePath).replace(/^\/+/, "")}`;
+}
+
+function pick<T = any>(obj: any, keys: string[]): T | null {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v as T;
+  }
+  return null;
 }
 
 // ---------- Directus UI config ----------
@@ -135,7 +145,7 @@ async function getCities(): Promise<string[]> {
   return rows.map((r) => r.city_name).filter((x) => !!x && x.trim().length > 0);
 }
 
-// единая функция сортировки с фоллбэками (на случай отсутствия updated_at)
+// попытка с сортировкой и фоллбэками (если нет updated_at)
 async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promise<any[]> {
   const p1 = new URLSearchParams(qsBase);
   p1.set("order", "updated_at.desc.nullslast");
@@ -166,69 +176,75 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
   }
 }
 
-// «умный select»: пробуем несколько наборов полей, если какие-то отсутствуют во вью
-const SELECT_FULL = [
-  "external_id",
-  "title",
-  "address",
-  "city",
-  "type",
-  "total_area",
-  "available_area",
-  "cover_storage_path",
-  "cover_ext_url",
-  "price_per_m2_20",
-  "price_per_m2_50",
-  "price_per_m2_100",
-  "price_per_m2_400",
-  "price_per_m2_700",
-  "price_per_m2_1500",
-  "updated_at",
-].join(",");
+// теперь всегда берём select=* (никаких 400 из-за незнакомых полей)
+async function fetchRowsAllColumns(base: string, qsBase: URLSearchParams): Promise<any[]> {
+  const qs = new URLSearchParams(qsBase);
+  qs.set("select", "*");
+  return fetchRowsWithOrder(base, qs);
+}
 
-const SELECT_BASE = [
-  "external_id",
-  "title",
-  "address",
-  "city",
-  "type",
-  "total_area",
-  "available_area",
-  "cover_storage_path",
-  "cover_ext_url",
-  "updated_at",
-].join(",");
+function mapRow(r: any): CatalogItem {
+  // URL обложки: сначала явные внешние URL, затем public path из Storage
+  const coverExternal = pick<string>(r, [
+    "cover_ext_url",
+    "cover_url",
+    "photo_url",
+    "image_url",
+    "preview_url",
+    "main_photo_url",
+  ]);
 
-const SELECT_MIN = [
-  "external_id",
-  "city",
-  "address",
-  "cover_storage_path",
-  "cover_ext_url",
-].join(",");
+  const storagePath = pick<string>(r, [
+    "cover_storage_path",
+    "storage_path",
+    "photo_path",
+    "image_path",
+    "cover_path",
+  ]);
 
-async function fetchRowsSmartSelect(
-  base: string,
-  qsBase: URLSearchParams
-): Promise<any[]> {
-  // 1) полный набор
-  try {
-    const q1 = new URLSearchParams(qsBase);
-    q1.set("select", SELECT_FULL);
-    return await fetchRowsWithOrder(base, q1);
-  } catch {
-    // 2) базовый
-    try {
-      const q2 = new URLSearchParams(qsBase);
-      q2.set("select", SELECT_BASE);
-      return await fetchRowsWithOrder(base, q2);
-    } catch {
-      // 3) минимальный
-      const q3 = new URLSearchParams(qsBase);
-      q3.set("select", SELECT_MIN);
-      return await fetchRowsWithOrder(base, q3);
-    }
-  }
+  const cover_url = coverExternal || storagePublicUrl(storagePath);
+
+  const available_area = pick<number | string>(r, [
+    "available_area",
+    "free_area",
+    "area_available",
+    "area_free",
+    "area_avail",
+  ]);
+
+  const total_area = pick<number | string>(r, [
+    "total_area",
+    "area_total",
+    "area",
+    "square",
+  ]);
+
+  const type = pick<string>(r, ["type", "property_type", "category", "kind"]);
+
+  // прайсы (если есть — хорошо; если нет — null)
+  const price_per_m2_20 = pick(r, ["price_per_m2_20", "price20"]);
+  const price_per_m2_50 = pick(r, ["price_per_m2_50", "price50"]);
+  const price_per_m2_100 = pick(r, ["price_per_m2_100", "price100"]);
+  const price_per_m2_400 = pick(r, ["price_per_m2_400", "price400"]);
+  const price_per_m2_700 = pick(r, ["price_per_m2_700", "price700"]);
+  const price_per_m2_1500 = pick(r, ["price_per_m2_1500", "price1500"]);
+
+  return {
+    external_id: String(r.external_id),
+    title: r.title ?? null,
+    address: r.address ?? pick(r, ["addr", "address_text"]) ?? null,
+    city: r.city ?? pick(r, ["city_name"]) ?? null,
+    type: type ?? null,
+    available_area: available_area ?? null,
+    total_area: total_area ?? null,
+    cover_url: cover_url ?? null,
+    price_per_m2_20,
+    price_per_m2_50,
+    price_per_m2_100,
+    price_per_m2_400,
+    price_per_m2_700,
+    price_per_m2_1500,
+  };
 }
 
 async function getItems(city: string): Promise<CatalogItem[]> {
@@ -238,24 +254,8 @@ async function getItems(city: string): Promise<CatalogItem[]> {
   const qsBase = new URLSearchParams();
   if (city) qsBase.set("city", `eq.${city}`);
 
-  const rows = await fetchRowsSmartSelect(base, qsBase);
-
-  return rows.map((r) => ({
-    external_id: r.external_id,
-    title: r.title ?? null,
-    address: r.address ?? null,
-    city: r.city ?? null,
-    type: r.type ?? null,
-    available_area: r.available_area ?? null,
-    total_area: r.total_area ?? null,
-    cover_url: r.cover_ext_url || storagePublicUrl(r.cover_storage_path),
-    price_per_m2_20: r.price_per_m2_20 ?? null,
-    price_per_m2_50: r.price_per_m2_50 ?? null,
-    price_per_m2_100: r.price_per_m2_100 ?? null,
-    price_per_m2_400: r.price_per_m2_400 ?? null,
-    price_per_m2_700: r.price_per_m2_700 ?? null,
-    price_per_m2_1500: r.price_per_m2_1500 ?? null,
-  }));
+  const rows = await fetchRowsAllColumns(base, qsBase);
+  return rows.map(mapRow);
 }
 
 export async function getCatalog({ city }: { city: string }): Promise<CatalogResponse> {
@@ -290,24 +290,9 @@ export async function getProperty(external_id: string): Promise<CatalogItem | nu
   qsBase.set("external_id", `eq.${external_id}`);
   qsBase.set("limit", "1");
 
-  const rows = await fetchRowsSmartSelect(base, qsBase).catch(() => [] as any[]);
+  const rows = await fetchRowsAllColumns(base, qsBase).catch(() => [] as any[]);
   const r = rows?.[0];
   if (!r) return null;
 
-  return {
-    external_id: r.external_id,
-    title: r.title ?? null,
-    address: r.address ?? null,
-    city: r.city ?? null,
-    type: r.type ?? null,
-    available_area: r.available_area ?? null,
-    total_area: r.total_area ?? null,
-    cover_url: r.cover_ext_url || storagePublicUrl(r.cover_storage_path),
-    price_per_m2_20: r.price_per_m2_20 ?? null,
-    price_per_m2_50: r.price_per_m2_50 ?? null,
-    price_per_m2_100: r.price_per_m2_100 ?? null,
-    price_per_m2_400: r.price_per_m2_400 ?? null,
-    price_per_m2_700: r.price_per_m2_700 ?? null,
-    price_per_m2_1500: r.price_per_m2_1500 ?? null,
-  };
+  return mapRow(r);
 }
