@@ -87,7 +87,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         {items.map((it) => {
           const href = `/p/${encodeURIComponent(it.external_id)}`;
 
-          // «старая» логика выбора фото (совместимость) + новые алиасы
+          // совместимость со «старым» кодом
           const cover =
             (it as any).coverUrl ||
             (it as any).cover_url ||
@@ -116,10 +116,9 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
                 {/* 2-я строка: тип, площадь */}
                 {line2 && <div className="line">{line2}</div>}
 
-                {/* 3-я строка: цены (только заполненные диапазоны) */}
+                {/* 3-я строка: цены */}
                 {prices && <div className="line line-strong">{prices}</div>}
 
-                {/* CTA */}
                 <a href={href} className="more">Подробнее →</a>
               </div>
             </article>
