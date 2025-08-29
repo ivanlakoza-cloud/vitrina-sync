@@ -1,259 +1,277 @@
 // app/api/sync/directus/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { revalidateTag } from 'next/cache';
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { revalidateTag } from 'next/cache'
 
-// Гарантируем Node.js среду и отсутствие статического кэша
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+/**
+ * Directus → Next.js (Vercel) → Supabase sync webhook
+ * - Auth: Bearer DIRECTUS_WEBHOOK_SECRET
+ * - Actions supported: create | update | delete
+ * - Collections: properties | units | photos (DB-first, use existing tables)
+ * - Upsert uses SUPABASE_SERVICE_ROLE on server (runtime: nodejs)
+ * - Soft delete:
+ *    - properties/photos: is_public = false
+ *    - units: available = false
+ * - Revalidation tags:
+ *    - Always: 'catalog'
+ *    - Per-property: 'property:<id>' and 'property:<external_id>' (if exists)
+ */
 
-type DirectusTrigger =
-  | {
-      // Типичный payload из Event Hook ($trigger)
-      collection?: string;
-      action?: string; // 'items.create' | 'items.update' | 'items.delete'
-      key?: string; // при create часто $trigger.key
-      keys?: (string | number)[]; // при update/delete часто $trigger.keys
-      payload?: Record<string, any> | null; // сам объект при create/update
-      meta?: any;
-      accountability?: any;
-      // Доп. поля на всякий случай:
-      event?: string; // иногда встречается
-    }
-  | any;
+// Ensure Node runtime & no static caching
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-const ALLOWED_COLLECTIONS = new Set(['properties', 'units', 'photos'] as const);
+// ---- Types & payload shape -------------------------------------------------
 
-function getEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing ENV ${name}`);
-  return v;
+type DirectusTrigger = {
+  collection?: 'properties' | 'units' | 'photos' | string
+  action?: string // e.g. 'items.create' | 'items.update' | 'items.delete'
+  key?: string | number
+  keys?: Array<string | number>
+  payload?: Record<string, any> | null
+  meta?: any
+  accountability?: any
 }
 
-function assertAuth(req: NextRequest) {
-  const auth = req.headers.get('authorization') || req.headers.get('Authorization');
-  const secret = getEnv('DIRECTUS_WEBHOOK_SECRET');
-  const ok = !!auth && auth.trim() === `Bearer ${secret}`;
-  return ok;
+type Collection = 'properties' | 'units' | 'photos'
+const ALLOWED_COLLECTIONS: ReadonlySet<Collection> = new Set(['properties', 'units', 'photos'])
+
+// Whitelists to avoid inserting unknown fields (safer upsert)
+const ALLOWED_FIELDS: Record<Collection, readonly string[]> = {
+  properties: [
+    'id','external_id','city_id','district_id','address','title','type','lat','lng','total_area','status','is_public','created_at','updated_at'
+  ],
+  units: [
+    'id','external_id','property_id','name','floor','area_m2','available','price_per_m2','currency','vat_included','utilities_included','created_at','updated_at'
+  ],
+  photos: [
+    'id','property_id','unit_id','storage_path','sort_order','is_public','created_at'
+  ],
+}
+
+// ---- Utilities -------------------------------------------------------------
+
+function getEnv(name: string): string {
+  const v = process.env[name]
+  if (!v || !String(v).trim()) throw new Error(`Missing ENV ${name}`)
+  return v
+}
+
+function isString(x: any): x is string { return typeof x === 'string' }
+
+function assertAuth(req: NextRequest): boolean {
+  const auth = req.headers.get('authorization') || req.headers.get('Authorization')
+  const secret = getEnv('DIRECTUS_WEBHOOK_SECRET')
+  return !!auth && auth.trim() === `Bearer ${secret}`
 }
 
 function makeServiceClient(): SupabaseClient {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL'); // URL не секретный
-  const serviceRole = getEnv('SUPABASE_SERVICE_ROLE'); // секретный, только сервер!
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') // not secret
+  const serviceRole = getEnv('SUPABASE_SERVICE_ROLE') // secret, server only
   return createClient(url, serviceRole, {
     auth: { persistSession: false },
-  });
+    global: { headers: { 'X-Client-Info': 'directus-sync' } },
+  })
 }
 
-/** Берём id или external_id для точечного revalidateTag */
-function getEntityTagFromRow(row: Record<string, any> | undefined | null): string | null {
-  if (!row) return null;
-  if (row.external_id && typeof row.external_id === 'string' && row.external_id.length > 0) {
-    return row.external_id;
-  }
-  if (row.id && typeof row.id === 'string') return row.id;
-  return null;
+function pickAllowed(collection: Collection, obj: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  const allowed = ALLOWED_FIELDS[collection]
+  for (const k of allowed) if (Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k]
+  return out
 }
 
-/** Фильтруем undefined (не присланные поля) чтобы не затирать в БД */
-function stripUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
-  const out: Partial<T> = {};
-  for (const k of Object.keys(obj || {})) {
-    if (obj[k] !== undefined) out[k] = obj[k];
-  }
-  return out;
+function normalizeAction(action: string | undefined, body: DirectusTrigger): 'create'|'update'|'delete'|'unknown' {
+  const a = (action || '').toLowerCase()
+  if (a.includes('delete')) return 'delete'
+  if (a.includes('create')) return 'create'
+  if (a.includes('update')) return 'update'
+  // Fallbacks: presence of payload usually means create/update
+  if (body && body.payload && Object.keys(body.payload).length) return 'update'
+  return 'unknown'
 }
 
-/** Получить единый список ID из key/keys/payload */
 function extractIds(body: DirectusTrigger): string[] {
-  const ids = new Set<string>();
-  if (Array.isArray(body?.keys)) {
-    for (const k of body.keys) if (k != null) ids.add(String(k));
-  }
-  if (body?.key != null) ids.add(String(body.key));
-  const pid = (body?.payload as any)?.id;
-  if (pid != null) ids.add(String(pid));
-  return Array.from(ids);
+  const ids = new Set<string>()
+  if (Array.isArray(body.keys)) for (const k of body.keys) if (k != null) ids.add(String(k))
+  if (body.key != null) ids.add(String(body.key))
+  const pid = (body.payload as any)?.id
+  if (pid != null) ids.add(String(pid))
+  return Array.from(ids)
 }
 
-/** Чтение из БД чтобы вытащить property_id / external_id для тегов при delete */
-async function preReadForTags(
-  supabase: SupabaseClient,
-  collection: 'properties' | 'units' | 'photos',
-  ids: string[]
-): Promise<{ propertyTags: string[]; entityTags: string[] }> {
-  const entityTags: string[] = [];
-  const propertyTags: string[] = [];
+function conflictTargetFor(collection: Collection, row: Record<string, any>): string {
+  if ((collection === 'properties' || collection === 'units') && row.external_id && String(row.external_id).length > 0) {
+    return 'external_id'
+  }
+  // photos have no external_id in provided schema → use id
+  return 'id'
+}
 
+async function propertyTagsForExisting(
+  supabase: SupabaseClient,
+  collection: Collection,
+  ids: string[],
+): Promise<string[]> {
+  // Return list of tag suffixes: <id> and <external_id> for affected properties
+  const tags = new Set<string>()
   if (collection === 'properties') {
-    // Вытащим external_id/id свойств
-    const { data } = await supabase
-      .from('properties')
-      .select('id, external_id')
-      .in('id', ids);
-    for (const row of data || []) {
-      const t = getEntityTagFromRow(row);
-      if (t) entityTags.push(t);
+    const { data, error } = await supabase.from('properties').select('id, external_id').in('id', ids)
+    if (error) throw error
+    for (const r of data || []) {
+      if (isString(r.id)) tags.add(String(r.id))
+      if (r.external_id && isString(r.external_id)) tags.add(String(r.external_id))
     }
   } else if (collection === 'units') {
-    // Нужно также знать к какому property относится
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('units')
-      .select('id, external_id, property_id')
-      .in('id', ids);
+      .select('property_id, properties!inner(id, external_id)')
+      .in('id', ids)
+    if (error) throw error
     for (const row of data || []) {
-      const unitTag = getEntityTagFromRow(row);
-      if (unitTag) entityTags.push(unitTag);
-      if (row.property_id) propertyTags.push(String(row.property_id));
+      const p = (row as any).properties
+      if (p?.id) tags.add(String(p.id))
+      if (p?.external_id) tags.add(String(p.external_id))
     }
   } else if (collection === 'photos') {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('photos')
-      .select('id, external_id, property_id, unit_id')
-      .in('id', ids);
+      .select('property_id, properties!inner(id, external_id)')
+      .in('id', ids)
+    if (error) throw error
     for (const row of data || []) {
-      const photoTag = getEntityTagFromRow(row);
-      if (photoTag) entityTags.push(photoTag);
-      if (row.property_id) propertyTags.push(String(row.property_id));
+      const p = (row as any).properties
+      if (p?.id) tags.add(String(p.id))
+      if (p?.external_id) tags.add(String(p.external_id))
     }
   }
-
-  return {
-    propertyTags: Array.from(new Set(propertyTags)),
-    entityTags: Array.from(new Set(entityTags)),
-  };
+  return Array.from(tags)
 }
 
-/** Стабильно приводим названия actions к трём вариантам */
-function normalizeAction(raw: string | undefined | null, body: DirectusTrigger): 'createOrUpdate' | 'delete' | 'unknown' {
-  const a = (raw || '').toLowerCase();
-  if (a.includes('delete')) return 'delete';
-  if (a.includes('create') || a.includes('update')) return 'createOrUpdate';
-
-  // Fallback: если нет payload, но есть keys — скорее delete; если есть payload — create/update
-  const hasPayload = body && typeof body.payload === 'object' && body.payload !== null && Object.keys(body.payload).length > 0;
-  const hasKeys = (Array.isArray(body?.keys) && body.keys.length > 0) || body?.key != null;
-  if (!hasPayload && hasKeys) return 'delete';
-  if (hasPayload) return 'createOrUpdate';
-  return 'unknown';
+function propertyTagsFromRow(collection: Collection, row: Record<string, any>): string[] {
+  const tags = new Set<string>()
+  if (collection === 'properties') {
+    if (row.id) tags.add(String(row.id))
+    if (row.external_id) tags.add(String(row.external_id))
+  } else if (collection === 'units' || collection === 'photos') {
+    if (row.property_id) tags.add(String(row.property_id))
+    // We might not have property external_id in the payload; let the GET-after-upsert fallback below enrich
+  }
+  return Array.from(tags)
 }
 
-/** Основная логика обработки одного события */
+async function enrichPropertyExternalIds(
+  supabase: SupabaseClient,
+  propertyTags: string[],
+): Promise<string[]> {
+  // Given a mix of property IDs/external_ids, ensure both variants are present
+  const out = new Set<string>(propertyTags)
+  const ids = propertyTags.filter((t) => /^[0-9a-f-]{10,}$/i.test(t)) // very rough UUID check
+  if (ids.length) {
+    const { data } = await supabase.from('properties').select('id, external_id').in('id', ids)
+    for (const r of data || []) if (r.external_id) out.add(String(r.external_id))
+  }
+  const exts = propertyTags.filter((t) => !/^[0-9a-f-]{10,}$/i.test(t))
+  if (exts.length) {
+    const { data } = await supabase.from('properties').select('id, external_id').in('external_id', exts)
+    for (const r of data || []) if (r.id) out.add(String(r.id))
+  }
+  return Array.from(out)
+}
+
+function revalidateCatalogAndProperties(propertyTagSuffixes: string[]): void {
+  // Always revalidate catalog
+  revalidateTag('catalog')
+  // Then revalidate each property:<suffix>
+  const uniq = Array.from(new Set(propertyTagSuffixes))
+  for (const suf of uniq) revalidateTag(`property:${suf}`)
+}
+
+// ---- Core processing -------------------------------------------------------
+
 async function processEvent(body: DirectusTrigger) {
-  const supabase = makeServiceClient();
+  const supabase = makeServiceClient()
 
-  // 1) Базовая валидация входа
-  const collection = (body.collection || '').toString();
-  const actionNorm = normalizeAction(body.action, body);
+  const collection = String(body.collection || '') as Collection
+  if (!ALLOWED_COLLECTIONS.has(collection)) throw new Error(`Unsupported collection "${collection}"`)
 
-  if (!ALLOWED_COLLECTIONS.has(collection as any)) {
-    throw new Error(`Unsupported collection "${collection}". Allowed: properties, units, photos`);
-  }
-  if (actionNorm === 'unknown') {
-    throw new Error(`Cannot determine action (create/update/delete) from payload`);
-  }
+  const action = normalizeAction(body.action, body)
+  if (action === 'unknown') throw new Error('Cannot determine action (create/update/delete)')
 
-  // 2) Определяем ids которые участвуют
-  const ids = extractIds(body);
+  const ids = extractIds(body)
 
-  // 3) Ветки: upsert vs soft-delete
-  if (actionNorm === 'delete') {
-    if (ids.length === 0) {
-      throw new Error(`Delete event without keys`);
+  if (action === 'delete') {
+    if (ids.length === 0) throw new Error('Delete event without keys')
+
+    // Pre-read affected properties to build tags
+    const preTags = await propertyTagsForExisting(supabase, collection, ids)
+
+    // Soft delete by collection
+    const now = new Date().toISOString()
+    if (collection === 'properties') {
+      const { error } = await supabase.from('properties').update({ is_public: false, updated_at: now }).in('id', ids)
+      if (error) throw error
+    } else if (collection === 'units') {
+      const { error } = await supabase.from('units').update({ available: false, updated_at: now }).in('id', ids)
+      if (error) throw error
+    } else if (collection === 'photos') {
+      const { error } = await supabase.from('photos').update({ is_public: false }).in('id', ids)
+      if (error) throw error
     }
 
-    // Для корректного revalidate тегов вытащим прежние связи
-    const { propertyTags, entityTags } = await preReadForTags(supabase, collection as any, ids);
+    // Revalidate
+    const tags = await enrichPropertyExternalIds(supabase, preTags)
+    revalidateCatalogAndProperties(tags)
 
-    // Soft-delete: is_public=false (+ updated_at)
-    const now = new Date().toISOString();
-    const { error } = await supabase
-      .from(collection)
-      .update({ is_public: false, updated_at: now } as any)
-      .in('id', ids);
-
-    if (error) throw error;
-
-    // revalidate: общий каталог + затронутые property/* + сами сущности
-    revalidateTag('catalog');
-    for (const t of [...entityTags, ...propertyTags]) {
-      revalidateTag(`property:${t}`);
-    }
-
-    return { ok: true, mode: 'soft-delete', collection, ids, revalidated: { catalog: true, perProperty: [...new Set([...entityTags, ...propertyTags])] } };
+    return { ok: true, mode: 'soft-delete', collection, ids, revalidated: { catalog: true, property: tags } }
   }
 
   // create/update → upsert
-  const item = (body.payload || {}) as Record<string, any>;
-  // Берём только присланные поля (undefined не отправляем), чтобы не затирать существующие значения
-  const upsertRow = stripUndefined(item);
+  const raw = (body.payload || {}) as Record<string, any>
+  const upsertRow = pickAllowed(collection, raw)
+  if (upsertRow.updated_at === undefined) upsertRow.updated_at = new Date().toISOString()
 
-  // Проставим updated_at если поля нет
-  if (upsertRow.updated_at === undefined) {
-    upsertRow.updated_at = new Date().toISOString();
-  }
+  const onConflict = conflictTargetFor(collection, upsertRow)
+  const { error: upsertError } = await supabase.from(collection).upsert(upsertRow as any, {
+    onConflict,
+    ignoreDuplicates: false,
+    returning: 'minimal',
+  })
+  if (upsertError) throw upsertError
 
-  // Сконфликтуем по external_id если он есть, иначе по id
-  const conflictTarget = (upsertRow.external_id && String(upsertRow.external_id).length > 0) ? 'external_id' : 'id';
+  // Build tags from payload → then enrich with missing id/external_id
+  let propertyTags = propertyTagsFromRow(collection, upsertRow)
+  if (!propertyTags.length) propertyTags = await propertyTagsForExisting(supabase, collection, ids)
+  const finalTags = await enrichPropertyExternalIds(supabase, propertyTags)
+  revalidateCatalogAndProperties(finalTags)
 
-  // Safety: без id и без external_id upsert некорректен — потребуем хотя бы одно из них
-  if (!upsertRow.id && !upsertRow.external_id) {
-    throw new Error(`Upsert requires "id" or "external_id" in payload`);
-  }
-
-  const { error } = await supabase
-    .from(collection)
-    .upsert(upsertRow as any, { onConflict: conflictTarget, ignoreDuplicates: false, returning: 'minimal' });
-
-  if (error) throw error;
-
-  // Сформируем набор тегов для revalidate
-  const tags = new Set<string>();
-  // 1) тэг самой сущности (external_id/id)
-  const entityTag = getEntityTagFromRow(upsertRow);
-  if (entityTag) tags.add(entityTag);
-  // 2) для units/photos — подтолкнём revalidate по родительскому property
-  if (collection === 'units' || collection === 'photos') {
-    const propertyId = upsertRow.property_id || upsertRow?.property?.id;
-    if (propertyId) tags.add(String(propertyId));
-  }
-  // 3) если это properties — revalidate по самому объекту уже покрыт entityTag
-
-  // revalidate
-  revalidateTag('catalog');
-  for (const t of tags) {
-    revalidateTag(`property:${t}`);
-  }
-
-  return { ok: true, mode: 'upsert', collection, conflictTarget, tags: Array.from(tags) };
+  return { ok: true, mode: 'upsert', collection, onConflict, ids, revalidated: { catalog: true, property: finalTags } }
 }
 
+// ---- Route handlers --------------------------------------------------------
+
 export async function GET() {
-  return NextResponse.json({ ok: true, ping: 'directus-sync' });
+  return NextResponse.json({ ok: true, ping: 'directus-sync' })
 }
 
 export async function POST(req: NextRequest) {
   try {
-    if (!assertAuth(req)) {
-      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    if (!assertAuth(req)) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+
+    let body: DirectusTrigger
+    try {
+      body = (await req.json()) as DirectusTrigger
+    } catch {
+      return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
     }
 
-    const body = (await req.json()) as DirectusTrigger;
-    // Немного логов для отладки (без секретов)
-    console.log('[directus-sync] incoming', {
-      collection: body?.collection,
-      action: body?.action,
-      key: body?.key,
-      keys: Array.isArray(body?.keys) ? body.keys : undefined,
-      hasPayload: !!(body && body.payload && Object.keys(body.payload || {}).length),
-    });
+    // Basic payload guardrails (defensive, but not over-strict)
+    if (!body || !body.collection) return NextResponse.json({ ok: false, error: 'Missing collection' }, { status: 400 })
 
-    const result = await processEvent(body);
-    console.log('[directus-sync] processed', result);
-
-    return NextResponse.json({ ok: true, ...result });
+    const result = await processEvent(body)
+    return NextResponse.json(result)
   } catch (e: any) {
-    console.error('[directus-sync] ERROR', { message: e?.message, stack: e?.stack });
-    return NextResponse.json({ ok: false, error: e?.message || 'Unexpected error' }, { status: 500 });
+    console.error('[directus-sync] ERROR', { message: e?.message, stack: e?.stack })
+    return NextResponse.json({ ok: false, error: e?.message || 'Unexpected error' }, { status: 500 })
   }
 }
