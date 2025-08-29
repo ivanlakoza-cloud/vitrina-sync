@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { revalidateTag } from 'next/cache'
+- import { getProperty } from '@/lib/data'
++ import { getProperty } from '../../lib/data'
 
 /**
  * Directus → Next.js (Vercel) → Supabase sync webhook
