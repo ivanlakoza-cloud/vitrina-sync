@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Script from 'next/script';
 import { getCatalog } from '../lib/data';
 
 type Search = { city?: string };
@@ -10,9 +11,9 @@ export default async function Page({
 }) {
   const currentCity = searchParams?.city ?? '';
 
-  // Универсально: поддерживаем обе формы ответа getCatalog()
+  // Универсально поддерживаем оба варианта getCatalog:
   // 1) Array<PropertyRow>
-  // 2) { items: PropertyRow[], cities: string[] }
+  // 2) { items: PropertyRow[], cities?: string[] }
   let result: any;
   try {
     result = await (getCatalog as any)(); // без аргументов — как у тебя сейчас
@@ -22,29 +23,50 @@ export default async function Page({
 
   const allItems: any[] = Array.isArray(result) ? result : result?.items ?? [];
 
-  // Список городов: если API не вернул, соберём из данных
-  const citiesFromApi: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
-  const citySet = new Set<string>(citiesFromApi);
-  for (const it of allItems) if (it?.city) citySet.add(String(it.city));
+  // Соберём список городов:
+  // - если API его вернул — используем его
+  // - иначе соберём из карточек, смотрим разные возможные поля
+  const apiCities: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
+  const citySet = new Set<string>(apiCities);
+
+  for (const it of allItems) {
+    const name =
+      it?.city ??
+      it?.city_name ??
+      it?.city_title ??
+      it?.cityTitle ??
+      it?.city?.name ??
+      it?.city?.title;
+    if (name) citySet.add(String(name));
+  }
+
   const cityOptions = Array.from(citySet).sort((a, b) => a.localeCompare(b, 'ru'));
 
-  // Фильтрация по выбранному городу
-  const items = currentCity
-    ? allItems.filter(
-        (p) => (p?.city ?? '').toLowerCase() === currentCity.toLowerCase()
-      )
-    : allItems;
+  // Фильтрация карточек по выбранному городу (с учётом того же набора полей)
+  const norm = (v: any) => String(v ?? '').toLowerCase();
+  const items =
+    currentCity && currentCity.trim()
+      ? allItems.filter((p) => {
+          const cand =
+            p?.city ??
+            p?.city_name ??
+            p?.city_title ??
+            p?.cityTitle ??
+            p?.city?.name ??
+            p?.city?.title;
+          return norm(cand) === norm(currentCity);
+        })
+      : allItems;
 
   return (
     <main className="p-6">
       <h1 className="text-2xl font-bold mb-4">Каталог</h1>
 
-      {/* Фильтр — форма GET, без onChange (чтобы не ломать SSG/SSR) */}
-      <form action="/" method="get" className="mb-6 flex items-center gap-2">
-        <label htmlFor="city">Город:</label>
+      {/* Фильтр — без кнопки, автоприменение через inline-скрипт */}
+      <div className="mb-6 flex items-center gap-2">
+        <label htmlFor="city-select">Город:</label>
         <select
-          id="city"
-          name="city"
+          id="city-select"
           defaultValue={currentCity}
           className="border rounded px-2 py-1"
         >
@@ -55,12 +77,25 @@ export default async function Page({
             </option>
           ))}
         </select>
-        <button type="submit" className="border rounded px-3 py-1">
-          Применить
-        </button>
-      </form>
+      </div>
 
-      {/* небольшой отступ */}
+      {/* Автоприменение фильтра: меняем query ?city=... сразу после выбора */}
+      <Script id="city-autosubmit">{`
+        (function(){
+          var sel = document.getElementById('city-select');
+          if(!sel) return;
+          sel.addEventListener('change', function(){
+            var url = new URL(window.location.href);
+            var v = sel.value;
+            if (v) url.searchParams.set('city', v);
+            else url.searchParams.delete('city');
+            // Перенаправляем (SSR/SSG дружелюбно)
+            window.location.href = url.toString();
+          });
+        })();
+      `}</Script>
+
+      {/* отступ */}
       <div style={{ height: 16 }} />
 
       {/* Сетка карточек: 6 в ряд на широких экранах */}
@@ -73,7 +108,23 @@ export default async function Page({
       >
         {items.map((p: any) => {
           const href = `/p/${encodeURIComponent(p.external_id ?? p.id ?? '')}`;
-          const cover = p.coverUrl || p.photo || p.preview_url || null;
+          const cover =
+            p.coverUrl ||
+            p.photo ||
+            p.preview_url ||
+            p.cover ||
+            p.image_url ||
+            null;
+
+          // Город в карточке — та же логика нормализации
+          const cityDisplay =
+            p?.city ??
+            p?.city_name ??
+            p?.city_title ??
+            p?.cityTitle ??
+            p?.city?.name ??
+            p?.city?.title ??
+            '—';
 
           return (
             <div
@@ -90,7 +141,6 @@ export default async function Page({
                   style={{
                     position: 'relative',
                     width: '100%',
-                    // 4:3 — аккуратная плитка
                     aspectRatio: '4 / 3',
                     background: '#f3f4f6',
                   }}
@@ -114,7 +164,7 @@ export default async function Page({
 
               <div style={{ padding: 12 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  {p.city ?? '—'}
+                  {cityDisplay}
                 </div>
 
                 <Link
