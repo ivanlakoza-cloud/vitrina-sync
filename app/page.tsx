@@ -1,17 +1,28 @@
 import Link from 'next/link';
+// если lib/data.ts лежит в корне проекта, путь должен быть '../lib/data'
 import { getCatalog } from '../lib/data';
 
 type Search = { city?: string };
 
-export default async function Page({ searchParams }: { searchParams: Search }) {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Search;
+}) {
   const currentCity = searchParams?.city ?? '';
-  const { items, cities } = await getCatalog({ city: currentCity });
+
+  // ВАЖНО: поддерживаем оба возвращаемых формата getCatalog
+  // 1) Array<PropertyRow>
+  // 2) { items: PropertyRow[], cities: string[] }
+  const result: any = await getCatalog({ city: currentCity } as any);
+  const items: any[] = Array.isArray(result) ? result : result?.items ?? [];
+  const cities: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
 
   return (
     <main className="p-6">
       <h1 className="text-2xl font-bold mb-4">Каталог</h1>
 
-      {/* Фильтр без onChange — обычная форма GET */}
+      {/* Фильтр (форма GET), без onChange чтобы не было ошибок "Event handlers..." на билде */}
       <form action="/" method="get" className="mb-6 flex items-center gap-2">
         <label htmlFor="city">Город:</label>
         <select
@@ -35,7 +46,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
       {/* небольшой отступ */}
       <div style={{ height: 16 }} />
 
-      {/* Сетка карточек 6 в ряд на широких экранах */}
+      {/* Сетка карточек: 6 в ряд на широких экранах */}
       <div
         style={{
           display: 'grid',
@@ -58,7 +69,7 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
                 style={{
                   position: 'relative',
                   width: '100%',
-                  // 4:3 — чтобы фото выглядело как плитка
+                  // 4:3 — аккуратная плитка
                   aspectRatio: '4 / 3',
                   background: '#f3f4f6',
                 }}
