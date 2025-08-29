@@ -1,76 +1,108 @@
-// app/page.tsx
 import Link from 'next/link';
 import { getCatalog } from '../lib/data';
-import CityFilter from './components/CityFilter';
 
-export const revalidate = 120; // ISR: обновление каталога раз в 2 минуты
+export const revalidate = 0;
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: { city?: string };
-}) {
-  const items = await getCatalog();
+type Search = { city?: string };
 
-  const cities = Array.from(new Set((items as any[]).map((it) => it.city).filter(Boolean)))
-    .sort()
-    .map((name) => ({ id: String(name), name: String(name) }));
+export default async function Page({ searchParams }: { searchParams: Search }) {
+  const { items, cities } = await getCatalog({ city: searchParams?.city });
 
-  const list = searchParams.city
-    ? (items as any[]).filter((it) => String(it.city) === String(searchParams.city))
-    : (items as any[]);
+  const list = (items ?? []) as any[];
+  const cityList = (cities ?? []) as any[];
 
   return (
     <main className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">Каталог</h1>
+      <h1 className="text-3xl font-semibold">Каталог</h1>
 
-      <div className="mb-6">
-        <CityFilter cities={cities} current={searchParams.city} />
-      </div>
+      {/* Фильтр по городу (без onChange, чтобы не ломать SSR) */}
+      <form method="GET" className="mt-3">
+        <label htmlFor="city" className="mr-2">Город:</label>
+        <select id="city" name="city" defaultValue={searchParams?.city ?? ''}>
+          <option value="">Все города</option>
+          {cityList.map((c: any) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        {/* Если нужно автоприменение — сделаем позже через клиентский компонент */}
+      </form>
 
-      <ul className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* Небольшой отступ после фильтра */}
+      <div style={{ height: 12 }} />
+
+      {/* 6 карточек в ряд */}
+      <section
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+          gap: 16,
+        }}
+      >
         {list.map((it: any) => (
-          <li key={it.id} className="border rounded-lg overflow-hidden">
-            <Link href={`/p/${it.external_id ?? it.id}`} className="block">
-              <div className="aspect-[4/3] bg-gray-100">
-                {it.coverUrl ? (
-                  <img
-                    src={it.coverUrl}
-                    alt={it.title ?? it.address ?? 'Фото'}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-full grid place-items-center text-sm text-gray-500">
-                    нет фото
-                  </div>
-                )}
+          <article
+            key={it.external_id}
+            style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: 12,
+              background: '#fff',
+            }}
+          >
+            {/* Обложка 180px с обрезкой */}
+            {it.coverUrl ? (
+              <img
+                src={it.coverUrl}
+                alt={it.title ?? it.address ?? it.external_id}
+                loading="lazy"
+                style={{
+                  width: '100%',
+                  height: 180,
+                  objectFit: 'cover',
+                  borderRadius: 8,
+                  display: 'block',
+                  background: '#f1f5f9',
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '100%',
+                  height: 180,
+                  borderRadius: 8,
+                  background: '#f1f5f9',
+                }}
+              />
+            )}
+
+            {/* Текстовая часть */}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>{it.city ?? '—'}</div>
+              <div style={{ marginTop: 4, marginBottom: 6 }}>
+                <Link
+                  href={`/p/${it.external_id}`}
+                  style={{ fontWeight: 600, textDecoration: 'none' }}
+                >
+                  {it.title ?? it.address ?? it.external_id}
+                </Link>
               </div>
-            </Link>
-
-            <div className="p-3 space-y-1">
-              <div className="text-xs text-gray-500">{it.city}</div>
-
-              <Link
-                href={`/p/${it.external_id ?? it.id}`}
-                className="block font-medium hover:underline"
-              >
-                {it.title ?? it.address ?? 'Без названия'}
-              </Link>
-
-              <div className="text-sm text-gray-600">{it.address}</div>
-
-              <div className="text-xs text-gray-500">
-                Тип: {it.type} {it.floor ? ` • Этаж: ${it.floor}` : ''}
+              <div style={{ fontSize: 14 }}>
+                Тип: {it.type ?? '—'}{it.floor ? ` · Этаж: ${it.floor}` : ''}
               </div>
-
-              {it.price_text && (
-                <pre className="text-xs whitespace-pre-line mt-1">{it.price_text}</pre>
-              )}
+              {it.price_text ? (
+                <pre
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {it.price_text}
+                </pre>
+              ) : null}
             </div>
-          </li>
+          </article>
         ))}
-      </ul>
+      </section>
     </main>
   );
 }
