@@ -4,10 +4,11 @@ import { unstable_cache as cache } from 'next/cache'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // для чтения достаточно anon
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
 )
 
-// Каталог (тег: catalog)
+// Каталог: тег 'catalog'
 export const getCatalog = cache(async () => {
   const { data, error } = await supabase
     .from('properties')
@@ -19,20 +20,19 @@ export const getCatalog = cache(async () => {
   return data ?? []
 }, ['catalog-key'], { tags: ['catalog'] })
 
-// Карточка (тег: property:<idOrExternal>)
+// Карточка: тег 'property:<id|external_id>'
 export function getProperty(idOrExternal: string) {
   return cache(async () => {
-    const base = supabase
+    let q = supabase
       .from('properties')
       .select('id, external_id, title, address, type, city_id, total_area, status, is_public, updated_at, photos(*), units(*)')
       .eq('is_public', true)
       .limit(1)
 
-    const query = /^[0-9a-f-]{10,}$/i.test(idOrExternal)
-      ? base.eq('id', idOrExternal)
-      : base.eq('external_id', idOrExternal)
+    const isUUIDish = /^[0-9a-f-]{10,}$/i.test(idOrExternal)
+    q = isUUIDish ? q.eq('id', idOrExternal) : q.eq('external_id', idOrExternal)
 
-    const { data, error } = await query
+    const { data, error } = await q
     if (error) throw error
     return data?.[0] ?? null
   }, [`property-${idOrExternal}`], { tags: [`property:${idOrExternal}`] })()
