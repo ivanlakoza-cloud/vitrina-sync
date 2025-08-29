@@ -1,6 +1,7 @@
 // app/page.tsx
 import Image from "next/image";
 import Link from "next/link";
+import Script from "next/script";
 import { getCatalog } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -9,14 +10,14 @@ type SearchParams = { city?: string };
 
 const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
 
-// форматируем площадь
+// формат площади
 function fmtArea(v: any): string | null {
   if (v === null || v === undefined) return null;
   const n = Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? `${n} м²` : String(v);
 }
 
-// собираем строку с ценами «20: 1200 · 50: 1100 ...» — только те, что существуют
+// строка с ценами «20: 1200 · 50: 1100 ...» — только заполненные
 function buildPrices(p: any): string | null {
   const pairs: Array<[string, any]> = [
     ["20", p?.price_per_m2_20],
@@ -42,20 +43,14 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
-      {/* Фильтр городов + отступ 16px */}
+      {/* Фильтр (без onChange в серверном компоненте) */}
       {ui.show_city_filter && (
-        <form className="mb-4">
-          <label className="text-base mr-2">Город:</label>
+        <div className="mb-4 flex items-center gap-2">
+          <label htmlFor="city-select" className="text-base">Город:</label>
           <select
+            id="city-select"
             name="city"
             defaultValue={city}
-            onChange={(e) => {
-              const v = e.currentTarget.value;
-              const url = new URL(window.location.href);
-              if (v) url.searchParams.set("city", v);
-              else url.searchParams.delete("city");
-              window.location.href = url.toString();
-            }}
             className="border rounded-md px-3 py-2 text-base"
           >
             <option value="">Все города</option>
@@ -65,33 +60,39 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
               </option>
             ))}
           </select>
-        </form>
+        </div>
       )}
+
+      {/* Навешиваем обработчик изменения города уже на клиенте */}
+      <Script id="city-autosubmit">{`
+        (function(){
+          var sel = document.getElementById('city-select');
+          if(!sel) return;
+          sel.addEventListener('change', function(){
+            var url = new URL(window.location.href);
+            var v = sel.value;
+            if (v) url.searchParams.set('city', v);
+            else url.searchParams.delete('city');
+            window.location.href = url.toString();
+          });
+        })();
+      `}</Script>
 
       {/* 6 плиток в ряд на xl, 3 на md, 2 на sm, 1 на мобиле */}
       <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         {items.map((it) => {
           const href = `/p/${encodeURIComponent(it.external_id)}`;
-
-          // первая строка (ссылка): Город, Адрес
-          const line1 = [it.city, it.address].filter(Boolean).join(", ");
-
-          // вторая строка: тип, доступная площадь
+          const line1 = [it.city, it.address].filter(Boolean).join(", "); // Город, адрес (жирная, ссылкой)
           const area = fmtArea(it.available_area ?? it.total_area);
           const line2 = [it.type ? `Тип: ${it.type}` : null, area ? `Площадь: ${area}` : null]
             .filter(Boolean)
-            .join(" · ");
-
-          // третья строка: все диапазоны цен
-          const line3 = buildPrices(it);
+            .join(" · "); // тип, площадь
+          const line3 = buildPrices(it); // цены
 
           return (
             <article
               key={it.external_id}
-              className="
-                group border rounded-2xl overflow-hidden bg-white dark:bg-neutral-900
-                shadow-sm hover:shadow-md transition-shadow
-              "
+              className="group border rounded-2xl overflow-hidden bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow"
             >
               {/* фото */}
               {order.includes("photo") && (
@@ -112,8 +113,8 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
               )}
 
               {/* текстовый блок */}
-              <div className="px-3 py-3 text-[15px] leading-snug">
-                {/* строка-ссылка: Город, адрес */}
+              <div className="px-3 py-3 text-[16px] leading-snug">
+                {/* 1-я строка: Город, адрес (жирная, ссылкой, одной строкой) */}
                 <Link
                   href={href}
                   className="font-semibold hover:underline underline-offset-4 block truncate"
@@ -122,16 +123,16 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
                   {line1 || it.title || "Без адреса"}
                 </Link>
 
-                {/* строка: тип, площадь (если есть) */}
+                {/* 2-я строка: тип, площадь */}
                 {(line2 && (order.includes("type") || order.includes("area"))) && (
-                  <div className="mt-1 text-[15px] text-neutral-600 dark:text-neutral-300">
+                  <div className="mt-1 text-[16px] text-neutral-600 dark:text-neutral-300 truncate">
                     {line2}
                   </div>
                 )}
 
-                {/* строка: цены (если есть) */}
+                {/* 3-я строка: цены */}
                 {line3 && order.includes("prices") && (
-                  <div className="mt-1 text-[15px] text-neutral-800 dark:text-neutral-100">
+                  <div className="mt-1 text-[16px] text-neutral-800 dark:text-neutral-100 truncate">
                     {line3}
                   </div>
                 )}
