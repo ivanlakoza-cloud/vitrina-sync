@@ -1,4 +1,3 @@
-// app/page.tsx
 import { getCatalog } from '@/lib/data'
 
 export default async function Page() {
