@@ -57,6 +57,10 @@ function supaHeaders(): HeadersInit {
   return h;
 }
 
+function maybeAttachApikey(qs: URLSearchParams) {
+  if (SUPABASE_ANON) qs.set("apikey", SUPABASE_ANON); // дублируем ключ в URL, на случай потери заголовков
+}
+
 function withTimeout<T>(p: Promise<T>, ms = 500): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -115,11 +119,11 @@ async function getUiConfig(): Promise<UiConfig> {
 
 async function getCities(): Promise<string[]> {
   if (!SUPABASE_URL) return [];
-  // фасеты по городам (без лишних фильтров — RLS/вью уже сделают своё)
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
   const qs = new URLSearchParams();
   qs.set("select", "city_name,count");
   qs.set("order", "count.desc");
+  maybeAttachApikey(qs);
   const url = `${base}?${qs.toString()}`;
   const rows = await fetchJSON<Array<{ city_name: string; count: number }>>(url, {
     headers: supaHeaders(),
@@ -133,6 +137,7 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
   // 1) правильный синтаксис: desc.nullslast
   const p1 = new URLSearchParams(qsBase);
   p1.set("order", "updated_at.desc.nullslast");
+  maybeAttachApikey(p1);
   try {
     return await fetchJSON<any[]>(`${base}?${p1.toString()}`, {
       headers: supaHeaders(),
@@ -142,6 +147,7 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
     // 2) fallback: только desc
     const p2 = new URLSearchParams(qsBase);
     p2.set("order", "updated_at.desc");
+    maybeAttachApikey(p2);
     try {
       return await fetchJSON<any[]>(`${base}?${p2.toString()}`, {
         headers: supaHeaders(),
@@ -151,6 +157,7 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
       // 3) без order
       const p3 = new URLSearchParams(qsBase);
       p3.delete("order");
+      maybeAttachApikey(p3);
       return await fetchJSON<any[]>(`${base}?${p3.toString()}`, {
         headers: supaHeaders(),
         revalidate: 300,
