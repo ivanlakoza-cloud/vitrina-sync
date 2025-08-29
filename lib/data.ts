@@ -77,20 +77,21 @@ export function getProperty(idOrExternal: string) {
 // Утилиты для плиток
 const PRICE_THRESHOLDS = [20, 50, 100, 400, 700, 1500]
 
-export function priceLadder(units: any[]) {
-  // Берём только доступные помещения с валидной площадью/ценой
-  const usable = (units ?? []).filter((u: any) => u?.available && u?.area_m2 && u?.price_per_m2)
+// было: export function priceLadder(units: any[]) {
+export function priceLadder(units: any[], thresholds?: number[]) {
+  const usable = (units ?? []).filter((u:any)=>u?.available && u?.area_m2 && u?.price_per_m2)
+  const T = (thresholds?.length ? thresholds : [20,50,100,400,700,1500])
   const out: { label: string; value: string }[] = []
-  for (const t of PRICE_THRESHOLDS) {
-    const fit = usable.filter((u: any) => u.area_m2 >= t)
+  for (const t of T) {
+    const fit = usable.filter((u:any) => u.area_m2 >= t)
     if (!fit.length) continue
-    // минимальная цена за м² среди подходящих
-    const minP = Math.min(...fit.map((u: any) => Number(u.price_per_m2)))
-    const curr = (fit.find((u: any) => u.currency)?.currency ?? '₽').toString()
+    const minP = Math.min(...fit.map((u:any)=>Number(u.price_per_m2)))
+    const curr = (fit.find((u:any)=>u.currency)?.currency ?? '₽').toString()
     out.push({ label: `от ${t}`, value: `${Math.round(minP).toLocaleString('ru-RU')} ${curr}/м²` })
   }
   return out
 }
+
 
 export function minFloor(units: any[]): number | null {
   const fl = (units ?? [])
