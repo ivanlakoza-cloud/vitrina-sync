@@ -115,12 +115,11 @@ async function getUiConfig(): Promise<UiConfig> {
 
 async function getCities(): Promise<string[]> {
   if (!SUPABASE_URL) return [];
-  // фасеты по городам (у тебя вью уже считает только public; если нет — добавили такой же фильтр)
+  // фасеты по городам (без лишних фильтров — RLS/вью уже сделают своё)
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
   const qs = new URLSearchParams();
   qs.set("select", "city_name,count");
   qs.set("order", "count.desc");
-  qs.set("is_public", "eq.true"); // <-- важно для RLS
   const url = `${base}?${qs.toString()}`;
   const rows = await fetchJSON<Array<{ city_name: string; count: number }>>(url, {
     headers: supaHeaders(),
@@ -164,7 +163,6 @@ async function getItems(city: string): Promise<CatalogItem[]> {
   if (!SUPABASE_URL) return [];
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
 
-  // поля для карточки
   const select = [
     "external_id",
     "title",
@@ -186,7 +184,6 @@ async function getItems(city: string): Promise<CatalogItem[]> {
 
   const qsBase = new URLSearchParams();
   qsBase.set("select", select);
-  qsBase.set("is_public", "eq.true"); // <-- ключевой фильтр для RLS
   if (city) qsBase.set("city", `eq.${city}`);
 
   const rows = await fetchRowsWithOrder(base, qsBase);
@@ -210,7 +207,6 @@ async function getItems(city: string): Promise<CatalogItem[]> {
 }
 
 export async function getCatalog({ city }: { city: string }): Promise<CatalogResponse> {
-  // мягкие промисы — ошибки → пустые данные, без 500
   const uiP = getUiConfig().catch(() => ({ card_fields_order: null, show_city_filter: true }));
   const citiesP = getCities().catch(() => [] as string[]);
   const itemsP = getItems(city).catch(() => [] as CatalogItem[]);
@@ -260,7 +256,6 @@ export async function getProperty(external_id: string): Promise<CatalogItem | nu
   const qsBase = new URLSearchParams();
   qsBase.set("select", select);
   qsBase.set("external_id", `eq.${external_id}`);
-  qsBase.set("is_public", "eq.true"); // <-- тот же фильтр
   qsBase.set("limit", "1");
 
   const rows = await fetchRowsWithOrder(base, qsBase).catch(() => [] as any[]);
