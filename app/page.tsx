@@ -33,7 +33,6 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
 
   return (
     <main style={{ maxWidth: 1280, margin: "0 auto", padding: "16px" }}>
-      {/* локальные стили: сетка, карточки, шрифты */}
       <style>{`
         :root { --gap:16px; --radius:16px; --shadow:0 1px 2px rgba(0,0,0,.06); }
         .grid { display:grid; gap:var(--gap); grid-template-columns: repeat(1, minmax(0,1fr)); }
@@ -41,7 +40,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         @media (min-width:768px){ .grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
         @media (min-width:1280px){ .grid { grid-template-columns: repeat(6, minmax(0,1fr)); } }
         .card { border:1px solid #e5e7eb; border-radius:var(--radius); overflow:hidden; background:#fff; box-shadow:var(--shadow); }
-        .img { display:block; width:100%; height:180px; object-fit:cover; background:#f3f4f6; }
+        .img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#f3f4f6; }
         .body { padding:12px; font-size:16px; line-height:1.35; }
         .title { font-weight:600; color:#111827; text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .line { color:#4b5563; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:4px; }
@@ -53,7 +52,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         .empty { color:#6b7280; font-size:16px; margin-top:16px; }
       `}</style>
 
-      {/* Фильтр (без onChange в серверном компоненте) */}
+      {/* Фильтр */}
       <div className="filter">
         <label htmlFor="city-select">Город:</label>
         <select id="city-select" name="city" defaultValue={city} className="select">
@@ -66,13 +65,13 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         </select>
       </div>
 
-      {/* JS только для смены города */}
+      {/* JS для смены города */}
       <Script id="city-filter-change">{`
         (function(){
           var sel = document.getElementById('city-select');
           if(!sel) return;
           sel.addEventListener('change', function(e){
-            e.stopPropagation(); // на всякий случай — чтобы клики не всплывали к карточкам
+            e.stopPropagation();
             var url = new URL(window.location.href);
             var v = sel.value;
             if (v) url.searchParams.set('city', v);
@@ -82,10 +81,19 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
         })();
       `}</Script>
 
-      {/* Сетка карточек: 1/2/3/6 колонок */}
+      {/* Сетка карточек */}
       <div className="grid">
         {items.map((it) => {
           const href = `/p/${encodeURIComponent(it.external_id)}`;
+
+          // «старая» логика выбора фото + новые алиасы
+          const cover =
+            (it as any).coverUrl ||
+            (it as any).cover_url ||
+            (it as any).photo ||
+            (it as any).preview_url ||
+            null;
+
           const title = [it.city, it.address].filter(Boolean).join(", ") || it.title || "Без адреса";
           const area = fmtArea(it.available_area ?? it.total_area);
           const line2 = [it.type ? `Тип: ${it.type}` : null, area ? `Площадь: ${area}` : null]
@@ -94,9 +102,8 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
 
           return (
             <article key={it.external_id} className="card">
-              {/* изображение без клика, чтобы ничего не перекрывало фильтр */}
-              {it.cover_url ? (
-                <img src={it.cover_url} alt={title} className="img" />
+              {cover ? (
+                <img src={String(cover)} alt={title} className="img" loading="lazy" />
               ) : (
                 <div className="img" />
               )}
