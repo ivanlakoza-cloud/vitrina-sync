@@ -3,41 +3,39 @@ import { getCatalog } from '../lib/data';
 
 type Search = { city?: string };
 
-export default async function Page({ searchParams }: { searchParams: Search }) {
-  // Be liberal about getCatalog signature/return shape across deployments
-  const result: any = await (getCatalog as any)({ city: searchParams?.city });
-  const items: any[] = Array.isArray(result) ? result : (result?.items ?? []);
-  const cities: string[] = Array.isArray(result?.cities)
-    ? result.cities
-    : Array.from(new Set(items.map((p: any) => p?.city).filter(Boolean))).sort();
+// ...вверху файла остаётся как было (импорты и т.д.)
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: { city?: string };
+}) {
+  const currentCity = searchParams?.city ?? '';
+
+  // что у тебя уже было:
+  const { items, cities } = await getCatalog({ city: currentCity });
 
   return (
     <main className="p-6">
-      <h1 className="text-2xl font-semibold mb-3">Каталог</h1>
+      <h1 className="text-2xl font-bold mb-4">Каталог</h1>
 
-      {/* Фильтр по городам */}
-      <form>
-        <label className="text-sm mr-2">Город:</label>
-        <select
-          name="city"
-          defaultValue={searchParams?.city ?? ''}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            const url = new URL(window.location.href);
-            if (v) url.searchParams.set('city', v);
-            else url.searchParams.delete('city');
-            window.location.href = url.toString();
-          }}
-          className="border rounded px-2 py-1 text-sm"
-        >
+      {/* ФИЛЬТР БЕЗ onChange — обычная форма GET */}
+      <form action="/" method="get" className="mb-6 flex items-center gap-2">
+        <label htmlFor="city">Город:</label>
+        <select id="city" name="city" defaultValue={currentCity} className="border rounded px-2 py-1">
           <option value="">Все города</option>
-          {cities.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+          {(cities ?? []).map((c: string) => (
+            <option key={c} value={c}>{c}</option>
           ))}
         </select>
+        <button type="submit" className="border rounded px-3 py-1">Применить</button>
       </form>
+
+      {/* …дальше твоя сетка/плитка объектов */}
+    </main>
+  );
+}
+
 
       {/* отступ под фильтром */}
       <div style={{ height: 16 }} />
