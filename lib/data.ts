@@ -152,7 +152,7 @@ async function getItems(city: string): Promise<CatalogItem[]> {
   const qs = new URLSearchParams();
   qs.set("select", select);
   qs.set("order", "updated_at.desc,nullslast");
-  if (city) qs.set("city", `eq.${city}`); // серверная фильтрация
+  if (city) qs.set("city", `eq.${city}`); // серверная фильтрация по имени города
 
   const url = `${base}?${qs.toString()}`;
   const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 300 });
@@ -194,5 +194,59 @@ export async function getCatalog({ city }: { city: string }): Promise<CatalogRes
           : DEFAULT_ORDER),
       show_city_filter: !!ui.show_city_filter,
     },
+  };
+}
+
+// --- Детальная карточка -----------------------------------------------------
+
+export async function getProperty(external_id: string): Promise<CatalogItem | null> {
+  if (!SUPABASE_URL || !external_id) return null;
+
+  const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
+  const select = [
+    "external_id",
+    "title",
+    "address",
+    "city",
+    "type",
+    "total_area",
+    "available_area",
+    "cover_storage_path",
+    "cover_ext_url",
+    "price_per_m2_20",
+    "price_per_m2_50",
+    "price_per_m2_100",
+    "price_per_m2_400",
+    "price_per_m2_700",
+    "price_per_m2_1500",
+    "updated_at",
+  ].join(",");
+
+  const qs = new URLSearchParams();
+  qs.set("select", select);
+  qs.set("external_id", `eq.${external_id}`);
+  qs.set("limit", "1");
+
+  const url = `${base}?${qs.toString()}`;
+  const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 60 });
+
+  const r = rows?.[0];
+  if (!r) return null;
+
+  return {
+    external_id: r.external_id,
+    title: r.title ?? null,
+    address: r.address ?? null,
+    city: r.city ?? null,
+    type: r.type ?? null,
+    available_area: r.available_area ?? null,
+    total_area: r.total_area ?? null,
+    cover_url: r.cover_ext_url || storagePublicUrl(r.cover_storage_path),
+    price_per_m2_20: r.price_per_m2_20 ?? null,
+    price_per_m2_50: r.price_per_m2_50 ?? null,
+    price_per_m2_100: r.price_per_m2_100 ?? null,
+    price_per_m2_400: r.price_per_m2_400 ?? null,
+    price_per_m2_700: r.price_per_m2_700 ?? null,
+    price_per_m2_1500: r.price_per_m2_1500 ?? null,
   };
 }
