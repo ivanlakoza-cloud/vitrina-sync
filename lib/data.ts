@@ -10,3 +10,10 @@ export async function getCatalog(/* твои параметры */) {
 
   return withCovers;
 }
+// Вернём один объект по external_id (ищем среди каталога)
+export async function getProperty(external_id: string) {
+  const list = await getCatalog(); // твоя функция, которая уже собирает карточки
+  return list.find(
+    (p: any) => String(p.external_id) === String(external_id)
+  ) ?? null;
+}
