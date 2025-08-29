@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getCatalog } from './lib/data';
+import { getCatalog } from '../lib/data';
 
 type Search = { city?: string };
 
