@@ -30,7 +30,6 @@ export type CatalogItem = {
   available_area?: number | string | null;
   total_area?: number | string | null;
   cover_url?: string | null;
-  // прайс-ключи (если во вью их нет — придут null и просто не покажем)
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -126,6 +125,37 @@ async function getCities(): Promise<string[]> {
   return rows.map((r) => r.city_name).filter((x) => !!x && x.trim().length > 0);
 }
 
+// Универсальная попытка забора строк с fallback по order
+async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promise<any[]> {
+  // 1) правильный синтаксис: desc.nullslast
+  const p1 = new URLSearchParams(qsBase);
+  p1.set("order", "updated_at.desc.nullslast");
+  try {
+    return await fetchJSON<any[]>(`${base}?${p1.toString()}`, {
+      headers: supaHeaders(),
+      revalidate: 300,
+    });
+  } catch (e: any) {
+    // 2) fallback: только desc
+    const p2 = new URLSearchParams(qsBase);
+    p2.set("order", "updated_at.desc");
+    try {
+      return await fetchJSON<any[]>(`${base}?${p2.toString()}`, {
+        headers: supaHeaders(),
+        revalidate: 300,
+      });
+    } catch {
+      // 3) финальный fallback: вообще без order
+      const p3 = new URLSearchParams(qsBase);
+      p3.delete("order");
+      return await fetchJSON<any[]>(`${base}?${p3.toString()}`, {
+        headers: supaHeaders(),
+        revalidate: 300,
+      });
+    }
+  }
+}
+
 async function getItems(city: string): Promise<CatalogItem[]> {
   if (!SUPABASE_URL) return [];
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
@@ -150,14 +180,11 @@ async function getItems(city: string): Promise<CatalogItem[]> {
     "updated_at",
   ].join(",");
 
-  const qs = new URLSearchParams();
-  qs.set("select", select);
-  // ВАЖНО: формат order для PostgREST — "col.desc.nullslast"
-  qs.set("order", "updated_at.desc.nullslast");
-  if (city) qs.set("city", `eq.${city}`);
+  const qsBase = new URLSearchParams();
+  qsBase.set("select", select);
+  if (city) qsBase.set("city", `eq.${city}`);
 
-  const url = `${base}?${qs.toString()}`;
-  const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 300 });
+  const rows = await fetchRowsWithOrder(base, qsBase);
 
   return rows.map((r) => ({
     external_id: r.external_id,
@@ -178,7 +205,7 @@ async function getItems(city: string): Promise<CatalogItem[]> {
 }
 
 export async function getCatalog({ city }: { city: string }): Promise<CatalogResponse> {
-  // «мягкие» промисы: ошибки не валят страницу
+  // мягкие промисы — ошибки → пустые данные, без 500
   const uiP = getUiConfig().catch(() => ({ card_fields_order: null, show_city_filter: true }));
   const citiesP = getCities().catch(() => [] as string[]);
   const itemsP = getItems(city).catch(() => [] as CatalogItem[]);
@@ -225,14 +252,13 @@ export async function getProperty(external_id: string): Promise<CatalogItem | nu
     "updated_at",
   ].join(",");
 
-  const qs = new URLSearchParams();
-  qs.set("select", select);
-  qs.set("external_id", `eq.${external_id}`);
-  qs.set("limit", "1");
+  const qsBase = new URLSearchParams();
+  qsBase.set("select", select);
+  qsBase.set("external_id", `eq.${external_id}`);
+  qsBase.set("limit", "1");
 
-  const url = `${base}?${qs.toString()}`;
-  const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 60 }).catch(() => []);
-
+  // пробуем с order (на случай одинаковых external_id в истории)
+  const rows = await fetchRowsWithOrder(base, qsBase).catch(() => [] as any[]);
   const r = rows?.[0];
   if (!r) return null;
 
