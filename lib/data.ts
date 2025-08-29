@@ -1,3 +1,4 @@
+import Link from 'next/link';
 // lib/data.ts
 import { SUPABASE_URL } from './supabase';
 import { getCoverMapByExternalId } from './photos';
