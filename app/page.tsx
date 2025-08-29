@@ -4,7 +4,8 @@ import { getCatalog } from '../lib/data';
 
 type Search = { city?: string };
 
-// === 1) Получаем конфиг UI из Directus (ui_home_config) ===
+const DEFAULT_ORDER = ['photo', 'city', 'address', 'type', 'floor', 'prices'];
+
 async function getUIConfig(): Promise<{
   card_fields_order: string[];
   show_city_filter: boolean;
@@ -14,88 +15,74 @@ async function getUIConfig(): Promise<{
     process.env.DIRECTUS_URL ||
     'https://cms.vitran.ru';
 
+  const url = `${base.replace(/\/+$/, '')}/items/ui_home_config?limit=1&fields=card_fields_order,show_city_filter`;
+
+  // КОРОТКИЙ ТАЙМАУТ + кэш на 5 минут — чтобы не тормозить, если CMS "спит"
   try {
-    const url = `${base.replace(/\/+$/, '')}/items/ui_home_config?limit=1&fields=card_fields_order,show_city_filter`;
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('ui_home_config fetch failed');
-    const data = await r.json();
+    const resp: any = await Promise.race([
+      fetch(url, { next: { revalidate: 300 } }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 400)),
+    ]);
+    if (!resp?.ok) throw new Error('bad response');
+    const data = await resp.json();
     const row = Array.isArray(data?.data) ? data.data[0] : data?.data;
     const order = Array.isArray(row?.card_fields_order)
       ? row.card_fields_order
       : [];
 
     return {
-      card_fields_order:
-        order.length > 0
-          ? order
-          : ['photo', 'city', 'address', 'type', 'floor', 'prices'],
+      card_fields_order: order.length ? order : DEFAULT_ORDER,
       show_city_filter:
         typeof row?.show_city_filter === 'boolean' ? row.show_city_filter : true,
     };
   } catch {
-    // Фолбэк, если Directus недоступен / нет прав и т.п.
-    return {
-      card_fields_order: ['photo', 'city', 'address', 'type', 'floor', 'prices'],
-      show_city_filter: true,
-    };
+    return { card_fields_order: DEFAULT_ORDER, show_city_filter: true };
   }
 }
 
-// === 2) Достаём "город" из карточки максимально гибко ===
+// Вытаскиваем имя города из карточки (много разных вариантов ключей)
 function extractCity(it: any): string | null {
   if (!it || typeof it !== 'object') return null;
 
-  const direct =
-    it.city ??
-    it.city_name ??
-    it.city_title ??
-    it.cityTitle ??
-    it.city_ru ??
-    it.city_name_ru ??
-    it.city_short ??
-    it.cityTitleShort ??
-    it.city_display ??
-    it.display_city ??
-    it.geo_city ??
-    it.geoCity ??
-    it.settlement ??
-    null;
+  const tryKeys = [
+    'city',
+    'city_name',
+    'city_title',
+    'cityTitle',
+    'cityName',
+    'city_ru',
+    'display_city',
+    'geo_city',
+    'settlement',
+  ];
 
-  if (typeof direct === 'string' && direct.trim()) return direct.trim();
-
-  const c = it.city;
-  if (c && typeof c === 'object') {
-    const nested =
-      c.name ?? c.title ?? c.ru ?? c.label ?? c.caption ?? c.title_short ?? null;
-    if (typeof nested === 'string' && nested.trim()) return nested.trim();
+  for (const k of tryKeys) {
+    const v = it?.[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
   }
 
-  const loc = it.location || it.geo || it.address_obj || null;
-  if (loc && typeof loc === 'object') {
-    const nested =
-      loc.city ??
-      loc.city_name ??
-      loc.city_title ??
-      loc.name ??
-      loc.title ??
+  // вложенные варианты
+  const nested = it.city || it.location || it.geo || it.address_obj;
+  if (nested && typeof nested === 'object') {
+    const nk =
+      nested.name ||
+      nested.title ||
+      nested.city ||
+      nested.city_name ||
+      nested.city_title ||
       null;
-    if (typeof nested === 'string' && nested.trim()) return nested.trim();
+    if (typeof nk === 'string' && nk.trim()) return nk.trim();
   }
 
-  if (typeof direct === 'number') return null;
   return null;
 }
 
-// === 3) Компоновка блока «prices» ===
+// Сборка блока цен
 function buildPricesBlock(p: any): string | null {
-  // Если уже есть собранный текст — используем его
   if (typeof p?.price_text === 'string' && p.price_text.trim()) {
     return p.price_text.trim();
   }
-
-  // Иначе пытаемся собрать из известных паттернов
-  // Поддержим разные названия: price_from_20, from20, p20 и т.п.
-  const candidates: { label: string; keys: string[] }[] = [
+  const blocks: { label: string; keys: string[] }[] = [
     { label: 'от 20', keys: ['price_from_20', 'from20', 'p20', 'price20'] },
     { label: 'от 50', keys: ['price_from_50', 'from50', 'p50', 'price50'] },
     { label: 'от 100', keys: ['price_from_100', 'from100', 'p100', 'price100'] },
@@ -103,26 +90,21 @@ function buildPricesBlock(p: any): string | null {
     { label: 'от 700', keys: ['price_from_700', 'from700', 'p700', 'price700'] },
     { label: 'от 1500', keys: ['price_from_1500', 'from1500', 'p1500', 'price1500'] },
   ];
-
   const lines: string[] = [];
-  for (const c of candidates) {
+  for (const b of blocks) {
     let val: any = null;
-    for (const k of c.keys) {
-      if (p?.[k] !== undefined && p?.[k] !== null && p?.[k] !== '') {
+    for (const k of b.keys) {
+      if (p?.[k] !== undefined && p?.[k] !== null && String(p[k]).trim()) {
         val = p[k];
         break;
       }
     }
-    if (val !== null && val !== undefined && String(val).trim()) {
-      // просто выводим как есть; валюту/единицы вы уже кладёте в значение
-      lines.push(`${c.label}: ${val}`);
-    }
+    if (val !== null) lines.push(`${b.label}: ${val}`);
   }
-
   return lines.length ? lines.join('\n') : null;
 }
 
-// === 4) Рендер поля карточки по ключу из card_fields_order ===
+// Рендер поля карточки по ключу order
 function renderFieldByKey(key: string, p: any) {
   switch (key) {
     case 'city': {
@@ -152,55 +134,47 @@ function renderFieldByKey(key: string, p: any) {
       ) : null;
     }
     case 'prices': {
-      const text = buildPricesBlock(p);
-      return text ? (
-        <div style={{ fontSize: 12, whiteSpace: 'pre-line', marginTop: 4 }}>{text}</div>
-      ) : null;
+      const t = buildPricesBlock(p);
+      return t ? <div style={{ fontSize: 12, whiteSpace: 'pre-line' }}>{t}</div> : null;
     }
-    // Если появятся дополнительные ключи — добавляйте сюда кейсы
     default:
       return null;
   }
 }
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Search;
-}) {
+export default async function Page({ searchParams }: { searchParams: Search }) {
   const currentCity = searchParams?.city ?? '';
 
-  // 1) Подтягиваем конфиг UI
-  const ui = await getUIConfig();
+  // Тянем конфиг и каталог ПАРАЛЛЕЛЬНО
+  const [ui, result] = await Promise.all([
+    getUIConfig(),
+    // getCatalog как раньше с параметром city; as any — чтобы TS не мешал
+    (getCatalog as any)({ city: currentCity }),
+  ]);
+
   const order: string[] = Array.isArray(ui.card_fields_order)
     ? ui.card_fields_order
-    : ['photo', 'city', 'address', 'type', 'floor', 'prices'];
+    : DEFAULT_ORDER;
 
-  // 2) Каталог (поддерживаем обе сигнатуры: массив или {items, cities})
-  let result: any;
-  try {
-    result = await (getCatalog as any)();
-  } catch {
-    result = [];
-  }
-  const allItems: any[] = Array.isArray(result) ? result : result?.items ?? [];
-
-  // 3) Города
+  // Каталог может прийти как массив или как { items, cities }
+  const rawItems: any[] = Array.isArray(result) ? result : result?.items ?? [];
   const apiCities: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
+
+  // Собираем общий список городов: сначала из API, затем дополняем по карточкам
   const citySet = new Set<string>();
   for (const c of apiCities) if (typeof c === 'string' && c.trim()) citySet.add(c.trim());
-  for (const it of allItems) {
-    const name = extractCity(it);
-    if (name) citySet.add(name);
+  for (const it of rawItems) {
+    const c = extractCity(it);
+    if (c) citySet.add(c);
   }
-  const cityOptions = Array.from(citySet).sort((a, b) => a.localeCompare(b, 'ru'));
+  const cities = Array.from(citySet).sort((a, b) => a.localeCompare(b, 'ru'));
 
-  // 4) Фильтр
+  // Фильтрация по выбранному городу (на случай, если бэкенд не фильтрует)
   const norm = (v: any) => String(v ?? '').trim().toLowerCase();
   const items =
     currentCity && currentCity.trim()
-      ? allItems.filter((p) => norm(extractCity(p)) === norm(currentCity))
-      : allItems;
+      ? rawItems.filter((p) => norm(extractCity(p)) === norm(currentCity))
+      : rawItems;
 
   return (
     <main className="p-6">
@@ -208,10 +182,12 @@ export default async function Page({
 
       {ui.show_city_filter && (
         <div className="mb-6 flex items-center gap-2">
-          <label htmlFor="city-select">Город:</label>
-          <select id="city-select" defaultValue={currentCity} className="border rounded px-2 py-1">
+          <label htmlFor="city-select" className="text-sm">
+            Город:
+          </label>
+          <select id="city-select" defaultValue={currentCity} className="border rounded px-2 py-1 text-sm">
             <option value="">Все города</option>
-            {cityOptions.map((c) => (
+            {cities.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -220,7 +196,7 @@ export default async function Page({
         </div>
       )}
 
-      {/* авто-применение фильтра */}
+      {/* Автоприменение фильтра — без кнопки */}
       <Script id="city-autosubmit">{`
         (function(){
           var sel = document.getElementById('city-select');
@@ -235,9 +211,6 @@ export default async function Page({
         })();
       `}</Script>
 
-      <div style={{ height: 16 }} />
-
-      {/* 6-колоночная сетка */}
       <div
         style={{
           display: 'grid',
@@ -248,15 +221,9 @@ export default async function Page({
         {items.map((p: any) => {
           const href = `/p/${encodeURIComponent(p.external_id ?? p.id ?? '')}`;
           const cover =
-            p.coverUrl ||
-            p.photo ||
-            p.preview_url ||
-            p.cover ||
-            p.image_url ||
+            (order.includes('photo') &&
+              (p.coverUrl || p.photo || p.preview_url || p.cover || p.image_url)) ||
             null;
-
-          // Фото выводим только если оно перечислено в order
-          const showPhoto = order.includes('photo');
 
           return (
             <div
@@ -268,7 +235,7 @@ export default async function Page({
                 background: '#fff',
               }}
             >
-              {showPhoto && (
+              {cover && (
                 <Link href={href} style={{ display: 'block' }}>
                   <div
                     style={{
@@ -278,26 +245,17 @@ export default async function Page({
                       background: '#f3f4f6',
                     }}
                   >
-                    {cover ? (
-                      <img
-                        src={cover}
-                        alt={p.title ?? p.address ?? p.external_id}
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                        }}
-                        loading="lazy"
-                      />
-                    ) : null}
+                    <img
+                      src={cover}
+                      alt={p.title ?? p.address ?? p.external_id}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                      loading="lazy"
+                    />
                   </div>
                 </Link>
               )}
 
               <div style={{ padding: 12 }}>
-                {/* Заголовок/адрес как кликабельная ссылка */}
                 <Link
                   href={href}
                   style={{
@@ -311,7 +269,6 @@ export default async function Page({
                   {p.title ?? p.address ?? p.external_id}
                 </Link>
 
-                {/* Динамические поля в нужном порядке, кроме 'photo' */}
                 {order
                   .filter((k) => k !== 'photo')
                   .map((k) => (
