@@ -1,7 +1,13 @@
-// app/page.tsx
 import Link from 'next/link'
 import CityFilter from './ui/CityFilter'
-import { getCities, getCatalog, firstPhotoPath, publicPhotoUrl, priceLadder, minFloor } from '../lib/data'
+import {
+  getCities,
+  getCatalog,
+  firstPhotoPath,
+  publicPhotoUrl,
+  priceLadder,
+  minFloor,
+} from '../lib/data'
 
 export default async function Page({ searchParams }: { searchParams: { city?: string } }) {
   const cityId = searchParams?.city
@@ -10,44 +16,49 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
     getCatalog({ cityId }),
   ])
 
+  // словарь id→name, чтобы печатать имя города
+  const cityById = new Map(cities.map(c => [String(c.id), c.name]))
+
   return (
     <main className="p-6">
       <h1 className="text-2xl font-semibold mb-4">Каталог</h1>
 
       <CityFilter cities={cities} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="catalog-grid">
         {items.map((it: any) => {
           const imgPath = firstPhotoPath(it.photos ?? [])
           const imgUrl = publicPhotoUrl(imgPath)
           const ladder = priceLadder(it.units ?? [])
           const floor = minFloor(it.units ?? [])
+          const cityName = cityById.get(String(it.city_id)) ?? ''
+
           return (
-            <article key={it.id ?? it.external_id} className="border rounded-xl overflow-hidden shadow-sm">
+            <article key={it.id ?? it.external_id} className="card">
               <Link href={`/p/${it.external_id ?? it.id}`} className="block">
                 {imgUrl ? (
-                  <img src={imgUrl} alt="" className="w-full aspect-video object-cover" />
+                  <img src={imgUrl} alt="" className="card-img" />
                 ) : (
-                  <div className="w-full aspect-video bg-gray-100 flex items-center justify-center text-gray-400">
-                    нет фото
-                  </div>
+                  <div className="card-img" />
                 )}
               </Link>
 
-              <div className="p-3 space-y-1">
-                <Link href={`/p/${it.external_id ?? it.id}`} className="font-medium hover:underline">
+              <div className="card-body">
+                <Link href={`/p/${it.external_id ?? it.id}`} className="card-title hover:underline">
                   {it.title ?? it.address ?? it.external_id}
                 </Link>
-                <div className="text-sm opacity-80">
-                  {/* Город берём из названия города, если в properties его нет, оставим пустым */}
-                  {it.city_name ?? ''}{it.city_name && it.address ? ' · ' : ''}{it.address}
+
+                <div className="card-meta">
+                  {cityName && <>{cityName} · </>}
+                  {it.address}
                 </div>
-                <div className="text-sm opacity-80">
+
+                <div className="card-meta">
                   Тип: {it.type}{typeof floor === 'number' ? ` · Этаж: ${floor}` : ''}
                 </div>
 
                 {ladder.length > 0 && (
-                  <div className="text-sm pt-1 border-t mt-2">
+                  <div className="price-list">
                     {ladder.map(row => (
                       <div key={row.label}>{row.label}: {row.value}</div>
                     ))}
