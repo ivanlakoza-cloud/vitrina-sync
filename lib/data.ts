@@ -2,6 +2,14 @@
 import { SUPABASE_URL } from './supabase';
 import { getCoverMapByExternalId } from './photos';
 
+type UnitRow = {
+  id: number | string;
+  name?: string | null;
+  area_m2?: number | null;
+  available?: boolean | null;
+  property_id?: number | string | null;
+};
+
 type PropertyRow = {
   id: number | string;
   external_id: string | number;
@@ -10,7 +18,6 @@ type PropertyRow = {
   city?: string | null;
   type?: string | null;
   floor?: string | number | null;
-  // цены — если колонок нет, Supabase просто их не вернёт
   price20?: string | number | null;
   price50?: string | number | null;
   price100?: string | number | null;
@@ -18,7 +25,23 @@ type PropertyRow = {
   price700?: string | number | null;
   price1500?: string | number | null;
   is_public?: boolean | null;
+  /** добавили: чтобы страница могла это читать типобезопасно */
+  units?: UnitRow[];
 };
+
+// ...
+
+async function fetchUnitsForProperty(propertyId: string | number): Promise<UnitRow[]> {
+  const qs = new URLSearchParams();
+  qs.set('select', 'id,name,area_m2,available,property_id');
+  qs.set('property_id', `eq.${propertyId}`);
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/units?${qs.toString()}`, {
+    headers: SB_HEADERS,
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return (await res.json()) as UnitRow[];
+}
 
 const SB_HEADERS = {
   apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
