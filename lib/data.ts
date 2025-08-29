@@ -30,7 +30,7 @@ export type CatalogItem = {
   available_area?: number | string | null;
   total_area?: number | string | null;
   cover_url?: string | null;
-  // возможные прайс-ключи (берём что найдём)
+  // прайс-ключи (если во вью их нет — придут null и просто не покажем)
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -46,6 +46,8 @@ export type CatalogResponse = {
 };
 
 const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
+
+// -------------------------- helpers -----------------------------------------
 
 function supaHeaders(): HeadersInit {
   const h: HeadersInit = { "Content-Type": "application/json" };
@@ -88,7 +90,7 @@ function storagePublicUrl(storagePath?: string | null): string | null {
   return `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/photos/${String(storagePath).replace(/^\/+/, "")}`;
 }
 
-// --- Directus UI config -----------------------------------------------------
+// -------------------------- Directus UI config ------------------------------
 
 async function getUiConfig(): Promise<UiConfig> {
   try {
@@ -110,11 +112,11 @@ async function getUiConfig(): Promise<UiConfig> {
   }
 }
 
-// --- Supabase data ----------------------------------------------------------
+// -------------------------- Supabase data -----------------------------------
 
 async function getCities(): Promise<string[]> {
   if (!SUPABASE_URL) return [];
-  // вью с фасетами по городам (city_name,count)
+  // вью фасетов по городам (city_name,count)
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
   const url = `${base}?select=city_name,count&order=count.desc`;
   const rows = await fetchJSON<Array<{ city_name: string; count: number }>>(url, {
@@ -128,7 +130,7 @@ async function getItems(city: string): Promise<CatalogItem[]> {
   if (!SUPABASE_URL) return [];
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
 
-  // выбираем безопасный набор полей, который точно пригодится на карточке
+  // поля для карточки
   const select = [
     "external_id",
     "title",
@@ -139,7 +141,6 @@ async function getItems(city: string): Promise<CatalogItem[]> {
     "available_area",
     "cover_storage_path",
     "cover_ext_url",
-    // прайсы — если есть во вью, просто придут null/undefined, это ок
     "price_per_m2_20",
     "price_per_m2_50",
     "price_per_m2_100",
@@ -151,8 +152,9 @@ async function getItems(city: string): Promise<CatalogItem[]> {
 
   const qs = new URLSearchParams();
   qs.set("select", select);
-  qs.set("order", "updated_at.desc,nullslast");
-  if (city) qs.set("city", `eq.${city}`); // серверная фильтрация по имени города
+  // ВАЖНО: формат order для PostgREST — "col.desc.nullslast"
+  qs.set("order", "updated_at.desc.nullslast");
+  if (city) qs.set("city", `eq.${city}`);
 
   const url = `${base}?${qs.toString()}`;
   const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 300 });
@@ -176,11 +178,12 @@ async function getItems(city: string): Promise<CatalogItem[]> {
 }
 
 export async function getCatalog({ city }: { city: string }): Promise<CatalogResponse> {
-  const [ui, cities, items] = await Promise.all([
-    getUiConfig(),
-    getCities(),
-    getItems(city),
-  ]);
+  // «мягкие» промисы: ошибки не валят страницу
+  const uiP = getUiConfig().catch(() => ({ card_fields_order: null, show_city_filter: true }));
+  const citiesP = getCities().catch(() => [] as string[]);
+  const itemsP = getItems(city).catch(() => [] as CatalogItem[]);
+
+  const [ui, cities, items] = await Promise.all([uiP, citiesP, itemsP]);
 
   return {
     items,
@@ -197,7 +200,7 @@ export async function getCatalog({ city }: { city: string }): Promise<CatalogRes
   };
 }
 
-// --- Детальная карточка -----------------------------------------------------
+// -------------------------- Детальная карточка ------------------------------
 
 export async function getProperty(external_id: string): Promise<CatalogItem | null> {
   if (!SUPABASE_URL || !external_id) return null;
@@ -228,7 +231,7 @@ export async function getProperty(external_id: string): Promise<CatalogItem | nu
   qs.set("limit", "1");
 
   const url = `${base}?${qs.toString()}`;
-  const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 60 });
+  const rows = await fetchJSON<any[]>(url, { headers: supaHeaders(), revalidate: 60 }).catch(() => []);
 
   const r = rows?.[0];
   if (!r) return null;
