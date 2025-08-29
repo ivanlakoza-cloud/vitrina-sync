@@ -63,9 +63,11 @@ function isString(x: any): x is string { return typeof x === 'string' }
 
 function assertAuth(req: NextRequest): boolean {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization')
-  const secret = getEnv('DIRECTUS_WEBHOOK_SECRET')
-  return !!auth && auth.trim() === `Bearer ${secret}`
+  const secret = getEnv('DIRECTUS_WEBHOOK_SECRET').trim() // ← важное .trim()
+  if (!auth) return false
+  return auth.trim() === `Bearer ${secret}`
 }
+
 
 function makeServiceClient(): SupabaseClient {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') // not secret
