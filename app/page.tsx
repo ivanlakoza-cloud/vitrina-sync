@@ -1,5 +1,4 @@
 import Link from 'next/link';
-// если lib/data.ts лежит в корне проекта, путь должен быть '../lib/data'
 import { getCatalog } from '../lib/data';
 
 type Search = { city?: string };
@@ -11,18 +10,36 @@ export default async function Page({
 }) {
   const currentCity = searchParams?.city ?? '';
 
-  // ВАЖНО: поддерживаем оба возвращаемых формата getCatalog
+  // Универсально: поддерживаем обе формы ответа getCatalog()
   // 1) Array<PropertyRow>
   // 2) { items: PropertyRow[], cities: string[] }
-  const result: any = await getCatalog({ city: currentCity } as any);
-  const items: any[] = Array.isArray(result) ? result : result?.items ?? [];
-  const cities: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
+  let result: any;
+  try {
+    result = await (getCatalog as any)(); // без аргументов — как у тебя сейчас
+  } catch {
+    result = [];
+  }
+
+  const allItems: any[] = Array.isArray(result) ? result : result?.items ?? [];
+
+  // Список городов: если API не вернул, соберём из данных
+  const citiesFromApi: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
+  const citySet = new Set<string>(citiesFromApi);
+  for (const it of allItems) if (it?.city) citySet.add(String(it.city));
+  const cityOptions = Array.from(citySet).sort((a, b) => a.localeCompare(b, 'ru'));
+
+  // Фильтрация по выбранному городу
+  const items = currentCity
+    ? allItems.filter(
+        (p) => (p?.city ?? '').toLowerCase() === currentCity.toLowerCase()
+      )
+    : allItems;
 
   return (
     <main className="p-6">
       <h1 className="text-2xl font-bold mb-4">Каталог</h1>
 
-      {/* Фильтр (форма GET), без onChange чтобы не было ошибок "Event handlers..." на билде */}
+      {/* Фильтр — форма GET, без onChange (чтобы не ломать SSG/SSR) */}
       <form action="/" method="get" className="mb-6 flex items-center gap-2">
         <label htmlFor="city">Город:</label>
         <select
@@ -32,7 +49,7 @@ export default async function Page({
           className="border rounded px-2 py-1"
         >
           <option value="">Все города</option>
-          {(cities ?? []).map((c: string) => (
+          {cityOptions.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
@@ -54,76 +71,81 @@ export default async function Page({
           gap: 16,
         }}
       >
-        {(items ?? []).map((p: any) => (
-          <div
-            key={p.id ?? p.external_id}
-            style={{
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-              overflow: 'hidden',
-              background: '#fff',
-            }}
-          >
-            <Link href={`/p/${p.external_id}`} style={{ display: 'block' }}>
-              <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  // 4:3 — аккуратная плитка
-                  aspectRatio: '4 / 3',
-                  background: '#f3f4f6',
-                }}
-              >
-                {p.coverUrl ? (
-                  <img
-                    src={p.coverUrl}
-                    alt={p.title ?? p.address ?? p.external_id}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                    }}
-                    loading="lazy"
-                  />
-                ) : null}
-              </div>
-            </Link>
+        {items.map((p: any) => {
+          const href = `/p/${encodeURIComponent(p.external_id ?? p.id ?? '')}`;
+          const cover = p.coverUrl || p.photo || p.preview_url || null;
 
-            <div style={{ padding: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                {p.city ?? '—'}
-              </div>
-
-              <Link
-                href={`/p/${p.external_id}`}
-                style={{
-                  display: 'block',
-                  color: '#4f46e5',
-                  textDecoration: 'underline',
-                  marginBottom: 4,
-                }}
-              >
-                {p.title ?? p.address ?? p.external_id}
+          return (
+            <div
+              key={p.id ?? p.external_id}
+              style={{
+                border: '1px solid #e5e7eb',
+                borderRadius: 8,
+                overflow: 'hidden',
+                background: '#fff',
+              }}
+            >
+              <Link href={href} style={{ display: 'block' }}>
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    // 4:3 — аккуратная плитка
+                    aspectRatio: '4 / 3',
+                    background: '#f3f4f6',
+                  }}
+                >
+                  {cover ? (
+                    <img
+                      src={cover}
+                      alt={p.title ?? p.address ?? p.external_id}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                      }}
+                      loading="lazy"
+                    />
+                  ) : null}
+                </div>
               </Link>
 
-              <div style={{ fontSize: 12, opacity: 0.7 }}>
-                {p.address ? `${p.address}` : null}
-                {p.type ? ` · Тип: ${p.type}` : null}
-                {p.floor ? ` · Этаж: ${p.floor}` : null}
-              </div>
-
-              {p.price_text ? (
-                <div
-                  style={{ fontSize: 12, marginTop: 8, whiteSpace: 'pre-line' }}
-                >
-                  {p.price_text}
+              <div style={{ padding: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  {p.city ?? '—'}
                 </div>
-              ) : null}
+
+                <Link
+                  href={href}
+                  style={{
+                    display: 'block',
+                    color: '#4f46e5',
+                    textDecoration: 'underline',
+                    marginBottom: 4,
+                  }}
+                >
+                  {p.title ?? p.address ?? p.external_id}
+                </Link>
+
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  {p.address ? `${p.address}` : null}
+                  {p.type ? ` · Тип: ${p.type}` : null}
+                  {p.floor ? ` · Этаж: ${p.floor}` : null}
+                </div>
+
+                {p.price_text ? (
+                  <div
+                    style={{ fontSize: 12, marginTop: 8, whiteSpace: 'pre-line' }}
+                  >
+                    {p.price_text}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </main>
   );
