@@ -1,4 +1,4 @@
-import { getProperty } from '../../lib/data'
+import { getProperty } from '../../../lib/data'
 
 export default async function Page({ params }: { params: { external_id: string } }) {
   const p = await getProperty(params.external_id)
