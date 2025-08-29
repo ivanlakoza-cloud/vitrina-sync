@@ -1,7 +1,9 @@
 // lib/data.ts
-// Каталог для Next.js: Supabase (две вью) + Directus UI-конфиг
+// Каталог для Next.js: Supabase (Storage + две вью) и Directus UI-конфиг.
 
+//
 // ===== ENV =====
+//
 const DIRECTUS_URL =
   process.env.NEXT_PUBLIC_DIRECTUS_URL ||
   process.env.DIRECTUS_URL ||
@@ -19,7 +21,15 @@ const SUPABASE_ANON =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   "";
 
+const STORAGE_BUCKET = "photos";
+// Если когда-нибудь появится префикс в Storage (как в GAS CFG.PREFIX) — можно задать
+// NEXT_PUBLIC_STORAGE_PREFIX. Сейчас префикса нет (по скриншоту buckets/photos/idXX/*).
+const STORAGE_PREFIX =
+  (process.env.NEXT_PUBLIC_STORAGE_PREFIX || "").replace(/^\/+|\/+$/g, "");
+
+//
 // ===== Types =====
+//
 type UiConfig = { card_fields_order: string[] | null; show_city_filter: boolean };
 
 export type CatalogItem = {
@@ -27,15 +37,18 @@ export type CatalogItem = {
   title?: string | null;
   address?: string | null;
   city?: string | null;
+
   type?: string | null;
   available_area?: number | string | null;
   total_area?: number | string | null;
-  // совместимость со «старой» страницей и новой разметкой
-  coverUrl?: string | null;     // вычисляемый единый URL
-  cover_url?: string | null;    // алиас
-  photo?: string | null;        // алиас на coverUrl
-  preview_url?: string | null;  // алиас на coverUrl
-  // цены (как есть во view)
+
+  // унифицированный URL обложки + алиасы, чтобы карточка брала как "раньше"
+  coverUrl?: string | null;
+  cover_url?: string | null;
+  photo?: string | null;
+  preview_url?: string | null;
+
+  // ценовые диапазоны (если есть)
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -48,7 +61,9 @@ export type CatalogResponse = { items: CatalogItem[]; cities: string[]; ui: UiCo
 
 const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
 
+//
 // ===== Helpers =====
+//
 function supaHeaders(): HeadersInit {
   const h: HeadersInit = { "Content-Type": "application/json" };
   if (SUPABASE_ANON) {
@@ -57,40 +72,37 @@ function supaHeaders(): HeadersInit {
   }
   return h;
 }
-
 function attachApikey(qs: URLSearchParams) {
   if (SUPABASE_ANON && !qs.has("apikey")) qs.set("apikey", SUPABASE_ANON);
 }
-
-function storagePublicUrl(path?: string | null): string | null {
-  if (!path) return null;
-  const clean = String(path).replace(/^\/+/, "");
-  // если path уже абсолютный URL — вернём как есть
-  if (/^https?:\/\//i.test(clean)) return clean;
-  return `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/photos/${clean}`;
+function storagePublicUrl(key: string): string {
+  const base = SUPABASE_URL.replace(/\/+$/, "");
+  const path = [STORAGE_BUCKET, key].filter(Boolean).join("/");
+  return `${base}/storage/v1/object/public/${path.replace(/^\/+/, "")}`;
 }
-
 async function fetchJSON<T>(url: string, init?: RequestInit & { revalidate?: number }): Promise<T> {
   const { revalidate, ...rest } = init || {};
   const res = await fetch(url, { ...rest, next: { revalidate: revalidate ?? 300 } });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} for ${url}${txt ? ` – ${txt.slice(0, 200)}` : ""}`);
+    throw new Error(`HTTP ${res.status} for ${url}${txt ? ` – ${txt.slice(0, 160)}` : ""}`);
   }
   return res.json() as Promise<T>;
 }
 
+//
 // ===== Directus UI =====
+//
 async function getUiConfig(): Promise<UiConfig> {
   try {
     const url = `${DIRECTUS_URL.replace(
       /\/+$/,
       ""
     )}/items/ui_home_config?limit=1&fields=card_fields_order,show_city_filter`;
-    const data = await fetchJSON<{ data?: Array<{ card_fields_order?: any; show_city_filter?: boolean }> }>(
-      url,
-      { revalidate: 300, cache: "force-cache" }
-    );
+    const data = await fetchJSON<{ data?: Array<{ card_fields_order?: any; show_city_filter?: boolean }> }>(url, {
+      revalidate: 300,
+      cache: "force-cache",
+    });
     const row = data?.data?.[0] ?? {};
     return {
       card_fields_order: Array.isArray(row.card_fields_order) ? (row.card_fields_order as string[]) : null,
@@ -101,7 +113,9 @@ async function getUiConfig(): Promise<UiConfig> {
   }
 }
 
+//
 // ===== Supabase: города =====
+//
 async function getCities(): Promise<string[]> {
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
   const qs = new URLSearchParams();
@@ -116,19 +130,19 @@ async function getCities(): Promise<string[]> {
   return rows.map((r) => r.city_name).filter(Boolean);
 }
 
-// ===== Supabase: каталожные строки =====
-// База (обложка, адрес, город) — из view_property_with_cover
+//
+// ===== Supabase: сами объекты =====
+//
 type RowBase = {
   external_id: string;
   title: string | null;
   address: string | null;
   city: string | null;
-  cover_storage_path: string | null;
-  cover_ext_url: string | null;
+  cover_storage_path: string | null; // может быть пуст (тогда смотрим в Storage-фолдер)
+  cover_ext_url: string | null; // старый запасной путь (Я.Диск), может «умирать»
   updated_at?: string | null;
 };
 
-// Доп. поля — из property_full_view (тип, площади, цены)
 type RowMeta = {
   external_id: string;
   type: string | null;
@@ -141,30 +155,25 @@ type RowMeta = {
   price_per_m2_1500?: number | string | null;
 };
 
+// 1) базовая вью
 async function fetchBase(city: string): Promise<RowBase[]> {
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
   const qs = new URLSearchParams();
   qs.set("select", "external_id,title,address,city,cover_storage_path,cover_ext_url,updated_at");
   if (city) qs.set("city", `eq.${city}`);
-  // порядок с фоллбэком
   qs.set("order", "updated_at.desc.nullslast");
   attachApikey(qs);
   const url = `${base}?${qs.toString()}`;
   try {
     return await fetchJSON<RowBase[]>(url, { headers: supaHeaders(), revalidate: 300 });
   } catch {
+    // фоллбэк без nullslast
     qs.set("order", "updated_at.desc");
-    const url2 = `${base}?${qs.toString()}`;
-    try {
-      return await fetchJSON<RowBase[]>(url2, { headers: supaHeaders(), revalidate: 300 });
-    } catch {
-      qs.delete("order");
-      const url3 = `${base}?${qs.toString()}`;
-      return await fetchJSON<RowBase[]>(url3, { headers: supaHeaders(), revalidate: 300 });
-    }
+    return fetchJSON<RowBase[]>(`${base}?${qs.toString()}`, { headers: supaHeaders(), revalidate: 300 });
   }
 }
 
+// 2) мета из полной вью
 async function fetchMeta(externalIds: string[]): Promise<Map<string, RowMeta>> {
   if (!externalIds.length) return new Map();
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/property_full_view`;
@@ -185,22 +194,69 @@ async function fetchMeta(externalIds: string[]): Promise<Map<string, RowMeta>> {
   );
   qs.set("external_id", `in.(${externalIds.map((s) => `"${s.replace(/"/g, '\\"')}"`).join(",")})`);
   attachApikey(qs);
-  const url = `${base}?${qs.toString()}`;
-  const rows = await fetchJSON<RowMeta[]>(url, { headers: supaHeaders(), revalidate: 300 });
-
-  const map = new Map<string, RowMeta>();
-  for (const r of rows) map.set(String(r.external_id), r);
-  return map;
+  const rows = await fetchJSON<RowMeta[]>(`${base}?${qs.toString()}`, {
+    headers: supaHeaders(),
+    revalidate: 300,
+  });
+  const m = new Map<string, RowMeta>();
+  for (const r of rows) m.set(String(r.external_id), r);
+  return m;
 }
 
-function buildCoverUrl(row: RowBase): string | null {
-  // приоритет: Storage → внешний URL
-  const fromStorage = storagePublicUrl(row.cover_storage_path);
-  if (fromStorage) return fromStorage;
+// ====== COVER: вытягиваем из Storage, если cover_storage_path пуст ======
+type StorageListItem = { name: string; id?: string; updated_at?: string; created_at?: string };
+const coverCache = new Map<string, string | null>(); // на процесс
+
+async function listFirstStorageFile(external_id: string): Promise<string | null> {
+  if (coverCache.has(external_id)) return coverCache.get(external_id)!;
+
+  const prefix = [STORAGE_PREFIX, external_id].filter(Boolean).join("/").replace(/\/+$/, "") + "/";
+  const listUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/list/${encodeURIComponent(STORAGE_BUCKET)}`;
+
+  // Storage list: POST с JSON body, как в вашем GAS _sbList
+  const body = {
+    prefix,
+    limit: 100,
+    offset: 0,
+    sortBy: { column: "name", order: "asc" as const },
+  };
+
+  try {
+    const res = await fetch(listUrl, {
+      method: "POST",
+      headers: {
+        ...supaHeaders(),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) throw new Error(`Storage list ${res.status}`);
+    const arr = (await res.json()) as StorageListItem[];
+
+    // берём «первую попавшуюся картинку» — обычно будет img_<hash>.jpg
+    const first = arr?.find((x) => !!x?.name) || null;
+    const key = first ? prefix + first.name : null;
+    const url = key ? storagePublicUrl(key) : null;
+
+    coverCache.set(external_id, url);
+    return url;
+  } catch {
+    coverCache.set(external_id, null);
+    return null;
+  }
+}
+
+function buildCoverFromRow(row: RowBase): string | null {
+  // приоритет: cover_storage_path (если это уже абсолютный URL) → внешний URL
+  const p = row.cover_storage_path;
+  if (p && /^https?:\/\//i.test(String(p))) return String(p);
+  if (p && String(p).trim() !== "") return storagePublicUrl(String(p).replace(/^\/+/, ""));
   const ext = row.cover_ext_url && String(row.cover_ext_url).trim() ? String(row.cover_ext_url) : null;
   return ext || null;
 }
 
+// Собираем итоговый список карточек
 async function getItems(city: string): Promise<CatalogItem[]> {
   const baseRows = await fetchBase(city);
   if (!baseRows.length) return [];
@@ -208,9 +264,11 @@ async function getItems(city: string): Promise<CatalogItem[]> {
   const ids = Array.from(new Set(baseRows.map((r) => String(r.external_id)).filter(Boolean)));
   const metaMap = await fetchMeta(ids);
 
-  return baseRows.map((r) => {
+  // сначала пробуем взять cover из строки; где нет — дотягиваем из Storage listing
+  const needList: Array<{ row: RowBase; idx: number }> = [];
+  const out: CatalogItem[] = baseRows.map((r) => {
     const m = metaMap.get(String(r.external_id));
-    const cover = buildCoverUrl(r);
+    const cover0 = buildCoverFromRow(r);
 
     const item: CatalogItem = {
       external_id: String(r.external_id),
@@ -220,11 +278,13 @@ async function getItems(city: string): Promise<CatalogItem[]> {
       type: m?.type ?? null,
       available_area: null,
       total_area: m?.total_area ?? null,
-      // единый URL + алиасы для совместимости со «старой» страницей
-      coverUrl: cover,
-      cover_url: cover,
-      photo: cover,
-      preview_url: cover,
+
+      // заполним ниже
+      coverUrl: cover0 ?? null,
+      cover_url: cover0 ?? null,
+      photo: cover0 ?? null,
+      preview_url: cover0 ?? null,
+
       price_per_m2_20: m?.price_per_m2_20 ?? null,
       price_per_m2_50: m?.price_per_m2_50 ?? null,
       price_per_m2_100: m?.price_per_m2_100 ?? null,
@@ -233,8 +293,26 @@ async function getItems(city: string): Promise<CatalogItem[]> {
       price_per_m2_1500: m?.price_per_m2_1500 ?? null,
     };
 
+    if (!cover0) needList.push({ row: r, idx: out.length });
+    out.push(item);
     return item;
   });
+
+  // дотягиваем обложки из Storage там, где пусто
+  if (needList.length) {
+    const covers = await Promise.all(needList.map(({ row }) => listFirstStorageFile(String(row.external_id))));
+    covers.forEach((url, i) => {
+      const idx = needList[i].idx;
+      if (url) {
+        out[idx].coverUrl = url;
+        out[idx].cover_url = url;
+        out[idx].photo = url;
+        out[idx].preview_url = url;
+      }
+    });
+  }
+
+  return out;
 }
 
 export async function getCatalog({ city }: { city: string }): Promise<CatalogResponse> {
@@ -255,7 +333,7 @@ export async function getCatalog({ city }: { city: string }): Promise<CatalogRes
   };
 }
 
-// Деталка при необходимости
+// Детальная карточка при необходимости
 export async function getProperty(external_id: string): Promise<CatalogItem | null> {
   if (!external_id) return null;
   const items = await getItems("");
