@@ -1,5 +1,3 @@
-
-// app/p/[external_id]/page.tsx
 import { getProperty } from '@/lib/data'
 
 export default async function Page({ params }: { params: { external_id: string } }) {
@@ -17,7 +15,7 @@ export default async function Page({ params }: { params: { external_id: string }
         <ul className="list-disc pl-6">
           {(p.units ?? []).map((u: any) => (
             <li key={u.id}>
-              {u.name ?? u.id} · {u.area_m2} м² · {u.available ? 'доступно' : 'занято'}
+              {(u.name ?? u.id)} · {u.area_m2} м² · {u.available ? 'доступно' : 'занято'}
             </li>
           ))}
         </ul>
