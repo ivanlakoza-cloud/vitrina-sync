@@ -115,9 +115,13 @@ async function getUiConfig(): Promise<UiConfig> {
 
 async function getCities(): Promise<string[]> {
   if (!SUPABASE_URL) return [];
-  // вью фасетов по городам (city_name,count)
+  // фасеты по городам (у тебя вью уже считает только public; если нет — добавили такой же фильтр)
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
-  const url = `${base}?select=city_name,count&order=count.desc`;
+  const qs = new URLSearchParams();
+  qs.set("select", "city_name,count");
+  qs.set("order", "count.desc");
+  qs.set("is_public", "eq.true"); // <-- важно для RLS
+  const url = `${base}?${qs.toString()}`;
   const rows = await fetchJSON<Array<{ city_name: string; count: number }>>(url, {
     headers: supaHeaders(),
     revalidate: 300,
@@ -135,7 +139,7 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
       headers: supaHeaders(),
       revalidate: 300,
     });
-  } catch (e: any) {
+  } catch {
     // 2) fallback: только desc
     const p2 = new URLSearchParams(qsBase);
     p2.set("order", "updated_at.desc");
@@ -145,7 +149,7 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
         revalidate: 300,
       });
     } catch {
-      // 3) финальный fallback: вообще без order
+      // 3) без order
       const p3 = new URLSearchParams(qsBase);
       p3.delete("order");
       return await fetchJSON<any[]>(`${base}?${p3.toString()}`, {
@@ -182,6 +186,7 @@ async function getItems(city: string): Promise<CatalogItem[]> {
 
   const qsBase = new URLSearchParams();
   qsBase.set("select", select);
+  qsBase.set("is_public", "eq.true"); // <-- ключевой фильтр для RLS
   if (city) qsBase.set("city", `eq.${city}`);
 
   const rows = await fetchRowsWithOrder(base, qsBase);
@@ -255,9 +260,9 @@ export async function getProperty(external_id: string): Promise<CatalogItem | nu
   const qsBase = new URLSearchParams();
   qsBase.set("select", select);
   qsBase.set("external_id", `eq.${external_id}`);
+  qsBase.set("is_public", "eq.true"); // <-- тот же фильтр
   qsBase.set("limit", "1");
 
-  // пробуем с order (на случай одинаковых external_id в истории)
   const rows = await fetchRowsWithOrder(base, qsBase).catch(() => [] as any[]);
   const r = rows?.[0];
   if (!r) return null;
