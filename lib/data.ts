@@ -7,7 +7,7 @@ const DIRECTUS_URL =
   process.env.DIRECTUS_URL ||
   "https://cms.vitran.ru";
 
-// Жёсткий fallback на ваш project-ref (виден в SQL-видах)
+// Жёсткий fallback на проект Supabase
 const SUPABASE_URL_FALLBACK = "https://bhabvutmbxxcqgtmtudv.supabase.co";
 
 const SUPABASE_URL =
@@ -35,7 +35,6 @@ export type CatalogItem = {
   available_area?: number | string | null;
   total_area?: number | string | null;
   cover_url?: string | null;
-  // возможные прайсы (могут быть null — просто не покажем)
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -62,7 +61,7 @@ function supaHeaders(): HeadersInit {
   return h;
 }
 
-// дублируем ключ в query (иногда прокси режут заголовки)
+// дублируем ключ в query (на случай потери заголовков)
 function attachApikey(qs: URLSearchParams) {
   if (SUPABASE_ANON && !qs.has("apikey")) qs.set("apikey", SUPABASE_ANON);
 }
@@ -136,10 +135,10 @@ async function getCities(): Promise<string[]> {
   return rows.map((r) => r.city_name).filter((x) => !!x && x.trim().length > 0);
 }
 
-// единая функция выборки с порядком и фоллбэками
+// единая функция сортировки с фоллбэками (на случай отсутствия updated_at)
 async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promise<any[]> {
   const p1 = new URLSearchParams(qsBase);
-  p1.set("order", "updated_at.desc.nullslast"); // правильный синтаксис
+  p1.set("order", "updated_at.desc.nullslast");
   attachApikey(p1);
   try {
     return await fetchJSON<any[]>(`${base}?${p1.toString()}`, {
@@ -167,35 +166,79 @@ async function fetchRowsWithOrder(base: string, qsBase: URLSearchParams): Promis
   }
 }
 
+// «умный select»: пробуем несколько наборов полей, если какие-то отсутствуют во вью
+const SELECT_FULL = [
+  "external_id",
+  "title",
+  "address",
+  "city",
+  "type",
+  "total_area",
+  "available_area",
+  "cover_storage_path",
+  "cover_ext_url",
+  "price_per_m2_20",
+  "price_per_m2_50",
+  "price_per_m2_100",
+  "price_per_m2_400",
+  "price_per_m2_700",
+  "price_per_m2_1500",
+  "updated_at",
+].join(",");
+
+const SELECT_BASE = [
+  "external_id",
+  "title",
+  "address",
+  "city",
+  "type",
+  "total_area",
+  "available_area",
+  "cover_storage_path",
+  "cover_ext_url",
+  "updated_at",
+].join(",");
+
+const SELECT_MIN = [
+  "external_id",
+  "city",
+  "address",
+  "cover_storage_path",
+  "cover_ext_url",
+].join(",");
+
+async function fetchRowsSmartSelect(
+  base: string,
+  qsBase: URLSearchParams
+): Promise<any[]> {
+  // 1) полный набор
+  try {
+    const q1 = new URLSearchParams(qsBase);
+    q1.set("select", SELECT_FULL);
+    return await fetchRowsWithOrder(base, q1);
+  } catch {
+    // 2) базовый
+    try {
+      const q2 = new URLSearchParams(qsBase);
+      q2.set("select", SELECT_BASE);
+      return await fetchRowsWithOrder(base, q2);
+    } catch {
+      // 3) минимальный
+      const q3 = new URLSearchParams(qsBase);
+      q3.set("select", SELECT_MIN);
+      return await fetchRowsWithOrder(base, q3);
+    }
+  }
+}
+
 async function getItems(city: string): Promise<CatalogItem[]> {
   if (!SUPABASE_URL) return [];
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
 
-  const select = [
-    "external_id",
-    "title",
-    "address",
-    "city",
-    "type",
-    "total_area",
-    "available_area",
-    "cover_storage_path",
-    "cover_ext_url",
-    // поля цен могут отсутствовать — ок
-    "price_per_m2_20",
-    "price_per_m2_50",
-    "price_per_m2_100",
-    "price_per_m2_400",
-    "price_per_m2_700",
-    "price_per_m2_1500",
-    "updated_at",
-  ].join(",");
-
   const qsBase = new URLSearchParams();
-  qsBase.set("select", select);
   if (city) qsBase.set("city", `eq.${city}`);
 
-  const rows = await fetchRowsWithOrder(base, qsBase);
+  const rows = await fetchRowsSmartSelect(base, qsBase);
 
   return rows.map((r) => ({
     external_id: r.external_id,
@@ -242,31 +285,12 @@ export async function getProperty(external_id: string): Promise<CatalogItem | nu
   if (!SUPABASE_URL || !external_id) return null;
 
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
-  const select = [
-    "external_id",
-    "title",
-    "address",
-    "city",
-    "type",
-    "total_area",
-    "available_area",
-    "cover_storage_path",
-    "cover_ext_url",
-    "price_per_m2_20",
-    "price_per_m2_50",
-    "price_per_m2_100",
-    "price_per_m2_400",
-    "price_per_m2_700",
-    "price_per_m2_1500",
-    "updated_at",
-  ].join(",");
 
   const qsBase = new URLSearchParams();
-  qsBase.set("select", select);
   qsBase.set("external_id", `eq.${external_id}`);
   qsBase.set("limit", "1");
 
-  const rows = await fetchRowsWithOrder(base, qsBase).catch(() => [] as any[]);
+  const rows = await fetchRowsSmartSelect(base, qsBase).catch(() => [] as any[]);
   const r = rows?.[0];
   if (!r) return null;
 
