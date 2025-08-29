@@ -7,7 +7,6 @@ const supabase = createClient(
   { auth: { persistSession: false } }
 )
 
-// Catalog (tag: catalog)
 export const getCatalog = cache(async () => {
   const { data, error } = await supabase
     .from('properties')
@@ -19,7 +18,6 @@ export const getCatalog = cache(async () => {
   return data ?? []
 }, ['catalog-key'], { tags: ['catalog'] })
 
-// Property page (tag: property:<idOrExternal>)
 export function getProperty(idOrExternal: string) {
   return cache(async () => {
     let q = supabase

@@ -1,4 +1,4 @@
-import { getCatalog } from '@/lib/data'
+import { getCatalog } from '../lib/data'
 
 export default async function Page() {
   const items = await getCatalog()
