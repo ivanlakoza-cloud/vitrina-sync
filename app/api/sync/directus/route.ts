@@ -173,7 +173,7 @@ async function processEvent(body: DirectusTrigger) {
   const onConflict = conflictTargetFor(collection, upsertRow)
   const { error: upsertError } = await supabase.from(collection).upsert(upsertRow as any, {
     onConflict,
-    ignoreDuplicates: false,  # placeholder fix below
+    ignoreDuplicates: false,
     returning: 'minimal',
   })
   if (upsertError) throw upsertError
