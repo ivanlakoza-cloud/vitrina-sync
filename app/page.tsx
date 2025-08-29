@@ -1,4 +1,9 @@
 // app/page.tsx
-export default function Home() {
-  return <main>Vitrina — build OK</main>;
+import { getCatalog } from '@/lib/data'
+
+export default async function Page() {
+  const items = await getCatalog() // ← внутри стоит tag: "catalog"
+  return (
+    // ...рендер списка объектов
+  )
 }
