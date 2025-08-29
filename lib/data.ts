@@ -1,9 +1,8 @@
 // lib/data.ts
-// Каталог для Next.js: Supabase (Storage + две вью) и Directus UI-конфиг.
+// Каталог: Supabase (две вью + Storage) и Directus UI-конфиг.
+// Кэш: ~5 минут на запросах к Supabase/Directus
 
-//
 // ===== ENV =====
-//
 const DIRECTUS_URL =
   process.env.NEXT_PUBLIC_DIRECTUS_URL ||
   process.env.DIRECTUS_URL ||
@@ -22,14 +21,10 @@ const SUPABASE_ANON =
   "";
 
 const STORAGE_BUCKET = "photos";
-// Если когда-нибудь появится префикс в Storage (как в GAS CFG.PREFIX) — можно задать
-// NEXT_PUBLIC_STORAGE_PREFIX. Сейчас префикса нет (по скриншоту buckets/photos/idXX/*).
 const STORAGE_PREFIX =
   (process.env.NEXT_PUBLIC_STORAGE_PREFIX || "").replace(/^\/+|\/+$/g, "");
 
-//
 // ===== Types =====
-//
 type UiConfig = { card_fields_order: string[] | null; show_city_filter: boolean };
 
 export type CatalogItem = {
@@ -42,13 +37,12 @@ export type CatalogItem = {
   available_area?: number | string | null;
   total_area?: number | string | null;
 
-  // унифицированный URL обложки + алиасы, чтобы карточка брала как "раньше"
+  // унифицированный URL обложки (и алиасы под старый код)
   coverUrl?: string | null;
   cover_url?: string | null;
   photo?: string | null;
   preview_url?: string | null;
 
-  // ценовые диапазоны (если есть)
   price_per_m2_20?: number | string | null;
   price_per_m2_50?: number | string | null;
   price_per_m2_100?: number | string | null;
@@ -61,9 +55,7 @@ export type CatalogResponse = { items: CatalogItem[]; cities: string[]; ui: UiCo
 
 const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
 
-//
 // ===== Helpers =====
-//
 function supaHeaders(): HeadersInit {
   const h: HeadersInit = { "Content-Type": "application/json" };
   if (SUPABASE_ANON) {
@@ -90,9 +82,7 @@ async function fetchJSON<T>(url: string, init?: RequestInit & { revalidate?: num
   return res.json() as Promise<T>;
 }
 
-//
 // ===== Directus UI =====
-//
 async function getUiConfig(): Promise<UiConfig> {
   try {
     const url = `${DIRECTUS_URL.replace(
@@ -113,9 +103,7 @@ async function getUiConfig(): Promise<UiConfig> {
   }
 }
 
-//
 // ===== Supabase: города =====
-//
 async function getCities(): Promise<string[]> {
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_facets_city`;
   const qs = new URLSearchParams();
@@ -130,19 +118,16 @@ async function getCities(): Promise<string[]> {
   return rows.map((r) => r.city_name).filter(Boolean);
 }
 
-//
-// ===== Supabase: сами объекты =====
-//
+// ===== Supabase: объекты =====
 type RowBase = {
   external_id: string;
   title: string | null;
   address: string | null;
   city: string | null;
-  cover_storage_path: string | null; // может быть пуст (тогда смотрим в Storage-фолдер)
-  cover_ext_url: string | null; // старый запасной путь (Я.Диск), может «умирать»
+  cover_storage_path: string | null;
+  cover_ext_url: string | null;
   updated_at?: string | null;
 };
-
 type RowMeta = {
   external_id: string;
   type: string | null;
@@ -155,25 +140,43 @@ type RowMeta = {
   price_per_m2_1500?: number | string | null;
 };
 
-// 1) базовая вью
 async function fetchBase(city: string): Promise<RowBase[]> {
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/view_property_with_cover`;
   const qs = new URLSearchParams();
   qs.set("select", "external_id,title,address,city,cover_storage_path,cover_ext_url,updated_at");
   if (city) qs.set("city", `eq.${city}`);
-  qs.set("order", "updated_at.desc.nullslast");
   attachApikey(qs);
-  const url = `${base}?${qs.toString()}`;
+
+  // набор попыток, чтобы не падать на разных версиях PostgREST/операторах
+  const attempts = [
+    () => qs.set("order", "updated_at.desc.nullslast"),
+    () => qs.set("order", "updated_at.desc"),
+    () => qs.delete("order"),
+  ];
+
+  for (const mut of attempts) {
+    try {
+      mut();
+      const url = `${base}?${qs.toString()}`;
+      return await fetchJSON<RowBase[]>(url, { headers: supaHeaders(), revalidate: 300 });
+    } catch {
+      // пробуем следующую стратегию
+    }
+  }
+
+  // «последний шанс»: минимальный select без сортировки
   try {
+    const qs2 = new URLSearchParams();
+    qs2.set("select", "external_id,title,address,city,cover_storage_path,cover_ext_url");
+    if (city) qs2.set("city", `eq.${city}`);
+    attachApikey(qs2);
+    const url = `${base}?${qs2.toString()}`;
     return await fetchJSON<RowBase[]>(url, { headers: supaHeaders(), revalidate: 300 });
   } catch {
-    // фоллбэк без nullslast
-    qs.set("order", "updated_at.desc");
-    return fetchJSON<RowBase[]>(`${base}?${qs.toString()}`, { headers: supaHeaders(), revalidate: 300 });
+    return [];
   }
 }
 
-// 2) мета из полной вью
 async function fetchMeta(externalIds: string[]): Promise<Map<string, RowMeta>> {
   if (!externalIds.length) return new Map();
   const base = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/property_full_view`;
@@ -203,17 +206,15 @@ async function fetchMeta(externalIds: string[]): Promise<Map<string, RowMeta>> {
   return m;
 }
 
-// ====== COVER: вытягиваем из Storage, если cover_storage_path пуст ======
-type StorageListItem = { name: string; id?: string; updated_at?: string; created_at?: string };
-const coverCache = new Map<string, string | null>(); // на процесс
+// ===== Storage: берём «первый файл» из photos/<external_id>/, если cover_storage_path пуст
+type StorageListItem = { name: string };
+const coverCache = new Map<string, string | null>();
 
 async function listFirstStorageFile(external_id: string): Promise<string | null> {
   if (coverCache.has(external_id)) return coverCache.get(external_id)!;
 
   const prefix = [STORAGE_PREFIX, external_id].filter(Boolean).join("/").replace(/\/+$/, "") + "/";
   const listUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/list/${encodeURIComponent(STORAGE_BUCKET)}`;
-
-  // Storage list: POST с JSON body, как в вашем GAS _sbList
   const body = {
     prefix,
     limit: 100,
@@ -224,21 +225,15 @@ async function listFirstStorageFile(external_id: string): Promise<string | null>
   try {
     const res = await fetch(listUrl, {
       method: "POST",
-      headers: {
-        ...supaHeaders(),
-        "content-type": "application/json",
-      },
+      headers: { ...supaHeaders(), "content-type": "application/json" },
       body: JSON.stringify(body),
       next: { revalidate: 300 },
     });
     if (!res.ok) throw new Error(`Storage list ${res.status}`);
     const arr = (await res.json()) as StorageListItem[];
-
-    // берём «первую попавшуюся картинку» — обычно будет img_<hash>.jpg
     const first = arr?.find((x) => !!x?.name) || null;
     const key = first ? prefix + first.name : null;
     const url = key ? storagePublicUrl(key) : null;
-
     coverCache.set(external_id, url);
     return url;
   } catch {
@@ -247,16 +242,15 @@ async function listFirstStorageFile(external_id: string): Promise<string | null>
   }
 }
 
-function buildCoverFromRow(row: RowBase): string | null {
-  // приоритет: cover_storage_path (если это уже абсолютный URL) → внешний URL
-  const p = row.cover_storage_path;
+function coverFromRow(r: RowBase): string | null {
+  const p = r.cover_storage_path;
   if (p && /^https?:\/\//i.test(String(p))) return String(p);
   if (p && String(p).trim() !== "") return storagePublicUrl(String(p).replace(/^\/+/, ""));
-  const ext = row.cover_ext_url && String(row.cover_ext_url).trim() ? String(row.cover_ext_url) : null;
+  const ext = r.cover_ext_url && String(r.cover_ext_url).trim() ? String(r.cover_ext_url) : null;
   return ext || null;
 }
 
-// Собираем итоговый список карточек
+// ===== Итог: собираем карточки =====
 async function getItems(city: string): Promise<CatalogItem[]> {
   const baseRows = await fetchBase(city);
   if (!baseRows.length) return [];
@@ -264,11 +258,11 @@ async function getItems(city: string): Promise<CatalogItem[]> {
   const ids = Array.from(new Set(baseRows.map((r) => String(r.external_id)).filter(Boolean)));
   const metaMap = await fetchMeta(ids);
 
-  // сначала пробуем взять cover из строки; где нет — дотягиваем из Storage listing
-  const needList: Array<{ row: RowBase; idx: number }> = [];
-  const out: CatalogItem[] = baseRows.map((r) => {
+  const needStorage: Array<{ id: string; idx: number }> = [];
+  const out: CatalogItem[] = baseRows.map((r, i) => {
     const m = metaMap.get(String(r.external_id));
-    const cover0 = buildCoverFromRow(r);
+    const c0 = coverFromRow(r);
+    if (!c0) needStorage.push({ id: String(r.external_id), idx: i });
 
     const item: CatalogItem = {
       external_id: String(r.external_id),
@@ -279,11 +273,10 @@ async function getItems(city: string): Promise<CatalogItem[]> {
       available_area: null,
       total_area: m?.total_area ?? null,
 
-      // заполним ниже
-      coverUrl: cover0 ?? null,
-      cover_url: cover0 ?? null,
-      photo: cover0 ?? null,
-      preview_url: cover0 ?? null,
+      coverUrl: c0 ?? null,
+      cover_url: c0 ?? null,
+      photo: c0 ?? null,
+      preview_url: c0 ?? null,
 
       price_per_m2_20: m?.price_per_m2_20 ?? null,
       price_per_m2_50: m?.price_per_m2_50 ?? null,
@@ -292,17 +285,13 @@ async function getItems(city: string): Promise<CatalogItem[]> {
       price_per_m2_700: m?.price_per_m2_700 ?? null,
       price_per_m2_1500: m?.price_per_m2_1500 ?? null,
     };
-
-    if (!cover0) needList.push({ row: r, idx: out.length });
-    out.push(item);
     return item;
   });
 
-  // дотягиваем обложки из Storage там, где пусто
-  if (needList.length) {
-    const covers = await Promise.all(needList.map(({ row }) => listFirstStorageFile(String(row.external_id))));
-    covers.forEach((url, i) => {
-      const idx = needList[i].idx;
+  if (needStorage.length) {
+    const covers = await Promise.all(needStorage.map(({ id }) => listFirstStorageFile(id)));
+    covers.forEach((url, k) => {
+      const idx = needStorage[k].idx;
       if (url) {
         out[idx].coverUrl = url;
         out[idx].cover_url = url;
@@ -333,7 +322,6 @@ export async function getCatalog({ city }: { city: string }): Promise<CatalogRes
   };
 }
 
-// Детальная карточка при необходимости
 export async function getProperty(external_id: string): Promise<CatalogItem | null> {
   if (!external_id) return null;
   const items = await getItems("");
