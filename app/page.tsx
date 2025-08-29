@@ -1,23 +1,17 @@
 // app/page.tsx
-import Image from "next/image";
-import Link from "next/link";
-import Script from "next/script";
 import { getCatalog } from "@/lib/data";
+import Script from "next/script";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = { city?: string };
 
-const DEFAULT_ORDER = ["photo", "city", "address", "type", "area", "prices"];
-
-// формат площади
 function fmtArea(v: any): string | null {
   if (v === null || v === undefined) return null;
   const n = Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? `${n} м²` : String(v);
 }
 
-// строка с ценами «20: 1200 · 50: 1100 ...» — только заполненные
 function buildPrices(p: any): string | null {
   const pairs: Array<[string, any]> = [
     ["20", p?.price_per_m2_20],
@@ -35,117 +29,90 @@ function buildPrices(p: any): string | null {
 
 export default async function Home({ searchParams }: { searchParams?: SearchParams }) {
   const city = (searchParams?.city ?? "").trim();
-  const { items, cities, ui } = await getCatalog({ city });
-
-  const order = Array.isArray(ui.card_fields_order) && ui.card_fields_order.length
-    ? (ui.card_fields_order as string[])
-    : DEFAULT_ORDER;
+  const { items, cities } = await getCatalog({ city });
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-6">
-      {/* Фильтр (без onChange в серверном компоненте) */}
-      {ui.show_city_filter && (
-        <div className="mb-4 flex items-center gap-2">
-          <label htmlFor="city-select" className="text-base">Город:</label>
-          <select
-            id="city-select"
-            name="city"
-            defaultValue={city}
-            className="border rounded-md px-3 py-2 text-base"
-          >
-            <option value="">Все города</option>
-            {cities.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+    <main style={{ maxWidth: 1280, margin: "0 auto", padding: "16px" }}>
+      {/* локальные стили: сетка, карточки, шрифты */}
+      <style>{`
+        :root { --gap:16px; --radius:16px; --shadow:0 1px 2px rgba(0,0,0,.06); }
+        .grid { display:grid; gap:var(--gap); grid-template-columns: repeat(1, minmax(0,1fr)); }
+        @media (min-width:640px){ .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+        @media (min-width:768px){ .grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+        @media (min-width:1280px){ .grid { grid-template-columns: repeat(6, minmax(0,1fr)); } }
+        .card { border:1px solid #e5e7eb; border-radius:var(--radius); overflow:hidden; background:#fff; box-shadow:var(--shadow); }
+        .img { display:block; width:100%; height:180px; object-fit:cover; background:#f3f4f6; }
+        .body { padding:12px; font-size:16px; line-height:1.35; }
+        .title { font-weight:600; color:#111827; text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .line { color:#4b5563; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:4px; }
+        .line-strong { color:#111827; font-weight:600; }
+        .more { display:inline-block; margin-top:8px; color:#2563eb; text-decoration:none; }
+        .more:hover, .title:hover { text-decoration:underline; }
+        .filter { display:flex; align-items:center; gap:8px; margin-bottom:16px; position:relative; z-index:1000; }
+        .select { font-size:16px; padding:6px 10px; border:1px solid #d1d5db; border-radius:8px; background:#fff; }
+        .empty { color:#6b7280; font-size:16px; margin-top:16px; }
+      `}</style>
 
-      {/* Навешиваем обработчик изменения города уже на клиенте */}
-      <Script id="city-autosubmit">{`
+      {/* Фильтр (без onChange в серверном компоненте) */}
+      <div className="filter">
+        <label htmlFor="city-select">Город:</label>
+        <select id="city-select" name="city" defaultValue={city} className="select">
+          <option value="">Все города</option>
+          {cities.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* JS только для смены города */}
+      <Script id="city-filter-change">{`
         (function(){
           var sel = document.getElementById('city-select');
           if(!sel) return;
-          sel.addEventListener('change', function(){
+          sel.addEventListener('change', function(e){
+            e.stopPropagation(); // на всякий случай — чтобы клики не всплывали к карточкам
             var url = new URL(window.location.href);
             var v = sel.value;
             if (v) url.searchParams.set('city', v);
             else url.searchParams.delete('city');
             window.location.href = url.toString();
-          });
+          }, { capture: true });
         })();
       `}</Script>
 
-      {/* 6 плиток в ряд на xl, 3 на md, 2 на sm, 1 на мобиле */}
-      <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+      {/* Сетка карточек: 1/2/3/6 колонок */}
+      <div className="grid">
         {items.map((it) => {
           const href = `/p/${encodeURIComponent(it.external_id)}`;
-          const line1 = [it.city, it.address].filter(Boolean).join(", "); // Город, адрес (жирная, ссылкой)
+          const title = [it.city, it.address].filter(Boolean).join(", ") || it.title || "Без адреса";
           const area = fmtArea(it.available_area ?? it.total_area);
           const line2 = [it.type ? `Тип: ${it.type}` : null, area ? `Площадь: ${area}` : null]
-            .filter(Boolean)
-            .join(" · "); // тип, площадь
-          const line3 = buildPrices(it); // цены
+            .filter(Boolean).join(" · ");
+          const prices = buildPrices(it);
 
           return (
-            <article
-              key={it.external_id}
-              className="group border rounded-2xl overflow-hidden bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow"
-            >
-              {/* фото */}
-              {order.includes("photo") && (
-                <Link href={href} className="block relative aspect-[4/3] bg-neutral-100">
-                  {it.cover_url ? (
-                    <Image
-                      src={it.cover_url}
-                      alt={line1 || it.title || "Объект"}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 16vw"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="w-full h-full" />
-                  )}
-                </Link>
+            <article key={it.external_id} className="card">
+              {/* изображение без клика, чтобы ничего не перекрывало фильтр */}
+              {it.cover_url ? (
+                <img src={it.cover_url} alt={title} className="img" />
+              ) : (
+                <div className="img" />
               )}
 
-              {/* текстовый блок */}
-              <div className="px-3 py-3 text-[16px] leading-snug">
-                {/* 1-я строка: Город, адрес (жирная, ссылкой, одной строкой) */}
-                <Link
-                  href={href}
-                  className="font-semibold hover:underline underline-offset-4 block truncate"
-                  title={line1}
-                >
-                  {line1 || it.title || "Без адреса"}
-                </Link>
+              <div className="body">
+                {/* 1-я строка: Город, адрес — жирная, ссылкой */}
+                <a href={href} className="title" title={title}>{title}</a>
 
                 {/* 2-я строка: тип, площадь */}
-                {(line2 && (order.includes("type") || order.includes("area"))) && (
-                  <div className="mt-1 text-[16px] text-neutral-600 dark:text-neutral-300 truncate">
-                    {line2}
-                  </div>
-                )}
+                {line2 && <div className="line">{line2}</div>}
 
-                {/* 3-я строка: цены */}
-                {line3 && order.includes("prices") && (
-                  <div className="mt-1 text-[16px] text-neutral-800 dark:text-neutral-100 truncate">
-                    {line3}
-                  </div>
-                )}
+                {/* 3-я строка: цены (только заполненные диапазоны) */}
+                {prices && <div className="line line-strong">{prices}</div>}
 
                 {/* CTA */}
-                <div className="mt-2">
-                  <Link
-                    href={href}
-                    className="text-blue-600 hover:text-blue-700 hover:underline"
-                  >
-                    Подробнее →
-                  </Link>
-                </div>
+                <a href={href} className="more">Подробнее →</a>
               </div>
             </article>
           );
@@ -153,7 +120,7 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
       </div>
 
       {items.length === 0 && (
-        <div className="text-base text-neutral-500 mt-6">Нет объектов по выбранному фильтру.</div>
+        <div className="empty">Нет объектов по выбранному фильтру.</div>
       )}
     </main>
   );
