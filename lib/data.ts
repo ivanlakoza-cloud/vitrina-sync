@@ -106,3 +106,48 @@ export function firstPhotoPath(photos: any[]): string | null {
   const sorted = visible.sort((a: any, b: any) => (a?.sort_order ?? 9999) - (b?.sort_order ?? 9999))
   return sorted[0]?.storage_path ?? null
 }
+const CMS = process.env.NEXT_PUBLIC_CMS_URL ?? '';
+
+export function assetUrl(id?: string, w = 640, h = 360) {
+  if (!id) return null;
+  // Directus трансформы: fit=cover, webp, q=80
+  const qs = new URLSearchParams({
+    width: String(w),
+    height: String(h),
+    fit: 'cover',
+    format: 'webp',
+    quality: '80',
+  }).toString();
+
+  return `${CMS}/assets/${id}?${qs}`;
+}
+
+/**
+ * Достаём id файла из объекта property, независимо от того,
+ * как он к нам пришёл (photos[0].file, first_photo_id и т.п.)
+ */
+export function pickPhotoId(p: any): string | undefined {
+  return (
+    p?.photo_id ||
+    p?.photo ||
+    p?.first_photo_id ||
+    p?.photos?.[0]?.file ||            // если хранится ссылка на directus_files.id
+    p?.photos?.[0]?.directus_file_id ||// если поле так названо
+    undefined
+  );
+}
+
+/** Формат цен одной строкой */
+export function priceLines(p: any): string[] {
+  const items: Array<[string, number | null | undefined]> = [
+    ['от 20', p?.p20],
+    ['от 50', p?.p50],
+    ['от 100', p?.p100],
+    ['от 400', p?.p400],
+    ['от 700', p?.p700],
+    ['от 1500', p?.p1500],
+  ];
+  return items
+    .filter(([, v]) => v != null)
+    .map(([label, v]) => `${label}: ${Number(v).toLocaleString('ru-RU')} RUB/м²`);
+}
