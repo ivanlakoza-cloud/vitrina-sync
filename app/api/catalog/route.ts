@@ -78,7 +78,7 @@ export async function GET(request: Request) {
 
   // Обрабатываем ссылки на изображения
   const updatedData = await Promise.all(
-    data.map(async (item) => {
+    data.map(async (item: Row) => {  // Явное указание типа для 'item'
       const coverUrl = await buildCoverUrl(supabase, item.external_id, item.cover_storage_path);
       return { ...item, cover_url: coverUrl };
     })
