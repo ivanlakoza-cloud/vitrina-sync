@@ -1,106 +1,79 @@
+// app/page.tsx
 import Link from "next/link";
+import Image from "next/image";
 import { headers } from "next/headers";
-import CityFilter from "@/components/CityFilter";
 
 export const dynamic = "force-dynamic";
 
-type Property = {
-  external_id: string;
-  title: string | null;
-  address: string | null;
-  city: string | null;
-  cover_storage_path: string | null;
-  cover_ext_url: string | null;
-  updated_at: string | null;
-  tip_pomescheniya?: string | null;
-  etazh?: string | number | null;
-  price_band?: string | null;
-};
-
 function getBaseUrl(): string {
   const h = headers();
-  // prefer configured site url, fallback to headers
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL;
-  if (fromEnv && /^https?:\/\//i.test(fromEnv)) return fromEnv.replace(/\/$/, "");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost";
-  return `${proto}://${host}`.replace(/\/$/, "");
+  const proto = h.get("x-forwarded-proto") || "https";
+  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
 }
 
-function coverUrlOf(p: Property): string | null {
-  if (p.cover_storage_path) {
-    const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-    const path = p.cover_storage_path.replace(/^\/?photos\//, "");
-    return `${base}/storage/v1/object/public/photos/${path}`;
-  }
-  return p.cover_ext_url || null;
-}
-
-function cls(...parts: (string | false | null | undefined)[]) {
-  return parts.filter(Boolean).join(" ");
+async function fetchCatalog(city: string) {
+  const base = getBaseUrl();
+  const resp = await fetch(`${base}/api/catalog?city=${encodeURIComponent(city)}`, { cache: "no-store" });
+  if (!resp.ok) throw new Error("Catalog API error");
+  return resp.json();
 }
 
 export default async function Page({ searchParams }: { searchParams: { city?: string } }) {
-  const city = searchParams?.city ?? "";
-  const base = getBaseUrl();
-  const url = new URL("/api/catalog", base);
-  if (city) url.searchParams.set("city", city);
-
-  const res = await fetch(url.toString(), { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Catalog API ${res.status}`);
-  }
-  const data = await res.json();
-
-  const items: Property[] = Array.isArray(data) ? data : (data?.items ?? []);
-  const cities: string[] = Array.isArray(data) ? Array.from(new Set(items.map(i => i.city).filter(Boolean) as string[])) : (data?.cities ?? []);
+  const city = (searchParams?.city || "").trim();
+  const data = await fetchCatalog(city);
+  const items = (data?.items || []) as any[];
+  const cities = (data?.cities || []) as string[];
 
   return (
-    <main className="mx-auto max-w-7xl p-4">
-      {/* Фильтр */}
+    <main className="p-4">
       <div className="mb-4">
-        <CityFilter cities={cities} selected={city} />
+        <form action="/" method="get">
+          <label htmlFor="city" className="mr-2">Город:</label>
+          <select
+            id="city"
+            name="city"
+            defaultValue={city}
+            onChange={(e) => { if (typeof window !== "undefined") { const v = e.currentTarget.value; const url = v ? `/?city=${encodeURIComponent(v)}` : "/"; window.location.href = url; } }}
+          >
+            <option value="">Все города</option>
+            {cities.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </form>
       </div>
 
-      {/* Сетка карточек */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid" style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:"16px"}}>
         {items.map((p) => {
-          const cover = coverUrlOf(p);
+          const caption = [p.city, p.address].filter(Boolean).join(", ");
           const href = `/p/${p.external_id}`;
-          const caption = `${p.city ?? "—"}${p.address ? ", " + p.address : ""}`;
 
           return (
-            <div key={p.external_id} className="rounded-xl border bg-white shadow-sm">
-              <Link href={href} className="block">
-                <div className="aspect-[4/3] w-full overflow-hidden rounded-t-xl bg-gray-100">
-                  {cover ? (
-                    // используем обычный img, чтобы не настраивать домены next/image
-                    <img
-                      src={cover}
-                      alt={p.title ?? caption}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-gray-400">
-                      Фото скоро будет
-                    </div>
-                  )}
-                </div>
+            <div key={p.external_id} className="border rounded-lg p-2">
+              <Link href={href} aria-label={caption}>
+                <Image
+                  src={p.coverUrl || "/no-photo.jpg"}
+                  alt={caption || "Фото"}
+                  width={600}
+                  height={400}
+                  style={{ width: "100%", height: 180, objectFit: "cover" }}
+                />
               </Link>
 
-              <div className="space-y-2 p-3">
-                <Link href={href} className="block font-medium leading-tight hover:underline">
-                  {caption}
+              <div className="mt-2">
+                <Link className="text-blue-700 underline" href={href}>
+                  {caption || "—"}
                 </Link>
 
-                {(p.tip_pomescheniya || p.etazh || p.price_band) && (
-                  <div className="text-sm text-gray-600">
+                {/* Доп. инфо, если есть */}
+                {(p.tip_pomescheniya || p.etazh !== null || (p.price_min !== null && p.price_max !== null)) && (
+                  <div style={{fontSize:14, color:"#555", marginTop:4}}>
                     {p.tip_pomescheniya && <span>{p.tip_pomescheniya}</span>}
-                    {p.tip_pomescheniya && p.etazh ? <span> · </span> : null}
-                    {p.etazh != null && p.etazh !== "" && <span>Этаж: {p.etazh}</span>}
-                    {(p.tip_pomescheniya || p.etazh) && p.price_band ? <span> · </span> : null}
-                    {p.price_band && <span>{p.price_band}</span>}
+                    {p.etazh !== null && <span>{p.tip_pomescheniya ? " • " : ""}Этаж: {p.etazh}</span>}
+                    {(p.price_min !== null && p.price_max !== null) && (
+                      <span>{(p.tip_pomescheniya || p.etazh !== null) ? " • " : ""}Цена: {p.price_min}–{p.price_max} ₽/м²</span>
+                    )}
                   </div>
                 )}
               </div>
