@@ -1,78 +1,45 @@
-
-import Link from "next/link";
-import { getProperty, getPropertyPhotos } from "@/lib/data";
+// app/p/[external_id]/page.tsx
+import { getProperty } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page({
-  params,
-}: {
-  params: { external_id: string };
-}) {
-  const id = decodeURIComponent(params.external_id);
+export default async function PropertyPage({ params }: { params: { external_id: string } }) {
+  const id = params.external_id;
   const p = await getProperty(id);
   if (!p) {
-    return <main className="p-6">Объект не найден</main>;
+    return (
+      <main style={{ padding: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700 }}>Объект не найден</h1>
+      </main>
+    );
   }
-  const photos = await getPropertyPhotos(id);
 
   return (
-    <main className="p-6 max-w-5xl mx-auto">
-      <Link href="/" className="text-indigo-600 underline">
-        ← Назад
-      </Link>
+    <main style={{ padding: 24, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
+      <section>
+        <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
+          {p.title ?? p.address ?? p.external_id}
+        </div>
+        <div style={{ opacity: 0.7, marginBottom: 16 }}>{[p.city, p.address].filter(Boolean).join(", ")}</div>
 
-      <h1 className="text-2xl font-semibold mt-4">
-        {p.title ?? p.address ?? p.external_id}
-      </h1>
-      <div className="text-gray-600 mt-1">
-        {[p.city, p.address].filter(Boolean).join(", ")}
-      </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+          {(p.gallery?.length ? p.gallery : (p.coverUrl ? [p.coverUrl] : [])).map((src: string, i: number) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} src={src} alt={`photo_${i}`} style={{ width: "100%", height: 180, objectFit: "cover", borderRadius: 8 }} />
+          ))}
+        </div>
+      </section>
 
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="rounded-xl overflow-hidden border">
-          <div className="relative w-full h-64 bg-gray-100">
-            {p.coverUrl ? (
-              <img
-                src={p.coverUrl}
-                alt={p.title ?? p.address ?? p.external_id}
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            ) : null}
+      <aside>
+        <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 16 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Информация</div>
+          <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+            <div><b>ID:</b> {p.external_id}</div>
+            {p.city ? <div><b>Город:</b> {p.city}</div> : null}
+            {p.address ? <div><b>Адрес:</b> {p.address}</div> : null}
           </div>
         </div>
-
-        <div className="space-y-4">
-          <div className="rounded-xl border p-4">
-            <div className="text-gray-600">Адрес</div>
-            <div className="text-lg">{p.address ?? "—"}</div>
-          </div>
-          <div className="rounded-xl border p-4">
-            <div className="text-gray-600">Город</div>
-            <div className="text-lg">{p.city ?? "—"}</div>
-          </div>
-        </div>
-      </div>
-
-      {photos.length > 1 ? (
-        <>
-          <h2 className="text-xl font-semibold mt-10 mb-4">Фотографии</h2>
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-            {photos.map((u, i) => (
-              <div key={u} className="rounded-xl overflow-hidden border">
-                <div className="relative w-full h-36 bg-gray-100">
-                  <img
-                    src={u}
-                    alt={`Фото ${i + 1}`}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : null}
+      </aside>
     </main>
   );
 }

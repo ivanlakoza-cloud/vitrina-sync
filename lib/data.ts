@@ -1,12 +1,8 @@
+// lib/data.ts
+// Safe Supabase fetchers + cover URL resolution.
+// Uses REST for table reads and Storage REST for listing photos (anon policy required).
 
-/* lib/data.ts (v2)
- * Упрощённый и более надёжный источник данных.
- * - Больше не запрашиваем несуществующие поля.
- * - Обложка: сначала ищем в Storage (photos/<external_id>/...), затем cover_storage_path, в конце cover_ext_url.
- * - Запросы без агрессивных order-параметров.
- */
-
-export type PropertyRow = {
+type Row = {
   external_id: string;
   title: string | null;
   address: string | null;
@@ -16,194 +12,139 @@ export type PropertyRow = {
   updated_at: string | null;
 };
 
-type CatalogResult = {
-  items: (PropertyRow & { coverUrl: string | null })[];
-  cities: string[];
-};
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SB_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-/* ========= ENV ========= */
-
-function getEnv() {
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ??
-    process.env.SUPABASE_URL ??
-    "";
-  const anonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    process.env.SUPABASE_ANON_KEY ??
-    "";
-
-  if (!url) throw new Error("SUPABASE_URL is not set");
-  if (!anonKey) throw new Error("SUPABASE_ANON_KEY is not set");
-
-  return { url: url.replace(/\/+$/, ""), anonKey };
-}
-
-/* ========= helpers ========= */
-
-function enc(p: string) {
-  return p
-    .replace(/^\/+/, "")
-    .split("/")
-    .map(encodeURIComponent)
-    .join("/");
-}
-
-async function supaGET(path: string, params: Record<string, string> = {}) {
-  const { url, anonKey } = getEnv();
-  const u = new URL(url + path);
-  u.searchParams.set("apikey", anonKey);
-  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const r = await fetch(u.toString(), { cache: "no-store" });
-  if (!r.ok) {
-    let msg = "";
-    try { msg = await r.text(); } catch {}
-    throw new Error(`HTTP ${r.status} for ${u.toString()} :: ${msg}`);
+function q(obj: Record<string, string | number | undefined>) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) continue;
+    p.set(k, String(v));
   }
-  return r.json();
+  return p.toString();
 }
 
-function publicUrlFromStoragePath(path: string | null) {
-  if (!path) return null;
-  const { url } = getEnv();
-  return `${url}/storage/v1/object/public/${enc(path)}`;
+function publicUrlForStoragePath(path: string): string {
+  // path like "id53/img_abc.jpg"
+  const segments = path.split('/').map(encodeURIComponent).join('%2F');
+  return `${SB_URL}/storage/v1/object/public/photos/${segments}`;
 }
 
-async function firstFromBucket(externalId: string) {
-  const { url, anonKey } = getEnv();
-  const listUrl = `${url}/storage/v1/object/list/photos`;
+async function storageFirstKeyFor(id: string): Promise<string | null> {
+  // POST /storage/v1/object/list/:bucket
+  const url = `${SB_URL}/storage/v1/object/list/photos`;
   const body = {
-    prefix: `${externalId.replace(/^\/+/, "").replace(/\/+$/, "")}/`,
+    prefix: `${id.replace(/^\/+|\/+$/g, "")}/`,
     limit: 1,
     offset: 0,
-    sortBy: { column: "name", order: "asc" as const },
+    sortBy: { column: "name", order: "asc" },
   };
-  try {
-    const r = await fetch(listUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-      },
-      cache: "no-store",
-      body: JSON.stringify(body),
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SB_ANON,
+      "Authorization": `Bearer ${SB_ANON}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!r.ok) return null;
+  const arr = await r.json();
+  if (Array.isArray(arr) && arr.length && arr[0]?.name) {
+    return String(arr[0].name);
+  }
+  return null;
+}
+
+async function resolveCoverUrl(row: Row): Promise<string | null> {
+  // 1) First photo from Storage (photos/<id>/...) if exists
+  const first = await storageFirstKeyFor(row.external_id);
+  if (first) return publicUrlForStoragePath(first);
+
+  // 2) cover_storage_path as public URL
+  if (row.cover_storage_path) return publicUrlForStoragePath(row.cover_storage_path);
+
+  // 3) External URL from Yandex Disk (may be 410, but last fallback)
+  if (row.cover_ext_url) return row.cover_ext_url;
+
+  return null;
+}
+
+export async function getCatalog(opts: { city?: string } = {}) {
+  const select =
+    "external_id,title,address,city,cover_storage_path,cover_ext_url,updated_at";
+  let url = `${SB_URL}/rest/v1/view_property_with_cover?` + q({
+    select,
+    order: "updated_at.desc.nullslast",
+  });
+
+  if (opts.city) {
+    url += `&city=eq.${encodeURIComponent(opts.city)}`;
+  }
+
+  const r = await fetch(url, {
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${SB_ANON}` },
+    cache: "no-store",
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`HTTP ${r.status} for ${url} :: ${text}`);
+  }
+  const rows: Row[] = await r.json();
+
+  const out = [];
+  for (const row of rows) {
+    const coverUrl = await resolveCoverUrl(row);
+    out.push({
+      ...row,
+      coverUrl,
     });
-    if (!r.ok) return null;
-    const arr: { name?: string }[] = await r.json();
-    if (!arr?.length || !arr[0]?.name) return null;
-    return `${url}/storage/v1/object/public/photos/${enc(arr[0].name!)}`;
-  } catch {
-    return null;
   }
+  return out;
 }
 
-async function chooseCover(p: PropertyRow): Promise<string | null> {
-  // 1) Пробуем bucket (самый надёжный источник)
-  if (p.external_id) {
-    const fromBucket = await firstFromBucket(p.external_id);
-    if (fromBucket) return fromBucket;
-  }
-  // 2) Явный путь в Storage
-  const fromPath = publicUrlFromStoragePath(p.cover_storage_path);
-  if (fromPath) return fromPath;
-  // 3) Внешняя ссылка как запасной вариант
-  return p.cover_ext_url ?? null;
-}
+export async function getProperty(external_id: string) {
+  const select = "*";
+  const url =
+    `${SB_URL}/rest/v1/view_property_with_cover?` +
+    q({ select, external_id: `eq.${external_id}`, limit: 1 });
+  const r = await fetch(url, {
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${SB_ANON}` },
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  const arr: Row[] = await r.json();
+  const row = arr[0] || null;
+  if (!row) return null;
 
-/* ========= API ========= */
-
-export async function getCatalog(opts: { city?: string } = {}): Promise<CatalogResult> {
-  const select = [
-    "external_id",
-    "title",
-    "address",
-    "city",
-    "cover_storage_path",
-    "cover_ext_url",
-    "updated_at",
-  ].join(",");
-
-  const params: Record<string, string> = { select };
-  if (opts.city) params["city"] = `eq.${opts.city}`;
-
-  const rows: PropertyRow[] = await supaGET("/rest/v1/view_property_with_cover", params);
-
-  // Параллельно подберём обложки (ограничим конкурентность)
-  const out: (PropertyRow & { coverUrl: string | null })[] = Array(rows.length);
-  let i = 0;
-  const workers = Math.min(6, rows.length);
-  async function worker() {
-    while (i < rows.length) {
-      const idx = i++;
-      const row = rows[idx];
-      const coverUrl = await chooseCover(row);
-      out[idx] = { ...row, coverUrl };
+  // Gallery: list up to 24 photos under the folder
+  const listUrl = `${SB_URL}/storage/v1/object/list/photos`;
+  const lr = await fetch(listUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SB_ANON,
+      Authorization: `Bearer ${SB_ANON}`,
+    },
+    body: JSON.stringify({
+      prefix: `${external_id}/`,
+      limit: 24,
+      offset: 0,
+      sortBy: { column: "name", order: "asc" },
+    }),
+    cache: "no-store",
+  });
+  const gallery: string[] = [];
+  if (lr.ok) {
+    const items = await lr.json();
+    if (Array.isArray(items)) {
+      for (const it of items) {
+        if (it?.name) gallery.push(publicUrlForStoragePath(it.name));
+      }
     }
   }
-  await Promise.all(Array.from({ length: workers }, worker));
 
-  // Города
-  let cities: string[] = [];
-  try {
-    const facets: { city_name: string }[] = await supaGET("/rest/v1/view_facets_city", {
-      select: "city_name",
-      order: "count.desc",
-    });
-    cities = facets.map((f) => f.city_name).filter(Boolean);
-  } catch {}
-
-  return { items: out.filter(Boolean), cities };
-}
-
-export async function getProperty(externalId: string) {
-  const select = [
-    "external_id",
-    "title",
-    "address",
-    "city",
-    "cover_storage_path",
-    "cover_ext_url",
-    "updated_at",
-  ].join(",");
-  const rows: PropertyRow[] = await supaGET("/rest/v1/view_property_with_cover", {
-    select,
-    external_id: `eq.${externalId}`,
-    limit: "1",
-  });
-  const row = rows[0];
-  if (!row) return null;
-  const coverUrl = await chooseCover(row);
-  return { ...row, coverUrl };
-}
-
-export async function getPropertyPhotos(externalId: string): Promise<string[]> {
-  const { url, anonKey } = getEnv();
-  const listUrl = `${url}/storage/v1/object/list/photos`;
-  const body = {
-    prefix: `${externalId.replace(/^\/+/, "").replace(/\/+$/, "")}/`,
-    limit: 100,
-    offset: 0,
-    sortBy: { column: "name", order: "asc" as const },
-  };
-  try {
-    const r = await fetch(listUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-      },
-      cache: "no-store",
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) return [];
-    const arr: { name?: string }[] = await r.json();
-    return arr
-      .map((o) => o.name)
-      .filter((n): n is string => !!n)
-      .map((name) => `${url}/storage/v1/object/public/photos/${enc(name)}`);
-  } catch {
-    return [];
-  }
+  const coverUrl = await resolveCoverUrl(row);
+  return { ...row, coverUrl, gallery };
 }
