@@ -6,7 +6,7 @@ type Row = {
   external_id: string;
   title: string | null;
   address: string | null;
-  city_name: string | null; // Using city_name field
+  city_name: string | null; // Using city_name field from the cities table
   cover_storage_path: string | null;
   cover_ext_url: string | null;
   updated_at: string | null;
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
 
   if (city) {
     console.log("Filtering by city_name:", city);  // Log filtering action
-    query = query.filter('city_name', 'eq', city);  // Filtering by city_name
+    query = query.filter('city_name', 'eq', city);  // Filtering by city_name field from the cities table
   }
 
   try {
