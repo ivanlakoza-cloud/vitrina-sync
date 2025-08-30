@@ -1,34 +1,30 @@
-'use client';
+"use client";
 
-import React from 'react';
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback } from "react";
 
-type Props = {
-  currentCity: string;
-  options: string[];
-};
+type Props = { cities: string[] };
 
-/**
- * Автоприменяемый фильтр по городу.
- * Клиентский компонент: при выборе значения сразу сабмитит форму (GET).
- */
-export default function CityFilter({ currentCity, options }: Props) {
+export default function CityFilter({ cities }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const selected = params.get("city") || "";
+
+  const onChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const city = e.target.value;
+    const next = new URLSearchParams(params.toString());
+    if (city) next.set("city", city); else next.delete("city");
+    router.push(`${pathname}?${next.toString()}`);
+  }, [params, pathname, router]);
+
   return (
-    <form action="/" method="get" className="mb-4 flex items-center gap-2">
-      <label htmlFor="city">Город:</label>
-      <select
-        id="city"
-        name="city"
-        defaultValue={currentCity}
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className="border rounded px-2 py-1"
-      >
+    <div className="mb-6">
+      <label className="mr-2">Город:</label>
+      <select className="border rounded px-2 py-1" value={selected} onChange={onChange}>
         <option value="">Все города</option>
-        {options.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
+        {cities.map((c) => <option key={c} value={c}>{c}</option>)}
       </select>
-    </form>
+    </div>
   );
 }
