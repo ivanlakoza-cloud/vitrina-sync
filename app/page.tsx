@@ -1,7 +1,4 @@
 // app/page.tsx
-// Главная: серверный рендер без кэша, рабочий фильтр, фото из Supabase Storage.
-// Ничего из next/image не используем — обычный <img>, чтобы не трогать next.config.js.
-
 export const dynamic = "force-dynamic";
 
 type Row = {
@@ -17,7 +14,6 @@ type Row = {
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// — REST к вью (только нужные поля, без "type/area" которых нет в вью)
 async function fetchCatalog(): Promise<Row[]> {
   const url =
     `${SUPABASE_URL}/rest/v1/view_property_with_cover` +
@@ -25,14 +21,9 @@ async function fetchCatalog(): Promise<Row[]> {
     `&order=updated_at.desc.nullslast`;
 
   const r = await fetch(url, {
-    headers: {
-      apikey: ANON,
-      Authorization: `Bearer ${ANON}`,
-    },
-    // важное: SSR не должно кэшироваться
+    headers: { apikey: ANON, Authorization: `Bearer ${ANON}` },
     cache: "no-store",
   });
-
   if (!r.ok) {
     const t = await r.text().catch(() => "");
     throw new Error(`REST ${r.status}: ${t}`);
@@ -40,7 +31,6 @@ async function fetchCatalog(): Promise<Row[]> {
   return (await r.json()) as Row[];
 }
 
-// — Список ключей первого фото для external_id через Storage REST
 async function listFirstPhotoKey(extId: string): Promise<string | null> {
   const url = `${SUPABASE_URL}/storage/v1/object/list/photos`;
   const body = {
@@ -62,11 +52,9 @@ async function listFirstPhotoKey(extId: string): Promise<string | null> {
   });
 
   if (!r.ok) return null;
-
   const arr = (await r.json()) as Array<{ name?: string }>;
   const name = arr?.[0]?.name;
   if (!name) return null;
-  // Полный ключ внутри бакета (префикс + имя)
   return `${body.prefix}${name}`.replace(/\/{2,}/g, "/");
 }
 
@@ -76,14 +64,8 @@ function publicStorageUrl(objectKey: string) {
   )}`;
 }
 
-// — Разруливаем обложку:
-// 1) cover_storage_path → public URL
-// 2) иначе пытаемся найти первый файл в photos/<external_id>/
-// 3) если ничего — пробуем cover_ext_url (может 410, но как фолбэк)
 async function resolveCover(p: Row): Promise<string | null> {
-  if (p.cover_storage_path) {
-    return publicStorageUrl(p.cover_storage_path);
-  }
+  if (p.cover_storage_path) return publicStorageUrl(p.cover_storage_path);
   const first = await listFirstPhotoKey(p.external_id);
   if (first) return publicStorageUrl(first);
   return p.cover_ext_url || null;
@@ -94,15 +76,12 @@ export default async function Page({
 }: {
   searchParams: { city?: string };
 }) {
-  // 1) Тянем весь каталог на сервере (до ~неск сотен строк ок)
   const all = await fetchCatalog();
 
-  // 2) Опции городов из всех записей
   const citySet = new Set<string>();
   for (const r of all) if (r.city) citySet.add(String(r.city));
   const cityOptions = Array.from(citySet).sort((a, b) => a.localeCompare(b, "ru"));
 
-  // 3) Фильтр по query ?city=
   const currentCity = (searchParams?.city || "").trim();
   const items = currentCity
     ? all.filter(
@@ -110,19 +89,14 @@ export default async function Page({
       )
     : all;
 
-  // 4) Для карточек достаём фото (Storage → public URL)
   const withCovers = await Promise.all(
-    items.map(async (p) => ({
-      ...p,
-      coverUrl: await resolveCover(p),
-    }))
+    items.map(async (p) => ({ ...p, coverUrl: await resolveCover(p) }))
   );
 
   return (
     <main className="p-6">
       <h1 className="text-2xl font-bold mb-4">Каталог</h1>
 
-      {/* Фильтр (GET), без JS — страница перерендерится на сервере */}
       <form action="/" method="get" className="mb-6 flex items-center gap-2">
         <label htmlFor="city">Город:</label>
         <select
@@ -143,7 +117,6 @@ export default async function Page({
         </button>
       </form>
 
-      {/* Сетка карточек: адаптивная, без «растянутых пустот» */}
       <div
         style={{
           display: "grid",
