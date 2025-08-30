@@ -4,25 +4,16 @@ import { getCatalog } from "../lib/data";
 
 type Search = { city?: string };
 
-export const revalidate = 300; // кэш до 5 минут ок
+export const revalidate = 300; // cache 5 minutes
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Search;
-}) {
+export default async function Page({ searchParams }: { searchParams: Search }) {
   const currentCity = (searchParams?.city ?? "").trim();
-
-  // Универсальная форма: { items, cities, ui }
   const { items, cities } = await getCatalog({ city: currentCity });
 
   return (
     <main className="px-6 py-6">
-      {/* Фильтр */}
       <form action="/" method="get" className="flex items-center gap-3">
-        <label htmlFor="city" className="text-lg">
-          Город:
-        </label>
+        <label htmlFor="city" className="text-lg">Город:</label>
         <select
           id="city"
           name="city"
@@ -31,9 +22,7 @@ export default async function Page({
         >
           <option value="">Все города</option>
           {cities.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+            <option key={c} value={c}>{c}</option>
           ))}
         </select>
         <button
@@ -44,33 +33,20 @@ export default async function Page({
         </button>
       </form>
 
-      {/* Отступ под фильтром (возвращён) */}
       <div className="h-6" />
 
-      {/* Сетка карточек: 6 / 3 / 2 / 1 */}
       {items.length === 0 ? (
-        <p className="text-lg text-gray-500">
-          Нет объектов по выбранному фильтру.
-        </p>
+        <p className="text-lg text-gray-500">Нет объектов по выбранному фильтру.</p>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           {items.map((p) => {
             const href = `/p/${encodeURIComponent(p.external_id)}`;
-
-            // Строки карточки
-            const line1 =
-              [p.city, p.address].filter(Boolean).join(", ") ||
-              p.title ||
-              p.external_id;
-
+            const line1 = [p.city, p.address].filter(Boolean).join(", ") || p.title || p.external_id;
             const line2 = [
               p.type ? `Тип: ${p.type}` : "",
               p.available_area ? `Доступно: ${p.available_area} м²` : "",
-            ]
-              .filter(Boolean)
-              .join(" · ");
+            ].filter(Boolean).join(" · ");
 
-            // Все цены, где есть числа (поля *_20, *_50, ...):
             const priceKeys = [
               "price_per_m2_20",
               "price_per_m2_50",
@@ -80,7 +56,7 @@ export default async function Page({
               "price_per_m2_1500",
             ] as const;
             const prices = priceKeys
-              .map((k) => p[k])
+              .map((k) => (p as any)[k])
               .filter((v) => v !== null && v !== undefined && v !== "")
               .map((v) => String(v))
               .join(" · ");
@@ -93,7 +69,6 @@ export default async function Page({
                 <Link href={href} className="block">
                   <div className="relative aspect-[4/3] w-full bg-gray-100">
                     {p.coverUrl ? (
-                      // используем <img>, чтобы не трогать next.config
                       <img
                         src={p.coverUrl}
                         alt={line1}
@@ -105,30 +80,13 @@ export default async function Page({
                 </Link>
 
                 <div className="p-4">
-                  {/* 1-я строка: Город, адрес — жирная, ссылкой */}
-                  <Link
-                    href={href}
-                    className="line-clamp-2 font-semibold text-gray-900 hover:underline"
-                  >
+                  <Link href={href} className="line-clamp-2 font-semibold text-gray-900 hover:underline">
                     {line1}
                   </Link>
-
-                  {/* 2-я строка: тип, доступная площадь */}
-                  {line2 ? (
-                    <div className="mt-1 text-sm text-gray-600">{line2}</div>
-                  ) : null}
-
-                  {/* 3-я строка: все стоимости, где есть значения — цифры */}
-                  {prices ? (
-                    <div className="mt-1 text-sm text-gray-700">{prices}</div>
-                  ) : null}
-
-                  {/* Кнопка «Подробнее» */}
+                  {line2 ? <div className="mt-1 text-sm text-gray-600">{line2}</div> : null}
+                  {prices ? <div className="mt-1 text-sm text-gray-700">{prices}</div> : null}
                   <div className="mt-3">
-                    <Link
-                      href={href}
-                      className="text-sm font-medium text-indigo-600 hover:underline"
-                    >
+                    <Link href={href} className="text-sm font-medium text-indigo-600 hover:underline">
                       Подробнее →
                     </Link>
                   </div>

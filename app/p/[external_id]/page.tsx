@@ -1,112 +1,104 @@
 // app/p/[external_id]/page.tsx
-import Image from "next/image";
 import Link from "next/link";
-import { getProperty } from "@/lib/data";
+import { getProperty } from "../../../lib/data";
+import { listPhotoKeys, toPublicUrl } from "../../../lib/photos";
 
 export const dynamic = "force-dynamic";
-
-function fmtArea(v: any): string | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(String(v).replace(",", "."));
-  return Number.isFinite(n) ? `${n} м²` : String(v);
-}
-
-function buildPrices(p: any): string | null {
-  const pairs: Array<[string, any]> = [
-    ["20", p?.price_per_m2_20],
-    ["50", p?.price_per_m2_50],
-    ["100", p?.price_per_m2_100],
-    ["400", p?.price_per_m2_400],
-    ["700", p?.price_per_m2_700],
-    ["1500", p?.price_per_m2_1500],
-  ];
-  const parts = pairs
-    .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
-    .map(([k, v]) => `${k}: ${v}`);
-  return parts.length ? parts.join(" · ") : null;
-}
 
 export default async function PropertyPage({
   params,
 }: {
   params: { external_id: string };
 }) {
-  const p = await getProperty(params.external_id);
+  const id = params.external_id;
+  const p = await getProperty(id);
 
   if (!p) {
     return (
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="p-6">
         <Link href="/" className="text-blue-600 hover:underline">
           ← Каталог
         </Link>
-        <h1 className="text-2xl font-semibold mt-4">Объект не найден</h1>
-        <p className="text-neutral-600 mt-2">
-          Проверьте корректность ссылки или вернитесь в каталог.
-        </p>
+        <h1 className="mt-2 text-xl font-semibold">Объект не найден</h1>
       </main>
     );
   }
 
-  // безопасно берём возможный этаж из разных ключей
-  const anyP = p as any;
-  const floor =
-    anyP?.floor ?? anyP?.etazh ?? anyP?.level ?? anyP?.floor_number ?? null;
+  // Соберём галерею из Storage (если есть)
+  let gallery: string[] = [];
+  try {
+    const keys = await listPhotoKeys(id);
+    gallery = keys.map((k) => toPublicUrl(k)!).filter(Boolean) as string[];
+  } catch {}
 
-  const area = fmtArea(p.available_area ?? p.total_area);
-  const prices = buildPrices(p);
+  const header = [p.city, p.address].filter(Boolean).join(", ") || p.title || p.external_id;
 
-  const title = p.title ?? p.address ?? "Объект";
-  const subtitleParts = [
-    p.city || null,
-    p.type ? `тип: ${p.type}` : null,
-    floor ? `этаж: ${floor}` : null,
-  ].filter(Boolean);
+  const priceKeys = [
+    "price_per_m2_20",
+    "price_per_m2_50",
+    "price_per_m2_100",
+    "price_per_m2_400",
+    "price_per_m2_700",
+    "price_per_m2_1500",
+  ] as const;
+  const prices = priceKeys
+    .map((k) => (p as any)[k])
+    .filter((v) => v !== null && v !== undefined && v !== "")
+    .map((v) => String(v))
+    .join(" · ");
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    <main className="p-6">
       <Link href="/" className="text-blue-600 hover:underline">
         ← Каталог
       </Link>
 
-      <h1 className="text-3xl font-semibold mt-4">{title}</h1>
-      {subtitleParts.length > 0 && (
-        <div className="text-neutral-600 mt-2 text-lg">
-          {subtitleParts.join(" • ")}
-        </div>
-      )}
-      {p.address && (
-        <div className="text-neutral-700 mt-1 text-base">{p.address}</div>
-      )}
+      <h1 className="mt-2 text-2xl font-semibold">{header}</h1>
 
-      {/* Фото обложки (если есть) */}
-      {p.cover_url && (
-        <div className="mt-6 relative w-full aspect-[16/9] rounded-2xl overflow-hidden bg-neutral-100">
-          <Image
-            src={p.cover_url}
-            alt={title}
-            fill
-            className="object-cover"
-            sizes="(max-width: 1280px) 100vw, 1280px"
-            unoptimized
+      {/* Обложка */}
+      {p.coverUrl ? (
+        <div className="mt-4 overflow-hidden rounded-2xl border">
+          <img
+            src={p.coverUrl}
+            alt={header}
+            className="h-auto w-full object-cover"
+            loading="lazy"
           />
         </div>
-      )}
+      ) : null}
 
-      {/* Краткие характеристики */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        {area && (
-          <div className="rounded-xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="text-sm text-neutral-500">Площадь</div>
-            <div className="text-lg font-semibold mt-1">{area}</div>
+      {/* Основные поля */}
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-xl border p-4">
+          <div className="text-gray-600">Тип</div>
+          <div className="text-lg">{p.type ?? "—"}</div>
+        </div>
+        <div className="rounded-xl border p-4">
+          <div className="text-gray-600">Доступная площадь</div>
+          <div className="text-lg">
+            {p.available_area ? `${p.available_area} м²` : "—"}
           </div>
-        )}
-        {prices && (
-          <div className="rounded-xl border p-4 bg-white dark:bg-neutral-900">
-            <div className="text-sm text-neutral-500">Стоимость, ₽/м²</div>
-            <div className="text-lg font-semibold mt-1">{prices}</div>
-          </div>
-        )}
+        </div>
+        <div className="rounded-xl border p-4">
+          <div className="text-gray-600">Общая площадь</div>
+          <div className="text-lg">{p.total_area ? `${p.total_area} м²` : "—"}</div>
+        </div>
+        <div className="rounded-xl border p-4">
+          <div className="text-gray-600">Стоимость</div>
+          <div className="text-lg">{prices || "—"}</div>
+        </div>
       </div>
+
+      {/* Галерея */}
+      {gallery.length ? (
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+          {gallery.map((src, i) => (
+            <div key={i} className="overflow-hidden rounded-xl border">
+              <img src={src} alt={`Фото ${i + 1}`} className="h-full w-full object-cover" loading="lazy" />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </main>
   );
 }
