@@ -1,311 +1,252 @@
-// lib/data.ts
-// Источники: Supabase REST + (опционально) Directus для UI-настроек.
-// Кэш: 5 минут для каталога и списка городов.
+/* lib/data.ts
+ * Источники данных для главной и карточки объекта.
+ * Работает через REST Supabase + Storage.
+ */
 
-export type CatalogItem = {
-  id?: number;
+export type PropertyRow = {
   external_id: string;
-  title?: string | null;
-  address?: string | null;
-  city?: string | null;
-  type?: string | null;
-  total_area?: number | null;
-  available_area?: number | null;
-
-  // обложка (сырые поля из view)
-  cover_storage_path?: string | null;
-  cover_ext_url?: string | null;
-
-  // вычисляемое поле
-  coverUrl?: string | null;
-
-  // возможные цены (если есть во view)
-  price_per_m2_20?: number | null;
-  price_per_m2_50?: number | null;
-  price_per_m2_100?: number | null;
-  price_per_m2_400?: number | null;
-  price_per_m2_700?: number | null;
-  price_per_m2_1500?: number | null;
-
-  updated_at?: string | null;
+  title: string | null;
+  address: string | null;
+  city: string | null;
+  cover_storage_path: string | null;
+  cover_ext_url: string | null;
+  updated_at: string | null;
+  // другие поля можем добавлять по мере готовности схемы
 };
 
-export type CatalogResult = {
-  items: CatalogItem[];
+type CatalogResult = {
+  items: (PropertyRow & { coverUrl: string | null })[];
   cities: string[];
-  ui: {
-    card_fields_order: string[];
-    show_city_filter: boolean;
-  };
 };
 
-const FIVE_MIN = 300;
+/* ========= ENV ========= */
 
-// ========= ENV & helpers =========
-
-function supabaseEnv() {
+function getEnv() {
   const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    (process.env.SUPABASE_URL as string) ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    process.env.SUPABASE_URL ??
     "";
-  const anon =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    (process.env.SUPABASE_ANON_KEY as string) ||
+
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.SUPABASE_ANON_KEY ??
     "";
-  return { url: url.replace(/\/+$/, ""), anon };
+
+  if (!url) throw new Error("SUPABASE_URL is not set");
+  if (!anonKey) throw new Error("SUPABASE_ANON_KEY is not set");
+
+  return { url: url.replace(/\/+$/, ""), anonKey };
 }
 
-function cmsEnv() {
-  const url =
-    process.env.NEXT_PUBLIC_DIRECTUS_URL ||
-    process.env.NEXT_PUBLIC_CMS_URL ||
-    "";
-  return { url: url.replace(/\/+$/, "") };
+/* ========= helpers ========= */
+
+// Кодирует путь для public URL Storage (поштучно по сегментам)
+function encodeStoragePath(p: string) {
+  return p
+    .replace(/^\/+/, "")
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
 }
 
-function publicStorageUrl(bucket: string, key: string) {
-  const { url } = supabaseEnv();
-  // Разрешаем слэши в key; кодируем сегменты
-  const parts = key.split("/").map(encodeURIComponent).join("/");
-  return `${url}/storage/v1/object/public/${encodeURIComponent(
-    bucket
-  )}/${parts}`;
-}
-
-async function supa<T>(
-  pathWithQuery: string,
-  init?: RequestInit,
-  revalidateSec: number = FIVE_MIN
-): Promise<T> {
-  const { url, anon } = supabaseEnv();
-  const full =
-    pathWithQuery.includes("?") && !pathWithQuery.includes("apikey=")
-      ? `${url}${pathWithQuery}&apikey=${anon}`
-      : `${url}${pathWithQuery}${
-          pathWithQuery.includes("?") ? "&" : "?"
-        }apikey=${anon}`;
-  const res = await fetch(full, {
-    ...init,
-    next: { revalidate: revalidateSec },
-    // На листинг storage нужен Authorization: Bearer <anon>
-    headers: {
-      ...(init && init.headers),
-      Authorization: `Bearer ${anon}`,
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} for ${full} :: ${text}`);
+async function supaGET(
+  path: string,
+  params: Record<string, string | undefined> = {}
+) {
+  const { url, anonKey } = getEnv();
+  const u = new URL(url + path);
+  // Для PostgREST допускаем апикей в query (удобно для edge/SSR)
+  u.searchParams.set("apikey", anonKey);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) u.searchParams.set(k, v);
   }
-  return res.json() as Promise<T>;
+  const r = await fetch(u.toString(), { cache: "no-store" });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`HTTP ${r.status} for ${u.toString()} :: ${txt}`);
+  }
+  return r.json();
 }
 
-// Вернуть первый ключ из photos/<external_id>/… (если есть)
-async function getFirstPhotoKey(external_id: string): Promise<string | null> {
+// Первый файл в photos/<external_id>/ (если политика SELECT на storage.objects разрешена)
+async function storageFirstPublicUrl(externalId: string) {
+  const { url, anonKey } = getEnv();
+
+  const listUrl = `${url}/storage/v1/object/list/photos`;
   const body = {
-    // Важно: prefix БЕЗ ведущего слэша
-    prefix: `${external_id}/`,
+    prefix: `${externalId.replace(/^\/+/, "").replace(/\/+$/, "")}/`,
     limit: 1,
     offset: 0,
     sortBy: { column: "name", order: "asc" as const },
   };
-  const { url } = supabaseEnv();
-  const res = await fetch(`${url}/storage/v1/object/list/photos`, {
+
+  const r = await fetch(listUrl, {
     method: "POST",
-    body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${supabaseEnv().anon}`,
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
     },
-    next: { revalidate: FIVE_MIN },
+    body: JSON.stringify(body),
+    cache: "no-store",
   });
-  if (!res.ok) return null;
-  const arr: Array<{ name: string }> = await res.json().catch(() => []);
-  if (!arr || !arr.length) return null;
-  // API отдаёт name без префикса, добавим сами
-  const name = arr[0]?.name || "";
-  const key =
-    name.startsWith(`${external_id}/`) ? name : `${external_id}/${name}`;
-  return key;
+
+  if (!r.ok) return null;
+
+  const arr: { name?: string }[] = await r.json();
+  if (!Array.isArray(arr) || !arr.length || !arr[0]?.name) return null;
+
+  const key = arr[0].name; // например: "id53/img_...jpg"
+  const publicUrl = `${url}/storage/v1/object/public/photos/${encodeStoragePath(
+    key
+  )}`;
+  return publicUrl;
 }
 
-function compact<T>(arr: (T | null | undefined)[]) {
-  return arr.filter(Boolean) as T[];
+function storagePublicUrlFromPath(path: string | null) {
+  if (!path) return null;
+  const { url } = getEnv();
+  const normalized = path.replace(/^\/+/, "");
+  return `${url}/storage/v1/object/public/${encodeStoragePath(normalized)}`;
 }
 
-// ========= Публичное API для страницы =========
+async function chooseCover(p: PropertyRow): Promise<string | null> {
+  // 1) Явный путь в Storage
+  const fromStorageField = storagePublicUrlFromPath(p.cover_storage_path);
+  if (fromStorageField) return fromStorageField;
 
-export async function getCatalog({
-  city = "",
-}: {
-  city?: string;
-} = {}): Promise<CatalogResult> {
-  const { url } = supabaseEnv();
-  if (!url) {
-    return {
-      items: [],
-      cities: [],
-      ui: {
-        card_fields_order: [
-          "photo",
-          "city",
-          "address",
-          "type",
-          "floor",
-          "prices",
-        ],
-        show_city_filter: true,
-      },
-    };
+  // 2) Первый файл в photos/<external_id>/
+  if (p.external_id) {
+    const fromBucket = await storageFirstPublicUrl(p.external_id);
+    if (fromBucket) return fromBucket;
   }
 
-  // 1) Тянем список объектов
-  const params = new URLSearchParams();
-  params.set(
-    "select",
-    [
-      "external_id",
-      "title",
-      "address",
-      "city",
-      "type",
-      "total_area",
-      "available_area",
-      "cover_storage_path",
-      "cover_ext_url",
-      "price_per_m2_20",
-      "price_per_m2_50",
-      "price_per_m2_100",
-      "price_per_m2_400",
-      "price_per_m2_700",
-      "price_per_m2_1500",
-      "updated_at",
-    ].join(",")
-  );
-  if (city) params.set("city", `eq.${city}`);
-  params.set("order", "updated_at.desc");
+  // 3) Внешняя ссылка как совсем крайний вариант
+  return p.cover_ext_url ?? null;
+}
 
-  const rawItems = await supa<CatalogItem[]>(
-    `/rest/v1/view_property_with_cover?${params.toString()}`
-  );
+/* ========= API ========= */
 
-  // 1a) Рассчитаем coverUrl
-  const items: CatalogItem[] = [];
-  for (const it of rawItems) {
-    let cover: string | null = null;
+export async function getCatalog(
+  opts: { city?: string } = {}
+): Promise<CatalogResult> {
+  const safeSelect = [
+    "external_id",
+    "title",
+    "address",
+    "city",
+    "cover_storage_path",
+    "cover_ext_url",
+    "updated_at",
+  ].join(",");
 
-    // a) если указан cover_storage_path — используем его
-    if (it.cover_storage_path) {
-      cover = publicStorageUrl("photos", it.cover_storage_path);
-    }
+  const params: Record<string, string> = {
+    select: safeSelect,
+    order: "updated_at.desc.nullslast",
+  };
 
-    // b) иначе — берём первый файл из photos/<id>/…
-    if (!cover && it.external_id) {
-      const key = await getFirstPhotoKey(it.external_id).catch(() => null);
-      if (key) cover = publicStorageUrl("photos", key);
-    }
-
-    // c) иначе — внешняя ссылка (если она ещё жива)
-    if (!cover && it.cover_ext_url) {
-      cover = it.cover_ext_url;
-    }
-
-    items.push({ ...it, coverUrl: cover });
+  if (opts.city) {
+    params["city"] = `eq.${opts.city}`;
   }
 
-  // 2) Список городов (из вьюхи-агрегатора, если есть)
+  const rows: PropertyRow[] = await supaGET(
+    "/rest/v1/view_property_with_cover",
+    params
+  );
+
+  // Параллельно подберём обложки (ограничим одновременность, чтобы не палить лимиты)
+  const concurrency = 6;
+  const queue: Promise<void>[] = [];
+  const out: (PropertyRow & { coverUrl: string | null })[] = [];
+  let i = 0;
+
+  async function worker() {
+    while (i < rows.length) {
+      const idx = i++;
+      const row = rows[idx];
+      const coverUrl = await chooseCover(row);
+      out[idx] = { ...row, coverUrl };
+    }
+  }
+  for (let k = 0; k < Math.min(concurrency, rows.length); k++) {
+    queue.push(worker());
+  }
+  await Promise.all(queue);
+
+  // Список городов для фильтра (если понадобится)
   let cities: string[] = [];
   try {
-    const cs = await supa<Array<{ city_name: string; count: number }>>(
-      "/rest/v1/view_facets_city?select=city_name,count&order=count.desc"
+    const facets: { city_name: string; count: number }[] = await supaGET(
+      "/rest/v1/view_facets_city",
+      { select: "city_name,count", order: "count.desc" }
     );
-    cities = compact(cs.map((x) => x.city_name)).sort((a, b) =>
-      a.localeCompare(b, "ru")
-    );
+    cities = facets.map((f) => f.city_name).filter(Boolean);
   } catch {
-    // Fallback: соберём из данных
-    const set = new Set<string>();
-    for (const it of items) if (it.city) set.add(it.city);
-    cities = Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+    // опционально — игнорим
   }
 
-  // 3) UI-конфиг из Directus (не обязателен)
-  let ui: CatalogResult["ui"] = {
-    card_fields_order: [
-      "photo",
-      "city",
-      "address",
-      "type",
-      "floor",
-      "prices",
-    ],
-    show_city_filter: true,
-  };
-  try {
-    const { url: cms } = cmsEnv();
-    if (cms) {
-      const resp = await fetch(
-        `${cms}/items/ui_home_config?limit=1&fields=card_fields_order,show_city_filter`,
-        { next: { revalidate: FIVE_MIN } }
-      );
-      if (resp.ok) {
-        const j = await resp.json().catch(() => ({} as any));
-        const row = Array.isArray(j?.data) ? j.data[0] : null;
-        const order = Array.isArray(row?.card_fields_order)
-          ? row.card_fields_order
-          : ui.card_fields_order;
-        const show = typeof row?.show_city_filter === "boolean" ? row.show_city_filter : ui.show_city_filter;
-        ui = { card_fields_order: order, show_city_filter: show };
-      }
-    }
-  } catch {
-    // молча — фоллбэк уже есть
-  }
-
-  return { items, cities, ui };
+  return { items: out, cities };
 }
 
-// Детальная: получить один объект по external_id
-export async function getProperty(external_id: string): Promise<CatalogItem | null> {
-  if (!external_id) return null;
-  const params = new URLSearchParams();
-  params.set(
-    "select",
-    [
-      "external_id",
-      "title",
-      "address",
-      "city",
-      "type",
-      "total_area",
-      "available_area",
-      "cover_storage_path",
-      "cover_ext_url",
-      "updated_at",
-      "price_per_m2_20",
-      "price_per_m2_50",
-      "price_per_m2_100",
-      "price_per_m2_400",
-      "price_per_m2_700",
-      "price_per_m2_1500",
-    ].join(",")
+export async function getProperty(externalId: string) {
+  const safeSelect = [
+    "external_id",
+    "title",
+    "address",
+    "city",
+    "cover_storage_path",
+    "cover_ext_url",
+    "updated_at",
+  ].join(",");
+
+  const rows: PropertyRow[] = await supaGET(
+    "/rest/v1/view_property_with_cover",
+    {
+      select: safeSelect,
+      "external_id": `eq.${externalId}`,
+      limit: "1",
+    }
   );
-  params.set("external_id", `eq.${external_id}`);
-  params.set("limit", "1");
 
-  const rows = await supa<CatalogItem[]>(
-    `/rest/v1/view_property_with_cover?${params.toString()}`
-  );
-  const it = rows[0];
-  if (!it) return null;
+  const row = rows[0];
+  if (!row) return null;
 
-  let cover: string | null = null;
-  if (it.cover_storage_path) cover = publicStorageUrl("photos", it.cover_storage_path);
-  if (!cover) {
-    const key = await getFirstPhotoKey(it.external_id).catch(() => null);
-    if (key) cover = publicStorageUrl("photos", key);
-  }
-  if (!cover && it.cover_ext_url) cover = it.cover_ext_url;
+  const coverUrl = await chooseCover(row);
+  return { ...row, coverUrl };
+}
 
-  return { ...it, coverUrl: cover };
+// Все фото объекта (для галереи карточки, если потребуется)
+export async function getPropertyPhotos(externalId: string): Promise<string[]> {
+  const { url, anonKey } = getEnv();
+
+  const listUrl = `${url}/storage/v1/object/list/photos`;
+  const body = {
+    prefix: `${externalId.replace(/^\/+/, "").replace(/\/+$/, "")}/`,
+    limit: 1000,
+    offset: 0,
+    sortBy: { column: "name", order: "asc" as const },
+  };
+
+  const r = await fetch(listUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!r.ok) return [];
+
+  const arr: { name?: string }[] = await r.json();
+  const { url: base } = getEnv();
+
+  return arr
+    .map((o) => o.name)
+    .filter((n): n is string => !!n)
+    .map(
+      (name) =>
+        `${base}/storage/v1/object/public/photos/${encodeStoragePath(name)}`
+    );
 }
