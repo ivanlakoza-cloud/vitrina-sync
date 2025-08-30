@@ -6,7 +6,7 @@ type Row = {
   external_id: string;
   title: string | null;
   address: string | null;
-  city: string | null;
+  city_name: string | null; // Using city_name field
   cover_storage_path: string | null;
   cover_ext_url: string | null;
   updated_at: string | null;
@@ -60,11 +60,11 @@ export async function GET(request: Request) {
   const city = url.searchParams.get('city')?.trim();
   console.log("Received city:", city);  // Log received city parameter
 
-  let query = supabase.from('properties').select('*') as any;
+  let query = supabase.from('property_full_view').select('*') as any; // Using property_full_view instead of properties
 
   if (city) {
-    console.log("Filtering by city:", city);  // Log filtering action
-    query = query.filter('city', 'eq', city); 
+    console.log("Filtering by city_name:", city);  // Log filtering action
+    query = query.filter('city_name', 'eq', city);  // Filtering by city_name
   }
 
   try {
