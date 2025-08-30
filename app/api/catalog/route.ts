@@ -1,4 +1,3 @@
-
 // app/api/catalog/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -58,25 +57,35 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const city = url.searchParams.get('city')?.trim();
+  console.log("Received city:", city);  // Log received city parameter
 
   let query = supabase.from('properties').select('*') as any;
 
   if (city) {
+    console.log("Filtering by city:", city);  // Log filtering action
     query = query.filter('city', 'eq', city); 
   }
 
-  const { data, error } = await query;
+  try {
+    const { data, error } = await query;
 
-  if (error) {
+    if (error) {
+      console.error("Error in API query:", error);  // Log query error
+      return NextResponse.error();
+    }
+
+    console.log("Data retrieved:", data);  // Log the retrieved data
+
+    const updatedData = await Promise.all(
+      data.map(async (item: Row) => {
+        const coverUrl = await buildCoverUrl(supabase, item.external_id, item.cover_storage_path);
+        return { ...item, cover_url: coverUrl };
+      })
+    );
+
+    return NextResponse.json({ items: updatedData });
+  } catch (err) {
+    console.error("Error in API processing:", err);  // Log any unexpected errors
     return NextResponse.error();
   }
-
-  const updatedData = await Promise.all(
-    data.map(async (item: Row) => {
-      const coverUrl = await buildCoverUrl(supabase, item.external_id, item.cover_storage_path);
-      return { ...item, cover_url: coverUrl };
-    })
-  );
-
-  return NextResponse.json({ items: updatedData });
 }
