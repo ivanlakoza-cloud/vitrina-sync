@@ -1,16 +1,10 @@
-// app/page.tsx
-'use client';
 
+// Компонент на фронтенде
 import { useState, useEffect } from "react";
-import Link from "next/link";  // Импортируем Link
-import Image from "next/image";
 
 async function fetchCatalog(city: string) {
-  const base = window.location.origin;
-  console.log("Fetching catalog for city:", city);
-  const resp = await fetch(`${base}/api/catalog?city=${encodeURIComponent(city)}`, { cache: "no-store" });
+  const resp = await fetch(`/api/catalog?city=${encodeURIComponent(city)}`);
   if (!resp.ok) {
-    console.error("Failed to fetch catalog", resp);
     throw new Error("Catalog API error");
   }
   return resp.json();
@@ -18,63 +12,39 @@ async function fetchCatalog(city: string) {
 
 export default function Page({ searchParams }: { searchParams: { city?: string } }) {
   const [items, setItems] = useState<any[]>([]);
-  const [cities, setCities] = useState<string[]>([]);
-  const [city, setCity] = useState<string>(searchParams?.city ?? "");
+  const [city, setCity] = useState(searchParams?.city || "");
 
   useEffect(() => {
     async function loadData() {
-      try {
-        const data = await fetchCatalog(city);
-        console.log("Received data:", data);
-        setItems(data.items || []);
-        setCities(data.cities || []);
-      } catch (err) {
-        console.error("Error loading data:", err);
-      }
+      const data = await fetchCatalog(city);
+      setItems(data.items || []);
     }
 
     loadData();
   }, [city]);
 
-  const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setCity(e.target.value);
-  };
-
   return (
-    <main className="p-4">
-      <div className="mb-4">
-        <form action="/" method="get">
-          <label htmlFor="city" className="mr-2">Город:</label>
-          <select
-            id="city"
-            name="city"
-            value={city}
-            onChange={handleCityChange}
-          >
-            <option value="">Все города</option>
-            {cities.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </form>
+    <div>
+      <div>
+        <label>Город:</label>
+        <input 
+          value={city}
+          onChange={e => setCity(e.target.value)} 
+          placeholder="Введите название города"
+        />
       </div>
-
-      <div className="grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
-        {items.map((p) => {
-          const caption = [p.city, p.address].filter(Boolean).join(", ");
-          const href = `/p/${p.external_id}`;
-
-          return (
-            <div key={p.external_id} className="border rounded-lg p-2">
-              <Link href={href} aria-label={caption}>
-                <Image src={p.cover_url} alt={caption} width={260} height={160} />
-                <h3>{p.title}</h3>
-                <p>{caption}</p>
-              </Link>
-            </div>
-          );
-        })}
+      <div className="grid">
+        {items.map(item => (
+          <div key={item.external_id}>
+            <img src={item.cover_url} alt={item.title} />
+            <h3>{item.title}</h3>
+            <p>{item.city_name}</p>
+            <p>{item.address}</p>
+            <p>{item.floor} этаж</p>
+            <p>Цена от {item.price_min} до {item.price_max}</p>
+          </div>
+        ))}
       </div>
-    </main>
+    </div>
   );
 }
