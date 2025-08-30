@@ -58,56 +58,29 @@ export async function GET(request: Request) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const url = new URL(request.url);
-  const city = url.searchParams.get("city")?.trim() || "";
-  const id = url.searchParams.get("id")?.trim() || "";
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "500", 10) || 500, 1000);
+  const city = url.searchParams.get('city')?.trim(); // получаем город из параметра URL
 
-  let query = supabase
-    .from("view_property_with_cover")
-    .select(
-      "external_id,title,address,city,tip_pomescheniya,etazh,cover_storage_path,cover_ext_url,price_per_m2_20,price_per_m2_50,price_per_m2_100,price_per_m2_400,price_per_m2_700,price_per_m2_1500,updated_at"
-    )
-    .order("updated_at", { ascending: false, nullsFirst: false })
-    .limit(limit);
+  // Формируем запрос с фильтрацией по городу, если он есть
+  let query = supabase.from<Row>('properties').select('*');
 
-  if (city) query = query.eq("city", city);
-  if (id) query = query.eq("external_id", id);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (city) {
+    query = query.filter('city', 'eq', city); // фильтруем по городу
   }
 
-  const items = await Promise.all(
-    (rows as Row[]).map(async (r) => {
-      const coverUrl = await buildCoverUrl(supabase, r.external_id, r.cover_storage_path);
+  // Выполняем запрос и получаем данные
+  const { data, error } = await query;
 
-      // derive price range from available numeric columns
-      const prices = [
-        r.price_per_m2_20, r.price_per_m2_50, r.price_per_m2_100,
-        r.price_per_m2_400, r.price_per_m2_700, r.price_per_m2_1500
-      ].filter((v): v is number => typeof v === "number");
+  if (error) {
+    return NextResponse.error();
+  }
 
-      const price_min = prices.length ? Math.min(...prices) : null;
-      const price_max = prices.length ? Math.max(...prices) : null;
-
-      return {
-        external_id: r.external_id,
-        coverUrl,
-        title: r.title,
-        address: r.address,
-        city: r.city,
-        tip_pomescheniya: r.tip_pomescheniya ?? null,
-        etazh: r.etazh ?? null,
-        price_min,
-        price_max,
-        updated_at: r.updated_at,
-      };
+  // Обрабатываем ссылки на изображения
+  const updatedData = await Promise.all(
+    data.map(async (item) => {
+      const coverUrl = await buildCoverUrl(supabase, item.external_id, item.cover_storage_path);
+      return { ...item, cover_url: coverUrl };
     })
   );
 
-  // Also return distinct list of cities for the filter
-  const cities = Array.from(new Set((rows as Row[]).map((x) => x.city).filter(Boolean))) as string[];
-
-  return NextResponse.json({ ok: true, items, cities });
+  return NextResponse.json({ items: updatedData });
 }
