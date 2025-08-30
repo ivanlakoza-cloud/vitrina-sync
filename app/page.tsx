@@ -1,9 +1,7 @@
 // app/page.tsx
 'use client';
-
 import { useState, useEffect } from "react";
 
-// Функция для получения данных
 async function fetchCatalog(city: string) {
   const resp = await fetch(`/api/catalog?city=${encodeURIComponent(city)}`);
   if (!resp.ok) {
@@ -25,19 +23,27 @@ export default function Page({ searchParams }: { searchParams: { city?: string }
     loadData();
   }, [city]);
 
+  const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCity(e.target.value);
+  };
+
   return (
     <div>
       <div>
-        <label>Город:</label>
-        <input 
-          value={city}
-          onChange={e => setCity(e.target.value)} 
-          placeholder="Введите название города"
-        />
+        <label htmlFor="city">Город:</label>
+        <select id="city" value={city} onChange={handleCityChange}>
+          <option value="">Все города</option>
+          <option value="Москва">Москва</option>
+          <option value="Барнаул">Барнаул</option>
+          <option value="Златоуст">Златоуст</option>
+          <option value="Прокопьевск">Прокопьевск</option>
+          <option value="Шахтеров">Шахтеров</option>
+        </select>
       </div>
+
       <div className="grid">
         {items.map(item => (
-          <div key={item.external_id}>
+          <div key={item.external_id} className="property-tile">
             <img src={item.cover_url} alt={item.title} />
             <h3>{item.title}</h3>
             <p>{item.city_name}</p>
