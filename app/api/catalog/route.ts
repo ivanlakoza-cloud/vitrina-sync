@@ -2,41 +2,32 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-type Property = {
+type PropertyRow = {
   external_id: string;
   title?: string | null;
   address?: string | null;
   city_name?: string | null;
   type?: string | null;
   total_area?: number | null;
-  floor?: string | number | null;   // may or may not exist in view
-  etazh?: string | number | null;   // may or may not exist in view
-  cover_storage_path?: string | null;
-  cover_ext_url?: string | null;
+  floor?: string | number | null;
+  etazh?: string | number | null;
   [key: string]: any;
 };
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-async function buildCoverUrl(supabase: any, p: Property): Promise<string | null> {
-  if (p.cover_storage_path) {
-    const path = p.cover_storage_path.replace(/^\/?photos\//, "");
-    const { data } = supabase.storage.from("photos").getPublicUrl(path);
+async function buildCoverUrl(supabase: any, external_id: string): Promise<string | null> {
+  if (!external_id) return null;
+  const folder = `${external_id}/`;
+  const { data: files, error } = await supabase.storage.from("photos").list(folder, {
+    limit: 50,
+    sortBy: { column: "name", order: "asc" },
+  });
+  if (!error && files && files.length) {
+    const first = files.find((f: any) => !f.name.startsWith(".")) ?? files[0];
+    const { data } = supabase.storage.from("photos").getPublicUrl(`${external_id}/${first.name}`);
     return data?.publicUrl ?? null;
-  }
-  if (p.cover_ext_url) return p.cover_ext_url;
-  if (p.external_id) {
-    const folder = `${p.external_id}/`;
-    const { data: files, error } = await supabase.storage.from("photos").list(folder, {
-      limit: 50,
-      sortBy: { column: "name", order: "asc" },
-    });
-    if (!error && files && files.length) {
-      const first = files.find((f: any) => !f.name.startsWith(".")) ?? files[0];
-      const { data } = supabase.storage.from("photos").getPublicUrl(`${p.external_id}/${first.name}`);
-      return data?.publicUrl ?? null;
-    }
   }
   return null;
 }
@@ -77,12 +68,12 @@ async function fetchCities(supabase: any): Promise<string[]> {
 async function fetchProperties(
   supabase: any,
   { city, id }: { city?: string; id?: string }
-) {
-  // 1) Try property_full_view with city_name
+): Promise<PropertyRow[]> {
+  // Prefer property_full_view (richer), otherwise fallback to property_public_view
   try {
     let q = supabase
       .from("property_full_view")
-      .select("external_id,title,address,city_name,type,total_area,cover_storage_path,cover_ext_url")
+      .select("external_id,title,address,city_name,type,total_area,floor,etazh")
       .not("external_id", "is", null)
       .neq("external_id", "")
       .not("city_name", "is", null)
@@ -92,23 +83,11 @@ async function fetchProperties(
 
     const { data, error } = await q;
     if (error) throw error;
-
-    return (data || []).map((p: any) => ({
-      external_id: p.external_id,
-      title: p.title ?? "",
-      address: p.address ?? "",
-      city_name: p.city_name ?? "",
-      type: p.type ?? "",
-      total_area: p.total_area ?? null,
-      cover_storage_path: p.cover_storage_path ?? null,
-      cover_ext_url: p.cover_ext_url ?? null,
-      floor: p.floor ?? p.etazh ?? null,
-    })) as Property[];
+    return (data || []) as PropertyRow[];
   } catch (_) {
-    // 2) Fallback to property_public_view and alias fields
     let q = supabase
       .from("property_public_view")
-      .select("external_id:id,title,address,city_name:city,type,total_area,cover_storage_path,cover_ext_url")
+      .select("id,title,address,city,type,total_area")
       .not("id", "is", null)
       .not("city", "is", null)
       .neq("city", "");
@@ -118,17 +97,15 @@ async function fetchProperties(
     const { data, error } = await q;
     if (error) throw error;
 
+    // map/alias to PropertyRow shape
     return (data || []).map((p: any) => ({
-      external_id: p.external_id,
-      title: p.title ?? "",
-      address: p.address ?? "",
-      city_name: p.city_name ?? "",
-      type: p.type ?? "",
+      external_id: p.id,
+      title: p.title,
+      address: p.address,
+      city_name: p.city,
+      type: p.type,
       total_area: p.total_area ?? null,
-      cover_storage_path: p.cover_storage_path ?? null,
-      cover_ext_url: p.cover_ext_url ?? null,
-      floor: p.floor ?? p.etazh ?? null,
-    })) as Property[];
+    })) as PropertyRow[];
   }
 }
 
@@ -139,21 +116,21 @@ export async function GET(request: Request) {
   const id = (url.searchParams.get("id") || "").trim();
 
   try {
-    const [cities, props] = await Promise.all([
+    const [cities, rows] = await Promise.all([
       fetchCities(supabase),
       fetchProperties(supabase, { city, id }),
     ]);
 
     const items = await Promise.all(
-      props.map(async (p) => ({
+      rows.map(async (p) => ({
         external_id: p.external_id,
         title: p.title ?? "",
         address: p.address ?? "",
         city_name: p.city_name ?? "",
         type: p.type ?? "",
         total_area: p.total_area ?? null,
-        floor: p.floor ?? null,
-        cover_url: await buildCoverUrl(supabase, p),
+        floor: p.floor ?? p.etazh ?? null,
+        cover_url: await buildCoverUrl(supabase, p.external_id),
       }))
     );
 
