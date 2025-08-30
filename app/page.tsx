@@ -34,7 +34,6 @@ export default function Page() {
 
   useEffect(() => {
     let cancelled = false;
-
     async function load() {
       setLoading(true);
       try {
@@ -56,7 +55,6 @@ export default function Page() {
 
   return (
     <main style={{ padding: 16 }}>
-      {/* Фильтр по городу — выпадающий список, применяется сразу */}
       <div style={{ marginBottom: 16 }}>
         <label htmlFor="city" style={{ marginRight: 8 }}>Город:</label>
         <select
@@ -74,7 +72,6 @@ export default function Page() {
 
       {loading && <p>Загрузка…</p>}
 
-      {/* Плитка 6 в ряд */}
       <div
         style={{
           display: "grid",
@@ -86,7 +83,6 @@ export default function Page() {
         {gridItems.map((p) => {
           const caption = [p.city_name, p.address].filter(Boolean).join(", ");
           const href = `/p/${p.external_id}`;
-
           return (
             <a
               key={p.external_id}
