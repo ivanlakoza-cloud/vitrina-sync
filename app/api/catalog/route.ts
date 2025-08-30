@@ -1,87 +1,106 @@
-// app/api/catalog/route.ts
-import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from "next/server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-type Row = {
-  external_id: string
-  title: string | null
-  address: string | null
-  city: string | null
-  cover_storage_path: string | null
-  updated_at: string | null
-}
+type AnyClient = SupabaseClient<any, "public", any>;
 
-export const dynamic = 'force-dynamic'
+// Build public URL for a cover image using only Supabase Storage.
+// 1) If the row already has cover_storage_path, use it.
+// 2) Else take the first file inside photos/<external_id>/
+// 3) If nothing found — return null (frontend should show /no-photo.jpg)
+async function buildCoverUrl(
+  client: AnyClient,
+  externalId: string,
+  coverPath: string | null
+): Promise<string | null> {
+  const bucket = "photos";
 
-function getClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-  if (!url || !key) throw new Error('Supabase env vars are missing')
-  return createClient(url, key, { auth: { persistSession: false } })
-}
-
-async function buildCoverUrl(supabase: ReturnType<typeof createClient>, external_id: string, cover_storage_path: string | null) {
-  const bucket = 'photos'
-
-  if (cover_storage_path) {
-    const { data } = supabase.storage.from(bucket).getPublicUrl(cover_storage_path)
-    if (data?.publicUrl) return data.publicUrl
+  // Direct path set in DB
+  if (coverPath) {
+    const { data } = client.storage.from(bucket).getPublicUrl(coverPath);
+    return data?.publicUrl ?? null;
   }
 
-  const { data: files, error } = await supabase
-    .storage
+  // Try list photos/<external_id>/
+  const prefix = `${externalId}/`;
+  const { data: files, error } = await client.storage.from(bucket).list(prefix, {
+    limit: 1,
+    sortBy: { column: "name", order: "asc" },
+  });
+  if (error) {
+    console.error("storage.list error:", error);
+    return null;
+  }
+  const first = files?.[0];
+  if (!first) return null;
+
+  const { data } = client.storage
     .from(bucket)
-    .list(external_id, { limit: 1, offset: 0, sortBy: { column: 'name', order: 'asc' } })
-
-  if (!error && files && files.length > 0) {
-    const path = `${external_id}/${files[0].name}`
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-    if (data?.publicUrl) return data.publicUrl
-  }
-
-  return '/no-photo.jpg'
+    .getPublicUrl(`${prefix}${first.name}`);
+  return data?.publicUrl ?? null;
 }
 
-export async function GET(request: Request) {
+export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const city = (searchParams.get('city') || '').trim()
+    const url = new URL(req.url);
+    const city = (url.searchParams.get("city") || "").trim();
 
-    const supabase = getClient()
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Base query to view
     let query = supabase
-      .from('view_property_with_cover')
-      .select('external_id,title,address,city,cover_storage_path,updated_at')
-      .order('updated_at', { ascending: false })
+      .from("view_property_with_cover")
+      .select(
+        "external_id,title,address,city,cover_storage_path,updated_at",
+      )
+      .order("updated_at", { ascending: false, nullsFirst: false });
 
     if (city) {
-      query = query.eq('city', city)
+      query = query.eq("city", city);
     }
 
-    const { data, error } = await query
+    const { data: rows, error } = await query;
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error("view query error:", error);
+      return NextResponse.json(
+        { ok: false, error: error.message, items: [], cities: [] },
+        { status: 500 },
+      );
     }
-    const rows = (data || []) as Row[]
 
-    const cities = Array.from(new Set(rows.map(r => r.city).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b))
-
+    // Build images strictly from Storage (no external/Yandex links).
     const items = await Promise.all(
-      rows.map(async (r) => {
-        const coverUrl = await buildCoverUrl(supabase, r.external_id, r.cover_storage_path)
-        return {
-          external_id: r.external_id,
-          title: r.title,
-          address: r.address,
-          city: r.city,
-          coverUrl,
-          updated_at: r.updated_at,
-        }
-      })
-    )
+      (rows ?? []).map(async (r) => {
+        const coverUrl =
+          (await buildCoverUrl(
+            supabase as AnyClient,
+            r.external_id,
+            r.cover_storage_path,
+          )) ?? null;
 
-    return NextResponse.json({ items, cities })
+        return {
+          external_id: r.external_id as string,
+          title: r.title as string | null,
+          address: r.address as string | null,
+          city: r.city as string | null,
+          coverUrl,
+          updated_at: r.updated_at as string | null,
+        };
+      }),
+    );
+
+    // Distinct cities from all rows (ignoring nulls/empties)
+    const cities = Array.from(
+      new Set((rows ?? []).map((r) => (r.city || "").trim()).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b, "ru"));
+
+    return NextResponse.json({ ok: true, items, cities });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Unexpected error' }, { status: 500 })
+    console.error("GET /api/catalog error:", e);
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Unknown error" },
+      { status: 500 },
+    );
   }
 }
