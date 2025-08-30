@@ -1,54 +1,50 @@
 // lib/photos.ts
-import { supabase, BUCKET } from './supabase';
+const BUCKET = "photos";
 
-const IMG_RE = /\.(jpe?g|png|webp|gif)$/i;
-
-// Папка формируется из external_id: "id<external_id>"
-function folderForExternalId(external_id: string | number) {
-  const id = String(external_id).replace(/^id/i, '');
-  return `id${id}`;
+function getEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  return { url: url.replace(/\/+$/, ""), anon };
 }
 
-function publicUrl(key: string) {
-  return supabase.storage.from(BUCKET).getPublicUrl(key).data.publicUrl ?? null;
-}
+export async function listPhotoKeys(externalId: string): Promise<string[]> {
+  const { url, anon } = getEnv();
+  if (!url || !anon) return [];
 
-/** Первая картинка для карточки на главной */
-export async function getCoverMapByExternalId(items: Array<{ external_id: string | number }>) {
-  const map = new Map<string | number, string | null>();
-  const poolSize = 10;
-  let i = 0;
+  const listUrl = `${url}/storage/v1/object/list/${encodeURIComponent(BUCKET)}`;
+  const prefix = `${externalId.replace(/^\/+|\/+$/g, "")}/`;
+  const body = {
+    prefix,
+    limit: 100,
+    offset: 0,
+    sortBy: { column: "name", order: "asc" },
+  };
 
-  async function worker() {
-    while (i < items.length) {
-      const cur = items[i++];
-      const folder = folderForExternalId(cur.external_id);
-
-      const { data, error } = await supabase.storage.from(BUCKET).list(folder, {
-        sortBy: { column: 'name', order: 'asc' },
-        limit: 1000,
-      });
-
-      if (error || !data?.length) {
-        map.set(cur.external_id, null);
-        continue;
-      }
-      const first = data.find(f => IMG_RE.test(f.name));
-      map.set(cur.external_id, first ? publicUrl(`${folder}/${first.name}`) : null);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(poolSize, items.length) }, worker));
-  return map; // Map<external_id, coverUrl>
-}
-
-/** Полная галерея для страницы проекта */
-export async function getGalleryUrlsByExternalId(external_id: string | number) {
-  const folder = folderForExternalId(external_id);
-  const { data, error } = await supabase.storage.from(BUCKET).list(folder, {
-    sortBy: { column: 'name', order: 'asc' },
-    limit: 1000,
+  const res = await fetch(listUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": anon,
+      "Authorization": `Bearer ${anon}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
   });
-  if (error || !data?.length) return [];
-  return data.filter(f => IMG_RE.test(f.name)).map(f => publicUrl(`${folder}/${f.name}`)).filter(Boolean) as string[];
+
+  if (!res.ok) return [];
+
+  const items = (await res.json()) as Array<{ name: string }>;
+  return items.map((it) => `${prefix}${it.name}`);
+}
+
+export function toPublicUrl(key: string): string | null {
+  const { url } = getEnv();
+  if (!url || !key) return null;
+  return `${url}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(key)}`;
+}
+
+export async function getFirstPublicPhotoUrl(externalId: string): Promise<string | null> {
+  const keys = await listPhotoKeys(externalId);
+  if (!keys.length) return null;
+  return toPublicUrl(keys[0])!;
 }
