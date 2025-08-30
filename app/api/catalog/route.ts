@@ -25,7 +25,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 // build cover URL strictly from Supabase Storage (bucket 'photos')
 async function buildCoverUrl(supabase: any, externalId: string, coverStoragePath: string | null): Promise<string | null> {
-  console.log("Building cover URL for externalId:", externalId); // Added log for cover URL
+  console.log("Building cover URL for externalId:", externalId);
   const tryPath = async (path: string): Promise<string | null> => {
     const { data } = supabase.storage.from("photos").getPublicUrl(path);
     return data?.publicUrl ?? null;
@@ -72,7 +72,12 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error("Error in API query:", error);  // Log query error
-      return NextResponse.error();
+      return new NextResponse('API Query Error', { status: 500 });
+    }
+
+    if (!data || data.length === 0) {
+      console.log("No data found for the query.");
+      return new NextResponse('No data found', { status: 404 });
     }
 
     console.log("Data retrieved:", data);  // Log the retrieved data
@@ -87,6 +92,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ items: updatedData });
   } catch (err) {
     console.error("Error in API processing:", err);  // Log any unexpected errors
-    return NextResponse.error();
+    return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
