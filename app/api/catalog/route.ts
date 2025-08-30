@@ -1,3 +1,4 @@
+
 // app/api/catalog/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -25,7 +26,6 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 // build cover URL strictly from Supabase Storage (bucket 'photos')
 async function buildCoverUrl(supabase: any, externalId: string, coverStoragePath: string | null): Promise<string | null> {
-  // 1) If DB has exact path inside bucket, try it
   const tryPath = async (path: string): Promise<string | null> => {
     const { data } = supabase.storage.from("photos").getPublicUrl(path);
     return data?.publicUrl ?? null;
@@ -36,7 +36,6 @@ async function buildCoverUrl(supabase: any, externalId: string, coverStoragePath
     if (direct) return direct;
   }
 
-  // 2) Probe folder "<externalId>/" and take the first file
   const folder = `${externalId}/`;
   const { data: files, error } = await supabase.storage.from("photos").list(folder, {
     limit: 100,
@@ -58,27 +57,22 @@ export async function GET(request: Request) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const url = new URL(request.url);
-  const city = url.searchParams.get('city')?.trim(); // получаем город из параметра URL
+  const city = url.searchParams.get('city')?.trim();
 
-  // Формируем запрос с фильтрацией по городу, если он есть
-  let query = supabase
-    .from('properties')
-    .select('*') as any; // Указали тип any, чтобы избежать ошибки компиляции
+  let query = supabase.from('properties').select('*') as any;
 
   if (city) {
-    query = query.filter('city', 'eq', city); // фильтруем по городу
+    query = query.filter('city', 'eq', city); 
   }
 
-  // Выполняем запрос и получаем данные
   const { data, error } = await query;
 
   if (error) {
     return NextResponse.error();
   }
 
-  // Обрабатываем ссылки на изображения
   const updatedData = await Promise.all(
-    data.map(async (item: Row) => {  // Явное указание типа для 'item'
+    data.map(async (item: Row) => {
       const coverUrl = await buildCoverUrl(supabase, item.external_id, item.cover_storage_path);
       return { ...item, cover_url: coverUrl };
     })
