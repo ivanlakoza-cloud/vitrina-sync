@@ -61,7 +61,9 @@ export async function GET(request: Request) {
   const city = url.searchParams.get('city')?.trim(); // получаем город из параметра URL
 
   // Формируем запрос с фильтрацией по городу, если он есть
-  let query = supabase.from<Row>('properties').select('*');
+  let query = supabase
+    .from('properties')
+    .select('*') as any; // Указали тип any, чтобы избежать ошибки компиляции
 
   if (city) {
     query = query.filter('city', 'eq', city); // фильтруем по городу
