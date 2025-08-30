@@ -69,8 +69,8 @@ function attachApikey(qs: URLSearchParams) {
 }
 function storagePublicUrl(key: string): string {
   const base = SUPABASE_URL.replace(/\/+$/, "");
-  const path = [STORAGE_BUCKET, key].filter(Boolean).join("/");
-  return `${base}/storage/v1/object/public/${path.replace(/^\/+/, "")}`;
+  const path = [STORAGE_BUCKET, key.replace(/^\/+/, "")].filter(Boolean).join("/");
+  return `${base}/storage/v1/object/public/${path}`;
 }
 async function fetchJSON<T>(url: string, init?: RequestInit & { revalidate?: number }): Promise<T> {
   const { revalidate, ...rest } = init || {};
@@ -147,7 +147,6 @@ async function fetchBase(city: string): Promise<RowBase[]> {
   if (city) qs.set("city", `eq.${city}`);
   attachApikey(qs);
 
-  // набор попыток, чтобы не падать на разных версиях PostgREST/операторах
   const attempts = [
     () => qs.set("order", "updated_at.desc.nullslast"),
     () => qs.set("order", "updated_at.desc"),
@@ -213,15 +212,16 @@ const coverCache = new Map<string, string | null>();
 async function listFirstStorageFile(external_id: string): Promise<string | null> {
   if (coverCache.has(external_id)) return coverCache.get(external_id)!;
 
-  const prefix = [STORAGE_PREFIX, external_id].filter(Boolean).join("/").replace(/\/+$/, "") + "/";
+  const prefixFolder = [STORAGE_PREFIX, external_id].filter(Boolean).join("/") + "/";
   const listUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/list/${encodeURIComponent(STORAGE_BUCKET)}`;
   const body = {
-    prefix,
+    prefix: prefixFolder,
     limit: 100,
     offset: 0,
     sortBy: { column: "name", order: "asc" as const },
   };
 
+  // Попытка 1: официальный endpoint Storage
   try {
     const res = await fetch(listUrl, {
       method: "POST",
@@ -229,16 +229,38 @@ async function listFirstStorageFile(external_id: string): Promise<string | null>
       body: JSON.stringify(body),
       next: { revalidate: 300 },
     });
-    if (!res.ok) throw new Error(`Storage list ${res.status}`);
+    if (!res.ok) throw new Error(`list status ${res.status}`);
     const arr = (await res.json()) as StorageListItem[];
     const first = arr?.find((x) => !!x?.name) || null;
-    const key = first ? prefix + first.name : null;
+    const key = first ? prefixFolder + first.name : null; // list возвращает ТОЛЬКО имя файла
     const url = key ? storagePublicUrl(key) : null;
     coverCache.set(external_id, url);
     return url;
   } catch {
-    coverCache.set(external_id, null);
-    return null;
+    // Попытка 2: через PostgREST -> storage.objects
+    try {
+      const qs = new URLSearchParams();
+      qs.set("select", "name");
+      qs.set("bucket_id", `eq.${STORAGE_BUCKET}`);
+      qs.set("name", `like.${prefixFolder}%`);
+      qs.set("order", "name.asc");
+      qs.set("limit", "1");
+      const restUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/objects?${qs.toString()}`;
+      const res2 = await fetch(restUrl, {
+        method: "GET",
+        headers: { ...supaHeaders(), "Accept-Profile": "storage" },
+        next: { revalidate: 300 },
+      });
+      if (!res2.ok) throw new Error(`rest list status ${res2.status}`);
+      const arr2 = (await res2.json()) as Array<{ name: string }>;
+      const key = arr2?.[0]?.name || null; // тут уже ПОЛНЫЙ путь ('id53/xxx.jpg')
+      const url = key ? storagePublicUrl(key) : null;
+      coverCache.set(external_id, url);
+      return url;
+    } catch {
+      coverCache.set(external_id, null);
+      return null;
+    }
   }
 }
 
