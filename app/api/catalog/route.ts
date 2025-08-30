@@ -6,7 +6,7 @@ type Row = {
   external_id: string;
   title: string | null;
   address: string | null;
-  city_name: string | null; // Using city_name field from the cities table
+  city_id: string | null; // Using city_id for filtering
   cover_storage_path: string | null;
   cover_ext_url: string | null;
   updated_at: string | null;
@@ -57,14 +57,14 @@ export async function GET(request: Request) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const url = new URL(request.url);
-  const city = url.searchParams.get('city')?.trim();
-  console.log("Received city:", city);  // Log received city parameter
+  const city = url.searchParams.get('city')?.trim(); // We are passing city_id, not city_name
+  console.log("Received city_id:", city);  // Log received city parameter
 
   let query = supabase.from('property_full_view').select('*') as any; // Using property_full_view instead of properties
 
   if (city) {
-    console.log("Filtering by city_name:", city);  // Log filtering action
-    query = query.filter('city_name', 'eq', city);  // Filtering by city_name field from the cities table
+    console.log("Filtering by city_id:", city);  // Log filtering action
+    query = query.filter('city_id', 'eq', city);  // Filtering by city_id
   }
 
   try {
