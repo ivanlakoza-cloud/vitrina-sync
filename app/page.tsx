@@ -1,29 +1,42 @@
-// app/page.tsx
-import Link from "next/link";
-import Image from "next/image";
-import { headers } from "next/headers";
 
-export const dynamic = "force-dynamic";
+'use client';
 
-function getBaseUrl(): string {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") || "https";
-  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
-  return `${proto}://${host}`;
-}
+import { useState, useEffect } from "react";
 
 async function fetchCatalog(city: string) {
-  const base = getBaseUrl();
+  const base = window.location.origin;
+  console.log("Fetching catalog for city:", city);  // Логируем город, который передаем
   const resp = await fetch(`${base}/api/catalog?city=${encodeURIComponent(city)}`, { cache: "no-store" });
-  if (!resp.ok) throw new Error("Catalog API error");
+  if (!resp.ok) {
+    console.error("Failed to fetch catalog", resp);  // Логируем ошибку запроса
+    throw new Error("Catalog API error");
+  }
   return resp.json();
 }
 
-export default async function Page({ searchParams }: { searchParams: { city?: string } }) {
-  const city = (searchParams?.city || "").trim();
-  const data = await fetchCatalog(city);
-  const items = (data?.items || []) as any[];
-  const cities = (data?.cities || []) as string[];
+export default function Page({ searchParams }: { searchParams: { city?: string } }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [city, setCity] = useState<string>(searchParams?.city ?? "");
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await fetchCatalog(city);
+        console.log("Received data:", data);  // Логируем полученные данные
+        setItems(data.items || []);
+        setCities(data.cities || []);
+      } catch (err) {
+        console.error("Error loading data:", err);  // Логируем ошибку загрузки данных
+      }
+    }
+
+    loadData();
+  }, [city]);
+
+  const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCity(e.target.value);
+  };
 
   return (
     <main className="p-4">
@@ -33,8 +46,8 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
           <select
             id="city"
             name="city"
-            defaultValue={city}
-            onChange={(e) => { if (typeof window !== "undefined") { const v = e.currentTarget.value; const url = v ? `/?city=${encodeURIComponent(v)}` : "/"; window.location.href = url; } }}
+            value={city}
+            onChange={handleCityChange}
           >
             <option value="">Все города</option>
             {cities.map((c) => (
@@ -44,7 +57,7 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
         </form>
       </div>
 
-      <div className="grid" style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:"16px"}}>
+      <div className="grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
         {items.map((p) => {
           const caption = [p.city, p.address].filter(Boolean).join(", ");
           const href = `/p/${p.external_id}`;
@@ -52,31 +65,10 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
           return (
             <div key={p.external_id} className="border rounded-lg p-2">
               <Link href={href} aria-label={caption}>
-                <Image
-                  src={p.coverUrl || "/no-photo.jpg"}
-                  alt={caption || "Фото"}
-                  width={600}
-                  height={400}
-                  style={{ width: "100%", height: 180, objectFit: "cover" }}
-                />
+                <Image src={p.cover_url} alt={caption} width={260} height={160} />
+                <h3>{p.title}</h3>
+                <p>{caption}</p>
               </Link>
-
-              <div className="mt-2">
-                <Link className="text-blue-700 underline" href={href}>
-                  {caption || "—"}
-                </Link>
-
-                {/* Доп. инфо, если есть */}
-                {(p.tip_pomescheniya || p.etazh !== null || (p.price_min !== null && p.price_max !== null)) && (
-                  <div style={{fontSize:14, color:"#555", marginTop:4}}>
-                    {p.tip_pomescheniya && <span>{p.tip_pomescheniya}</span>}
-                    {p.etazh !== null && <span>{p.tip_pomescheniya ? " • " : ""}Этаж: {p.etazh}</span>}
-                    {(p.price_min !== null && p.price_max !== null) && (
-                      <span>{(p.tip_pomescheniya || p.etazh !== null) ? " • " : ""}Цена: {p.price_min}–{p.price_max} ₽/м²</span>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
           );
         })}

@@ -1,3 +1,4 @@
+
 // app/api/catalog/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -25,6 +26,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 // build cover URL strictly from Supabase Storage (bucket 'photos')
 async function buildCoverUrl(supabase: any, externalId: string, coverStoragePath: string | null): Promise<string | null> {
+  console.log("Building cover URL for externalId:", externalId); // Added log for cover URL
   const tryPath = async (path: string): Promise<string | null> => {
     const { data } = supabase.storage.from("photos").getPublicUrl(path);
     return data?.publicUrl ?? null;
