@@ -1,62 +1,34 @@
 // app/page.tsx
-import { getCatalog } from "@/lib/data";
-import Script from "next/script";
+import Link from "next/link";
+import { getCatalog } from "../lib/data";
 
-export const dynamic = "force-dynamic";
+type Search = { city?: string };
 
-type SearchParams = { city?: string };
+export const revalidate = 300; // кэш до 5 минут ок
 
-function fmtArea(v: any): string | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(String(v).replace(",", "."));
-  return Number.isFinite(n) ? `${n} м²` : String(v);
-}
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Search;
+}) {
+  const currentCity = (searchParams?.city ?? "").trim();
 
-function buildPrices(p: any): string | null {
-  const pairs: Array<[string, any]> = [
-    ["20", p?.price_per_m2_20],
-    ["50", p?.price_per_m2_50],
-    ["100", p?.price_per_m2_100],
-    ["400", p?.price_per_m2_400],
-    ["700", p?.price_per_m2_700],
-    ["1500", p?.price_per_m2_1500],
-  ];
-  const parts = pairs
-    .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
-    .map(([k, v]) => `${k}: ${v}`);
-  return parts.length ? parts.join(" · ") : null;
-}
-
-export default async function Home({ searchParams }: { searchParams?: SearchParams }) {
-  const city = (searchParams?.city ?? "").trim();
-  const { items, cities } = await getCatalog({ city });
+  // Универсальная форма: { items, cities, ui }
+  const { items, cities } = await getCatalog({ city: currentCity });
 
   return (
-    <main style={{ maxWidth: 1280, margin: "0 auto", padding: "16px" }}>
-      <style>{`
-        :root { --gap:16px; --radius:16px; --shadow:0 1px 2px rgba(0,0,0,.06); }
-        body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", "Helvetica Neue", Arial; }
-        .grid { display:grid; gap:var(--gap); grid-template-columns: repeat(1, minmax(0,1fr)); }
-        @media (min-width:640px){ .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-        @media (min-width:768px){ .grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }
-        @media (min-width:1280px){ .grid { grid-template-columns: repeat(6, minmax(0,1fr)); } }
-        .card { border:1px solid #e5e7eb; border-radius:var(--radius); overflow:hidden; background:#fff; box-shadow:var(--shadow); }
-        .img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#f3f4f6; }
-        .body { padding:12px; font-size:16px; line-height:1.35; }
-        .title { font-weight:700; color:#111827; text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .line { color:#4b5563; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:4px; }
-        .line-strong { color:#111827; font-weight:600; }
-        .more { display:inline-block; margin-top:8px; color:#2563eb; text-decoration:none; }
-        .more:hover, .title:hover { text-decoration:underline; }
-        .filter { display:flex; align-items:center; gap:12px; margin-bottom:16px; position:relative; z-index:1000; }
-        .select { font-size:16px; padding:8px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; }
-        .empty { color:#6b7280; font-size:16px; margin-top:16px; }
-      `}</style>
-
+    <main className="px-6 py-6">
       {/* Фильтр */}
-      <div className="filter">
-        <label htmlFor="city-select">Город:</label>
-        <select id="city-select" name="city" defaultValue={city} className="select">
+      <form action="/" method="get" className="flex items-center gap-3">
+        <label htmlFor="city" className="text-lg">
+          Город:
+        </label>
+        <select
+          id="city"
+          name="city"
+          defaultValue={currentCity}
+          className="h-10 rounded-xl border border-gray-300 px-4 text-base focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
           <option value="">Все города</option>
           {cities.map((c) => (
             <option key={c} value={c}>
@@ -64,70 +36,107 @@ export default async function Home({ searchParams }: { searchParams?: SearchPara
             </option>
           ))}
         </select>
-      </div>
+        <button
+          type="submit"
+          className="h-10 rounded-xl bg-indigo-600 px-4 text-white hover:bg-indigo-700"
+        >
+          Применить
+        </button>
+      </form>
 
-      {/* JS для смены города (без onChange на серверной компоненте) */}
-      <Script id="city-filter-change">{`
-        (function(){
-          var sel = document.getElementById('city-select');
-          if(!sel) return;
-          sel.addEventListener('change', function(e){
-            e.stopPropagation();
-            var url = new URL(window.location.href);
-            var v = sel.value;
-            if (v) url.searchParams.set('city', v);
-            else url.searchParams.delete('city');
-            window.location.href = url.toString();
-          }, { capture: true });
-        })();
-      `}</Script>
+      {/* Отступ под фильтром (возвращён) */}
+      <div className="h-6" />
 
-      {/* Сетка карточек */}
-      <div className="grid">
-        {items.map((it) => {
-          const href = `/p/${encodeURIComponent(it.external_id)}`;
+      {/* Сетка карточек: 6 / 3 / 2 / 1 */}
+      {items.length === 0 ? (
+        <p className="text-lg text-gray-500">
+          Нет объектов по выбранному фильтру.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+          {items.map((p) => {
+            const href = `/p/${encodeURIComponent(p.external_id)}`;
 
-          // совместимость со «старым» кодом
-          const cover =
-            (it as any).coverUrl ||
-            (it as any).cover_url ||
-            (it as any).photo ||
-            (it as any).preview_url ||
-            null;
+            // Строки карточки
+            const line1 =
+              [p.city, p.address].filter(Boolean).join(", ") ||
+              p.title ||
+              p.external_id;
 
-          const title = [it.city, it.address].filter(Boolean).join(", ") || it.title || "Без адреса";
-          const area = fmtArea(it.available_area ?? it.total_area);
-          const line2 = [it.type ? `Тип: ${it.type}` : null, area ? `Площадь: ${area}` : null]
-            .filter(Boolean).join(" · ");
-          const prices = buildPrices(it);
+            const line2 = [
+              p.type ? `Тип: ${p.type}` : "",
+              p.available_area ? `Доступно: ${p.available_area} м²` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ");
 
-          return (
-            <article key={it.external_id} className="card">
-              {cover ? (
-                <img src={String(cover)} alt={title} className="img" loading="lazy" />
-              ) : (
-                <div className="img" />
-              )}
+            // Все цены, где есть числа (поля *_20, *_50, ...):
+            const priceKeys = [
+              "price_per_m2_20",
+              "price_per_m2_50",
+              "price_per_m2_100",
+              "price_per_m2_400",
+              "price_per_m2_700",
+              "price_per_m2_1500",
+            ] as const;
+            const prices = priceKeys
+              .map((k) => p[k])
+              .filter((v) => v !== null && v !== undefined && v !== "")
+              .map((v) => String(v))
+              .join(" · ");
 
-              <div className="body">
-                {/* 1-я строка: Город, адрес — жирная, ссылкой */}
-                <a href={href} className="title" title={title}>{title}</a>
+            return (
+              <div
+                key={p.external_id}
+                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md"
+              >
+                <Link href={href} className="block">
+                  <div className="relative aspect-[4/3] w-full bg-gray-100">
+                    {p.coverUrl ? (
+                      // используем <img>, чтобы не трогать next.config
+                      <img
+                        src={p.coverUrl}
+                        alt={line1}
+                        loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    ) : null}
+                  </div>
+                </Link>
 
-                {/* 2-я строка: тип, площадь */}
-                {line2 && <div className="line">{line2}</div>}
+                <div className="p-4">
+                  {/* 1-я строка: Город, адрес — жирная, ссылкой */}
+                  <Link
+                    href={href}
+                    className="line-clamp-2 font-semibold text-gray-900 hover:underline"
+                  >
+                    {line1}
+                  </Link>
 
-                {/* 3-я строка: цены */}
-                {prices && <div className="line line-strong">{prices}</div>}
+                  {/* 2-я строка: тип, доступная площадь */}
+                  {line2 ? (
+                    <div className="mt-1 text-sm text-gray-600">{line2}</div>
+                  ) : null}
 
-                <a href={href} className="more">Подробнее →</a>
+                  {/* 3-я строка: все стоимости, где есть значения — цифры */}
+                  {prices ? (
+                    <div className="mt-1 text-sm text-gray-700">{prices}</div>
+                  ) : null}
+
+                  {/* Кнопка «Подробнее» */}
+                  <div className="mt-3">
+                    <Link
+                      href={href}
+                      className="text-sm font-medium text-indigo-600 hover:underline"
+                    >
+                      Подробнее →
+                    </Link>
+                  </div>
+                </div>
               </div>
-            </article>
-          );
-        })}
-      </div>
-
-      {items.length === 0 && (
-        <div className="empty">Нет объектов по выбранному фильтру.</div>
+            );
+          })}
+        </div>
       )}
     </main>
   );
