@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { getProperty, getPropertyPhotos } from "@/lib/data";
 
@@ -12,8 +13,7 @@ export default async function Page({
   const p = await getProperty(id);
   if (!p) {
     return <main className="p-6">Объект не найден</main>;
-    }
-
+  }
   const photos = await getPropertyPhotos(id);
 
   return (
@@ -31,15 +31,12 @@ export default async function Page({
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="rounded-xl overflow-hidden border">
-          <div
-            className="relative w-full"
-            style={{ aspectRatio: "4 / 3", background: "#f3f4f6" }}
-          >
+          <div className="relative w-full h-64 bg-gray-100">
             {p.coverUrl ? (
               <img
                 src={p.coverUrl}
                 alt={p.title ?? p.address ?? p.external_id}
-                className="w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover"
               />
             ) : null}
           </div>
@@ -63,14 +60,11 @@ export default async function Page({
           <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
             {photos.map((u, i) => (
               <div key={u} className="rounded-xl overflow-hidden border">
-                <div
-                  className="relative w-full"
-                  style={{ aspectRatio: "4 / 3", background: "#f3f4f6" }}
-                >
+                <div className="relative w-full h-36 bg-gray-100">
                   <img
                     src={u}
                     alt={`Фото ${i + 1}`}
-                    className="w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-cover"
                     loading="lazy"
                   />
                 </div>

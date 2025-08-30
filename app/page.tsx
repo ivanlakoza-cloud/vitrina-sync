@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { getCatalog } from "@/lib/data";
 
@@ -6,11 +7,15 @@ type Search = { city?: string };
 export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Search }) {
-  const currentCity = searchParams?.city ?? "";
-  const { items, cities } = await getCatalog({ city: currentCity || undefined });
+  const currentCity = (searchParams?.city ?? "").toString();
+
+  const { items, cities } = await getCatalog({
+    city: currentCity || undefined,
+  });
+
   const cityOptions = Array.from(
     new Set([
-      ...(cities || []),
+      ...cities,
       ...items.map((i) => i.city).filter(Boolean) as string[],
     ])
   ).sort((a, b) => a.localeCompare(b, "ru"));
@@ -51,15 +56,13 @@ export default async function Page({ searchParams }: { searchParams: Search }) {
                 className="rounded-xl overflow-hidden border bg-white"
               >
                 <Link href={href} className="block">
-                  <div
-                    className="relative w-full"
-                    style={{ aspectRatio: "4 / 3", background: "#f3f4f6" }}
-                  >
+                  {/* Фикс высоты вместо aspect-ratio, чтобы на мобильных не занимало весь экран */}
+                  <div className="relative w-full h-40 md:h-44 lg:h-48 bg-gray-100">
                     {p.coverUrl ? (
                       <img
                         src={p.coverUrl}
                         alt={p.title ?? p.address ?? p.external_id}
-                        className="w-full h-full object-cover"
+                        className="absolute inset-0 w-full h-full object-cover"
                         loading="lazy"
                       />
                     ) : null}
