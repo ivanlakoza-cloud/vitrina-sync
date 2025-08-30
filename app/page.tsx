@@ -1,14 +1,16 @@
-
+// app/page.tsx
 'use client';
 
 import { useState, useEffect } from "react";
+import Link from "next/link";  // Импортируем Link
+import Image from "next/image";
 
 async function fetchCatalog(city: string) {
   const base = window.location.origin;
-  console.log("Fetching catalog for city:", city);  // Логируем город, который передаем
+  console.log("Fetching catalog for city:", city);
   const resp = await fetch(`${base}/api/catalog?city=${encodeURIComponent(city)}`, { cache: "no-store" });
   if (!resp.ok) {
-    console.error("Failed to fetch catalog", resp);  // Логируем ошибку запроса
+    console.error("Failed to fetch catalog", resp);
     throw new Error("Catalog API error");
   }
   return resp.json();
@@ -23,11 +25,11 @@ export default function Page({ searchParams }: { searchParams: { city?: string }
     async function loadData() {
       try {
         const data = await fetchCatalog(city);
-        console.log("Received data:", data);  // Логируем полученные данные
+        console.log("Received data:", data);
         setItems(data.items || []);
         setCities(data.cities || []);
       } catch (err) {
-        console.error("Error loading data:", err);  // Логируем ошибку загрузки данных
+        console.error("Error loading data:", err);
       }
     }
 
