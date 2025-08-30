@@ -1,103 +1,83 @@
-// app/p/[external_id]/page.tsx
 import Link from "next/link";
-import { getProperty } from "../../../lib/data";
-import { listPhotoKeys, toPublicUrl } from "../../../lib/photos";
+import { getProperty, getPropertyPhotos } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export default async function PropertyPage({
+export default async function Page({
   params,
 }: {
   params: { external_id: string };
 }) {
-  const id = params.external_id;
+  const id = decodeURIComponent(params.external_id);
   const p = await getProperty(id);
-
   if (!p) {
-    return (
-      <main className="p-6">
-        <Link href="/" className="text-blue-600 hover:underline">
-          ← Каталог
-        </Link>
-        <h1 className="mt-2 text-xl font-semibold">Объект не найден</h1>
-      </main>
-    );
-  }
+    return <main className="p-6">Объект не найден</main>;
+    }
 
-  // Соберём галерею из Storage (если есть)
-  let gallery: string[] = [];
-  try {
-    const keys = await listPhotoKeys(id);
-    gallery = keys.map((k) => toPublicUrl(k)!).filter(Boolean) as string[];
-  } catch {}
-
-  const header = [p.city, p.address].filter(Boolean).join(", ") || p.title || p.external_id;
-
-  const priceKeys = [
-    "price_per_m2_20",
-    "price_per_m2_50",
-    "price_per_m2_100",
-    "price_per_m2_400",
-    "price_per_m2_700",
-    "price_per_m2_1500",
-  ] as const;
-  const prices = priceKeys
-    .map((k) => (p as any)[k])
-    .filter((v) => v !== null && v !== undefined && v !== "")
-    .map((v) => String(v))
-    .join(" · ");
+  const photos = await getPropertyPhotos(id);
 
   return (
-    <main className="p-6">
-      <Link href="/" className="text-blue-600 hover:underline">
-        ← Каталог
+    <main className="p-6 max-w-5xl mx-auto">
+      <Link href="/" className="text-indigo-600 underline">
+        ← Назад
       </Link>
 
-      <h1 className="mt-2 text-2xl font-semibold">{header}</h1>
+      <h1 className="text-2xl font-semibold mt-4">
+        {p.title ?? p.address ?? p.external_id}
+      </h1>
+      <div className="text-gray-600 mt-1">
+        {[p.city, p.address].filter(Boolean).join(", ")}
+      </div>
 
-      {/* Обложка */}
-      {p.coverUrl ? (
-        <div className="mt-4 overflow-hidden rounded-2xl border">
-          <img
-            src={p.coverUrl}
-            alt={header}
-            className="h-auto w-full object-cover"
-            loading="lazy"
-          />
-        </div>
-      ) : null}
-
-      {/* Основные поля */}
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-xl border p-4">
-          <div className="text-gray-600">Тип</div>
-          <div className="text-lg">{p.type ?? "—"}</div>
-        </div>
-        <div className="rounded-xl border p-4">
-          <div className="text-gray-600">Доступная площадь</div>
-          <div className="text-lg">
-            {p.available_area ? `${p.available_area} м²` : "—"}
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="rounded-xl overflow-hidden border">
+          <div
+            className="relative w-full"
+            style={{ aspectRatio: "4 / 3", background: "#f3f4f6" }}
+          >
+            {p.coverUrl ? (
+              <img
+                src={p.coverUrl}
+                alt={p.title ?? p.address ?? p.external_id}
+                className="w-full h-full object-cover"
+              />
+            ) : null}
           </div>
         </div>
-        <div className="rounded-xl border p-4">
-          <div className="text-gray-600">Общая площадь</div>
-          <div className="text-lg">{p.total_area ? `${p.total_area} м²` : "—"}</div>
-        </div>
-        <div className="rounded-xl border p-4">
-          <div className="text-gray-600">Стоимость</div>
-          <div className="text-lg">{prices || "—"}</div>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border p-4">
+            <div className="text-gray-600">Адрес</div>
+            <div className="text-lg">{p.address ?? "—"}</div>
+          </div>
+          <div className="rounded-xl border p-4">
+            <div className="text-gray-600">Город</div>
+            <div className="text-lg">{p.city ?? "—"}</div>
+          </div>
         </div>
       </div>
 
-      {/* Галерея */}
-      {gallery.length ? (
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-          {gallery.map((src, i) => (
-            <div key={i} className="overflow-hidden rounded-xl border">
-              <img src={src} alt={`Фото ${i + 1}`} className="h-full w-full object-cover" loading="lazy" />
-            </div>
-          ))}
-        </div>
+      {photos.length > 1 ? (
+        <>
+          <h2 className="text-xl font-semibold mt-10 mb-4">Фотографии</h2>
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+            {photos.map((u, i) => (
+              <div key={u} className="rounded-xl overflow-hidden border">
+                <div
+                  className="relative w-full"
+                  style={{ aspectRatio: "4 / 3", background: "#f3f4f6" }}
+                >
+                  <img
+                    src={u}
+                    alt={`Фото ${i + 1}`}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       ) : null}
     </main>
   );
