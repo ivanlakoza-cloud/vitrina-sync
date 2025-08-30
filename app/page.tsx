@@ -1,197 +1,165 @@
-// app/page.tsx
-export const dynamic = "force-dynamic";
+import Link from 'next/link';
+import CityFilter from '@/components/CityFilter';
+import { getCatalog } from '@/lib/data';
 
-type Row = {
-  external_id: string;
-  title: string | null;
-  address: string | null;
-  city: string | null;
-  cover_storage_path: string | null;
-  cover_ext_url: string | null;
-  updated_at: string | null;
-};
+type Search = { city?: string };
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-async function fetchCatalog(): Promise<Row[]> {
-  const url =
-    `${SUPABASE_URL}/rest/v1/view_property_with_cover` +
-    `?select=external_id,title,address,city,cover_storage_path,cover_ext_url,updated_at` +
-    `&order=updated_at.desc.nullslast`;
-
-  const r = await fetch(url, {
-    headers: { apikey: ANON, Authorization: `Bearer ${ANON}` },
-    cache: "no-store",
-  });
-  if (!r.ok) {
-    const t = await r.text().catch(() => "");
-    throw new Error(`REST ${r.status}: ${t}`);
-  }
-  return (await r.json()) as Row[];
-}
-
-async function listFirstPhotoKey(extId: string): Promise<string | null> {
-  const url = `${SUPABASE_URL}/storage/v1/object/list/photos`;
-  const body = {
-    prefix: `${extId.replace(/^\/+|\/+$/g, "")}/`,
-    limit: 1,
-    offset: 0,
-    sortBy: { column: "name", order: "asc" as const },
-  };
-
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      apikey: ANON,
-      Authorization: `Bearer ${ANON}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-
-  if (!r.ok) return null;
-  const arr = (await r.json()) as Array<{ name?: string }>;
-  const name = arr?.[0]?.name;
-  if (!name) return null;
-  return `${body.prefix}${name}`.replace(/\/{2,}/g, "/");
-}
-
-function publicStorageUrl(objectKey: string) {
-  return `${SUPABASE_URL}/storage/v1/object/public/photos/${encodeURIComponent(
-    objectKey
-  )}`;
-}
-
-async function resolveCover(p: Row): Promise<string | null> {
-  if (p.cover_storage_path) return publicStorageUrl(p.cover_storage_path);
-  const first = await listFirstPhotoKey(p.external_id);
-  if (first) return publicStorageUrl(first);
-  return p.cover_ext_url || null;
-}
+export const dynamic = 'force-dynamic';
 
 export default async function Page({
   searchParams,
 }: {
-  searchParams: { city?: string };
+  searchParams: Search;
 }) {
-  const all = await fetchCatalog();
+  const currentCity = searchParams?.city ?? '';
 
-  const citySet = new Set<string>();
-  for (const r of all) if (r.city) citySet.add(String(r.city));
-  const cityOptions = Array.from(citySet).sort((a, b) => a.localeCompare(b, "ru"));
+  // Поддерживаем обе формы ответа getCatalog():
+  // 1) Array<PropertyRow>
+  // 2) { items: PropertyRow[], cities: string[] }
+  let result: any;
+  try {
+    result = await (getCatalog as any)();
+  } catch {
+    result = [];
+  }
 
-  const currentCity = (searchParams?.city || "").trim();
+  const allItems: any[] = Array.isArray(result) ? result : result?.items ?? [];
+
+  // Список городов: если API не вернул, соберём из данных
+  const citiesFromApi: string[] = Array.isArray(result) ? [] : result?.cities ?? [];
+  const citySet = new Set<string>(citiesFromApi);
+  for (const it of allItems) if (it?.city) citySet.add(String(it.city));
+  const cityOptions = Array.from(citySet).sort((a, b) => a.localeCompare(b, 'ru'));
+
+  // Фильтрация по выбранному городу
   const items = currentCity
-    ? all.filter(
-        (p) => (p.city || "").toLowerCase() === currentCity.toLowerCase()
-      )
-    : all;
+    ? allItems.filter((p) => (p?.city ?? '').toLowerCase() === currentCity.toLowerCase())
+    : allItems;
 
-  const withCovers = await Promise.all(
-    items.map(async (p) => ({ ...p, coverUrl: await resolveCover(p) }))
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
+  const fmt = new Intl.NumberFormat('ru-RU');
 
   return (
     <main className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Каталог</h1>
+      {/* Заголовок "Каталог" удалён */}
 
-      <form action="/" method="get" className="mb-6 flex items-center gap-2">
-        <label htmlFor="city">Город:</label>
-        <select
-          id="city"
-          name="city"
-          defaultValue={currentCity}
-          className="border rounded px-2 py-1"
-        >
-          <option value="">Все города</option>
-          {cityOptions.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <button type="submit" className="border rounded px-3 py-1">
-          Применить
-        </button>
-      </form>
+      {/* Фильтр без кнопки — применяется автоматически */}
+      <CityFilter currentCity={currentCity} options={cityOptions} />
 
+      {/* Отступ под фильтром */}
+      <div style={{ height: 16 }} />
+
+      {/* Сетка карточек */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
           gap: 16,
         }}
       >
-        {withCovers.length === 0 ? (
-          <div className="text-gray-500 col-span-full">
-            Нет объектов по выбранному фильтру.
-          </div>
-        ) : (
-          withCovers.map((p) => {
-            const href = `/p/${encodeURIComponent(p.external_id)}`;
-            return (
-              <div
-                key={p.external_id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  background: "#fff",
-                }}
-              >
-                <a href={href} style={{ display: "block" }}>
-                  <div
-                    style={{
-                      position: "relative",
-                      width: "100%",
-                      aspectRatio: "4 / 3",
-                      background: "#f3f4f6",
-                    }}
-                  >
-                    {p.coverUrl ? (
-                      <img
-                        src={p.coverUrl}
-                        alt={p.title || p.address || p.external_id}
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                        }}
-                        loading="lazy"
-                      />
-                    ) : null}
-                  </div>
-                </a>
+        {items.map((p: any) => {
+          const id = p.external_id ?? p.id ?? '';
+          const href = `/p/${encodeURIComponent(id)}`;
 
-                <div style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                    {p.city ?? "—"}
-                  </div>
+          // Обложка: из API, внешняя ссылка или из Storage
+          const storageCover = p.cover_storage_path && supabaseUrl
+            ? `${supabaseUrl}/storage/v1/object/public/photos/${encodeURIComponent(p.cover_storage_path)}`
+            : null;
+          const cover =
+            p.coverUrl ||
+            p.photo ||
+            p.preview_url ||
+            p.cover_ext_url ||
+            storageCover ||
+            null;
 
-                  <a
-                    href={href}
-                    style={{
-                      display: "block",
-                      color: "#4f46e5",
-                      textDecoration: "underline",
-                      marginBottom: 4,
-                    }}
-                  >
-                    {p.title ?? p.address ?? p.external_id}
-                  </a>
+          // Кликабельная строка "Город, Адрес"
+          const city = p.city ?? '—';
+          const address = p.address ?? '';
+          const cityAddress = [city, address].filter(Boolean).join(', ');
 
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    {p.address ? `${p.address}` : null}
-                  </div>
+          // Тип и этаж (поддерживаем разные имена полей)
+          const type = p.type ?? p.tip_pomescheniya ?? p.tip ?? null;
+          const floor = p.floor ?? p.etazh ?? null;
+
+          // Диапазон цен по доступным числовым значениям (руб/м²)
+          const priceKeys = [
+            'price_per_m2_20',
+            'price_per_m2_50',
+            'price_per_m2_100',
+            'price_per_m2_400',
+            'price_per_m2_700',
+            'price_per_m2_1500',
+          ];
+          const numbers: number[] = [];
+          for (const k of priceKeys) {
+            const v = Number(p?.[k]);
+            if (isFinite(v) && v > 0) numbers.push(v);
+          }
+          let priceText: string | null = null;
+          if (numbers.length === 1) {
+            priceText = `Цена: ${fmt.format(numbers[0])} ₽/м²`;
+          } else if (numbers.length > 1) {
+            const min = Math.min(...numbers);
+            const max = Math.max(...numbers);
+            priceText = `Цена: ${fmt.format(min)}–${fmt.format(max)} ₽/м²`;
+          }
+
+          return (
+            <div
+              key={id}
+              style={{
+                border: '1px solid #e5e7eb',
+                borderRadius: 8,
+                overflow: 'hidden',
+                background: '#fff',
+              }}
+            >
+              <Link href={href} style={{ display: 'block' }}>
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    aspectRatio: '4 / 3',
+                    background: '#f3f4f6',
+                  }}
+                >
+                  {cover ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={cover}
+                      alt={cityAddress || id}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                      loading="lazy"
+                    />
+                  ) : null}
                 </div>
+              </Link>
+
+              <div style={{ padding: 12 }}>
+                {/* Кликабельная строка "Город, Адрес" */}
+                <Link
+                  href={href}
+                  style={{ display: 'block', color: '#111827', textDecoration: 'underline', fontWeight: 600, marginBottom: 6, wordBreak: 'break-word' }}
+                >
+                  {cityAddress || id}
+                </Link>
+
+                {/* Тип + Этаж */}
+                {(type || floor) ? (
+                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
+                    {type ? `Тип: ${type}` : null}
+                    {type && floor ? ' · ' : null}
+                    {floor ? `Этаж: ${floor}` : null}
+                  </div>
+                ) : null}
+
+                {/* Диапазон цен */}
+                {priceText ? <div style={{ fontSize: 12 }}>{priceText}</div> : null}
               </div>
-            );
-          })
-        )}
+            </div>
+          );
+        })}
       </div>
     </main>
   );
