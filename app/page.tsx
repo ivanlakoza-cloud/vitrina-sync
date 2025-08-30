@@ -1,7 +1,9 @@
+// app/page.tsx
+'use client';
 
-// Компонент на фронтенде
 import { useState, useEffect } from "react";
 
+// Функция для получения данных
 async function fetchCatalog(city: string) {
   const resp = await fetch(`/api/catalog?city=${encodeURIComponent(city)}`);
   if (!resp.ok) {
