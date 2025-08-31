@@ -1,8 +1,7 @@
-
-"use server";
-
 import { NextResponse } from "next/server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+// Important: DO NOT add "use server" here — it breaks static option exports in route handlers.
 export const dynamic = "force-dynamic";
 
 type AnyRow = Record<string, any>;
@@ -10,232 +9,266 @@ type AnyRow = Record<string, any>;
 type ItemOut = {
   external_id: string;
   title: string;
-  line2: string | null;
-  prices: string | null;
+  address: string | null;
+  city_name: string | null;
+  type: string | null;
+  total_area: number | null;
+  floor: number | null;
   cover_url: string | null;
+  line2?: string;
+  prices?: string;
 };
 
-function getEnv(name: string, fallback?: string): string {
-  const v = process.env[name] ?? fallback;
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
+const BUCKET = "photos";
+const IMG_RE = /\.(?:jpe?g|png|webp|gif|bmp)$/i;
+
+function firstNonEmpty<T>(...vals: (T | null | undefined | "" | 0)[]): T | null {
+  for (const v of vals) {
+    if (v !== null && v !== undefined && String(v).trim() !== "") {
+      // @ts-ignore - we know it's the correct generic at runtime
+      return v as T;
+    }
+  }
+  return null;
 }
 
-function resolveRestUrl(): string {
-  const base =
-    process.env.SUPABASE_REST_URL ||
+function toIntOrNull(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatPrice(v: any): string | null {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString("ru-RU");
+}
+
+function buildTitle(row: AnyRow): string {
+  const city = firstNonEmpty<string>(row.city_name, row.city) ?? "";
+  const addr = firstNonEmpty<string>(row.address, row.adres, row.adres_full) ?? "";
+  return [city, addr].filter(Boolean).join(", ");
+}
+
+function buildLine2(row: AnyRow): string | undefined {
+  const tip = firstNonEmpty<string>(row.tip_pomescheniya, row.tip, row.property_type, row.type);
+  const floorRaw = firstNonEmpty<string | number>(row.etazh, row.floor, row.floor_num);
+  const floor = floorRaw !== null ? String(floorRaw).trim() : null;
+  const parts: string[] = [];
+  if (tip) parts.push(String(tip));
+  if (floor) parts.push(`этаж ${floor}`);
+  if (parts.length === 0) {
+    const fallback = firstNonEmpty<string>(row.type, row.property_type);
+    if (fallback) parts.push(String(fallback));
+  }
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+function buildPrices(row: AnyRow): string | undefined {
+  const labels: Record<string, string> = {
+    price_per_m2_20: "20",
+    price_per_m2_50: "50",
+    price_per_m2_100: "100",
+    price_per_m2_400: "400",
+    price_per_m2_700: "700",
+    price_per_m2_1500: "1500",
+  };
+  const parts: string[] = [];
+  for (const [key, label] of Object.entries(labels)) {
+    const val = row[key];
+    const formatted = formatPrice(val);
+    if (formatted) parts.push(`от ${label} — ${formatted}`);
+  }
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+function makeSupabase(): SupabaseClient<any, "public", any> | null {
+  const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
     "";
-  if (!base) throw new Error("No Supabase URL env");
-  return base.includes("/rest/v1") ? base : `${base}/rest/v1`;
-}
-
-function resolveStorageBase(): string {
-  // for public object URL construction
-  const base =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    process.env.SUPABASE_REST_URL ||
-    "";
-  if (!base) throw new Error("No Supabase URL env");
-  return base.replace(/\/rest\/v1\/?$/, "");
-}
-
-function resolveApiKey(): string {
-  return (
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
+  const key =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ""
-  );
+    process.env.SUPABASE_ANON_KEY ||
+    "";
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
-async function rest(path: string, qs?: string) {
-  const url = `${resolveRestUrl()}/${path}${qs ? (qs.startsWith("?") ? qs : `?${qs}`) : ""}`;
-  const key = resolveApiKey();
-  const res = await fetch(url, {
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      Accept: "application/json",
-    },
-    // Do not cache DB responses
-    cache: "no-store",
-  });
-  return res;
-}
-
-type StorageFile = { name: string; updated_at?: string; created_at?: string };
-
-async function listFirstImagePublicUrl(folder: string): Promise<string | null> {
-  if (!folder) return null;
-  const base = resolveStorageBase();
-  const key = resolveApiKey();
-  // Supabase storage list endpoint
-  const listUrl = `${base}/storage/v1/object/list/photos`;
+async function firstPhotoUrl(
+  client: SupabaseClient<any, "public", any>,
+  folder: string
+): Promise<string | null> {
   try {
-    const res = await fetch(listUrl, {
-      method: "POST",
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prefix: folder,
-        limit: 100,
-        sortBy: { column: "name", order: "asc" },
-      }),
-    });
-    if (!res.ok) return null;
-    const files: StorageFile[] = await res.json();
-    const img = files
-      .filter((f: StorageFile) => /\.(?:jpe?g|png|webp|gif|bmp)$/i.test(String(f.name || "")))
-      .sort((a: StorageFile, b: StorageFile) => String(a.name).localeCompare(String(b.name)))[0];
+    const list = await client.storage.from(BUCKET).list(folder, { limit: 100 });
+    if (list.error || !list.data) return null;
+    const img = list.data
+      .filter((f: any) => IMG_RE.test(f.name))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name))[0];
     if (!img) return null;
-    const path = `${folder}/${img.name}`.replace(/\/+/g, "/");
-    return `${base}/storage/v1/object/public/photos/${path}`;
+    const path = `${folder}/${img.name}`;
+    const { data } = client.storage.from(BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
   } catch {
     return null;
   }
 }
 
-function coalesce<T>(...vals: T[]): T | null {
-  for (const v of vals) {
-    // @ts-ignore
-    if (v !== undefined && v !== null && String(v) !== "") return v;
+async function resolveCoverUrl(row: AnyRow): Promise<string | null> {
+  const explicit =
+    firstNonEmpty<string>(row.cover_url, row.cover_ext_url, row.photo_url, row.image_url) ?? null;
+  if (explicit) return explicit;
+
+  // If there is a storage path, try to build public URL from it
+  const storagePath =
+    firstNonEmpty<string>(row.cover_storage_path, row.photo_storage_path) ?? null;
+  const storageBucket =
+    firstNonEmpty<string>(row.cover_storage_bucket, row.photo_bucket) ?? BUCKET;
+  const supa = makeSupabase();
+  if (storagePath && supa) {
+    const bucket = storageBucket || BUCKET;
+    try {
+      const { data } = supa.storage.from(bucket).getPublicUrl(storagePath);
+      if (data?.publicUrl) return data.publicUrl;
+    } catch {}
+  }
+
+  // Otherwise try to list photos/<external_id>/ or photos/<uuid>/
+  if (!supa) return null;
+  const ext = firstNonEmpty<string>(row.external_id, row.id, row.uuid, row.code);
+  if (ext) {
+    const u1 = await firstPhotoUrl(supa, String(ext));
+    if (u1) return u1;
+  }
+  const uid = firstNonEmpty<string>(row.uuid, row.id, row.external_id);
+  if (uid) {
+    const u2 = await firstPhotoUrl(supa, String(uid));
+    if (u2) return u2;
   }
   return null;
 }
 
-function buildPrices(ext: AnyRow): string | null {
-  const map: Array<[string, string]> = [
-    ["price_per_m2_20", "20"],
-    ["price_per_m2_50", "50"],
-    ["price_per_m2_100", "100"],
-    ["price_per_m2_400", "400"],
-    ["price_per_m2_700", "700"],
-    ["price_per_m2_1500", "1500"],
-  ];
-  const parts: string[] = [];
-  for (const [k, label] of map) {
-    const v = ext?.[k];
-    if (v !== null && v !== undefined && String(v) !== "") {
-      parts.push(`от ${label} — ${v}`);
-    }
-  }
-  return parts.length ? parts.join(" · ") : null;
+function pickExternalId(row: AnyRow): string {
+  return (
+    firstNonEmpty<string>(row.external_id, row.id, row.uuid, row.code) ?? ""
+  );
 }
 
-export async function GET(request: Request) {
+export async function GET(req: Request) {
   try {
-    const url = new URL(request.url);
-    const params = url.searchParams;
-    const cityParam = params.get("city")?.trim() || "";
-    const idParam = params.get("id")?.trim() || "";
+    const { searchParams } = new URL(req.url);
+    const cityFilter = (searchParams.get("city") || "").trim();
+    const idFilter = (searchParams.get("id") || "").trim();
+    const wantV2 = (searchParams.get("v") || "").trim() === "2";
 
-    // 1) Base rows (select * to avoid column name drift)
-    const baseRes = await rest("property_public_view", "select=*");
+    // 1) Pull base rows from PostgREST with very tolerant select=*
+    // We can't import the Supabase SQL client here; instead, the app already exposes a PostgREST endpoint
+    // under the project URL. We'll use fetch to avoid type/deploy issues.
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      "";
+    if (!supabaseUrl) {
+      return NextResponse.json(
+        { ok: false, message: "SUPABASE_URL is not configured" },
+        { status: 500 }
+      );
+    }
+
+    // Build query params
+    const table = "property_public_view";
+    // We fetch all columns, filters will be applied client-side (still fast for modest datasets)
+    const qs: string[] = ["select=*"];
+    if (cityFilter) {
+      // try both "city_name" and "city" filters via or logic
+      qs.push(`or=(city_name.eq.${encodeURIComponent(cityFilter)},city.eq.${encodeURIComponent(cityFilter)})`);
+    }
+    if (idFilter) {
+      qs.push(
+        `or=(external_id.eq.${encodeURIComponent(idFilter)},id.eq.${encodeURIComponent(
+          idFilter
+        )},uuid.eq.${encodeURIComponent(idFilter)})`
+      );
+    }
+    const url = `${supabaseUrl}/rest/v1/${table}?${qs.join("&")}`;
+
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      Prefer: "return=representation",
+      // anon is enough for public selects
+      apikey:
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_ANON_KEY ||
+        "",
+      Authorization: `Bearer ${
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_ANON_KEY ||
+        ""
+      }`,
+    };
+
+    const baseRes = await fetch(url, { headers, cache: "no-store" });
     if (!baseRes.ok) {
       const txt = await baseRes.text();
-      return NextResponse.json({ ok: false, message: txt || "Query error (base)" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, message: `Catalog base query failed: ${txt}` },
+        { status: 500 }
+      );
     }
-    const baseRows: AnyRow[] = (await baseRes.json()) ?? [];
+    const rows = (await baseRes.json()) as AnyRow[];
 
-    // Optional client-side filtering when schema varies
-    const filteredRows = baseRows.filter((r) => {
-      const extId = coalesce(r.external_id, r.id, r.uuid, r.pk) as any;
-      const city = coalesce(r.city_name, r.city) as any;
-      const passCity = cityParam ? String(city || "").trim() === cityParam : true;
-      const passId = idParam ? String(extId || "").trim() === idParam : true;
-      return passCity && passId;
-    });
+    // 2) Derive cities directly from rows (fallbacks to support different schemas)
+    let cities: string[] = rows
+      .map((r) => String(firstNonEmpty<string>(r.city_name, r.city) ?? ""))
+      .filter((s) => s && s.trim() !== "");
 
-    // Collect identifiers
-    const exts: string[] = [];
-    for (const r of filteredRows) {
-      const extId = (coalesce(r.external_id, r.id, r.uuid, r.pk) as any) || "";
-      if (extId) exts.push(String(extId));
-    }
+    // Ban obvious service values
+    const banned = new Set(["Обязательность данных"]);
+    cities = cities.filter((c) => !banned.has(String(c)));
+    cities.sort((a, b) => a.localeCompare(b, "ru"));
 
-    // 2) Extension rows (extra fields like prices, tip_pomescheniya, etazh)
-    let extMap: Record<string, AnyRow> = {};
-    if (exts.length) {
-      const inList = exts.map((e) => `"${String(e).replace(/"/g, '\\"')}"`).join(",");
-      const qs = `select=*&external_id=in.(${inList})`;
-      const extRes = await rest("property_ext", qs);
-      if (extRes.ok) {
-        const extRows: AnyRow[] = (await extRes.json()) ?? [];
-        extMap = Object.fromEntries(extRows.map((e) => [String(e.external_id), e]));
-      }
-    }
-
-    // 3) Hydrate output
+    // 3) Hydrate items
     const items: ItemOut[] = [];
-    for (const r of filteredRows) {
-      const extId = (coalesce(r.external_id, r.id, r.uuid, r.pk) as any) || "";
-      const ext = extMap[extId] || r || {};
+    for (const r of rows ?? []) {
+      const external_id = pickExternalId(r);
+      const city_name =
+        firstNonEmpty<string>(r.city_name, r.city) ?? null;
+      const address =
+        firstNonEmpty<string>(r.address, r.adres, r.adres_full) ?? null;
+      const type = firstNonEmpty<string>(r.type, r.property_type) ?? null;
+      const total_area = toIntOrNull(
+        firstNonEmpty<number | string>(r.total_area, r.ploschad, r.area)
+      );
+      const floor = toIntOrNull(firstNonEmpty<number | string>(r.etazh, r.floor));
 
-      const city = (coalesce(r.city_name, r.city) as any) || "";
-      const address = (coalesce(r.address, r.addr, r.full_address) as any) || "";
-      const title = [city, address].filter(Boolean).join(", ");
-
-      const tip = (coalesce(ext.tip_pomescheniya, r.tip_pomescheniya) as any) || (r.type ?? "");
-      const floorRaw = coalesce(ext.etazh, r.etazh, r.floor) as any;
-      const floor = floorRaw !== null ? String(floorRaw).trim() : "";
-      const line2 = [tip, floor ? `этаж ${floor}` : ""].filter(Boolean).join(" · ") || null;
-
-      const prices = buildPrices(ext);
-
-      // cover: 1) explicit url 2) storage path 3) search in folders by extId/uuid
-      let cover: string | null =
-        (coalesce(ext.cover_ext_url, r.cover_ext_url, ext.cover_url, r.cover_url) as any) || null;
-
-      if (!cover) {
-        const storagePath = (coalesce(ext.cover_storage_path, r.cover_storage_path) as any) || "";
-        if (storagePath) {
-          const base = resolveStorageBase();
-          cover = `${base}/storage/v1/object/public/photos/${String(storagePath).replace(/^\/+/, "")}`;
-        }
-      }
-      if (!cover) {
-        // try to list from storage by folders
-        cover =
-          (await listFirstImagePublicUrl(String(extId))) ||
-          (await listFirstImagePublicUrl(String(coalesce(ext.uuid, r.uuid) || ""))) ||
-          null;
-      }
+      const title = buildTitle(r);
+      const line2 = buildLine2(r);
+      const prices = buildPrices(r);
+      const cover_url = await resolveCoverUrl(r);
 
       items.push({
-        external_id: String(extId),
+        external_id,
         title,
+        address,
+        city_name,
+        type,
+        total_area,
+        floor,
+        cover_url,
         line2,
         prices,
-        cover_url: cover,
       });
     }
 
-    // Cities list
-    const banned = new Set(["Обязательность данных"]);
-    let cities: string[] = [];
-    for (const r of baseRows) {
-      const c = String(coalesce(r.city_name, r.city) || "").trim();
-      if (!c || banned.has(c)) continue;
-      if (!cities.includes(c)) cities.push(c);
+    if (wantV2) {
+      return NextResponse.json({ ok: true, items, cities });
     }
-    cities.sort((a, b) => a.localeCompare(b, "ru"));
-
+    // legacy shape for homepage (backwards compatible)
+    return NextResponse.json({ items, cities });
+  } catch (err: any) {
     return NextResponse.json(
-      { items, cities },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-          "x-api-version": "2",
-        },
-      }
+      { ok: false, message: err?.message || "Catalog API fatal error" },
+      { status: 500 }
     );
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: String(e?.message || e) }, { status: 500 });
   }
 }
