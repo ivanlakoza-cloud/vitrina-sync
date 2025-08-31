@@ -1,98 +1,56 @@
-// Main page with robust baseUrl and 6-column grid
-import React from "react";
+import Image from "next/image";
 
 type Item = {
   external_id: string;
-  cover_url?: string | null;
-  city_name?: string | null;
-  address?: string | null;
+  title: string;
   line2?: string | null;
   prices?: string | null;
+  cover_url?: string | null;
 };
 
-function getBaseUrl(): string {
-  // Prefer explicit site URL if provided; fallback to Vercel URL; fallback to localhost for dev
+function getBaseUrl() {
+  // прод: NEXT_PUBLIC_SITE_URL=https://vitran.ru
   if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
-  if (process.env.SITE_URL) return process.env.SITE_URL as string;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3000"; // local dev only
-}
-
-async function getCatalog(): Promise<{ items: Item[] }> {
-  const res = await fetch(`${getBaseUrl()}/api/catalog`, {
-    cache: "no-store", // avoid stale SSR cache
-    // next: { revalidate: 0 } // alternatively, but no-store is enough
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Catalog fetch failed: ${res.status} ${text}`);
-  }
-  return res.json();
+  return "http://localhost:3000";
 }
 
 export default async function Page() {
-  const data = await getCatalog();
-  const items: Item[] = Array.isArray(data?.items) ? data.items : [];
+  const baseUrl = getBaseUrl();
+  const res = await fetch(`${baseUrl}/api/catalog?v=3`, { cache: "no-store" });
+  const data = await res.json();
+
+  const items: Item[] = data?.items ?? [];
 
   return (
-    <main style={{ padding: "24px" }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(0,1fr))",
-          gap: "16px",
-        }}
-      >
-        {items.map((it) => {
-          const title = [it.city_name, it.address].filter(Boolean).join(", ");
-          return (
-            <a
-              key={it.external_id}
-              href={`/p/${it.external_id}`}
-              style={{
-                display: "block",
-                textDecoration: "none",
-                color: "inherit",
-                border: "1px solid #eee",
-                borderRadius: 12,
-                overflow: "hidden",
-                background: "#fff",
-              }}
-            >
+    <main className="px-4 py-6 max-w-[1600px] mx-auto">
+      <h1 className="text-2xl font-semibold mb-4">Каталог</h1>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {items.map((it) => (
+          <article key={it.external_id} className="rounded-xl overflow-hidden border border-gray-200">
+            <div className="relative aspect-[4/3] bg-gray-100">
               {it.cover_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={it.cover_url}
-                  alt=""
-                  style={{
-                    width: "100%",
-                    aspectRatio: "4 / 3",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
+                  alt={it.title}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
                 />
               ) : (
-                <div
-                  style={{
-                    width: "100%",
-                    paddingTop: "66%",
-                    background: "#f5f5f5",
-                  }}
-                />
+                <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
+                  фото скоро
+                </div>
               )}
-
-              <div style={{ padding: 12 }}>
-                <div style={{ fontWeight: 700, lineHeight: 1.25 }}>{title}</div>
-                {it.line2 ? (
-                  <div style={{ opacity: 0.8, marginTop: 4 }}>{it.line2}</div>
-                ) : null}
-                {it.prices ? (
-                  <div style={{ opacity: 0.8, marginTop: 4 }}>{it.prices}</div>
-                ) : null}
-              </div>
-            </a>
-          );
-        })}
+            </div>
+            <div className="p-3">
+              <h3 className="text-sm font-semibold line-clamp-2">{it.title}</h3>
+              {it.line2 ? <p className="text-xs text-gray-600 mt-1">{it.line2}</p> : null}
+              {it.prices ? <p className="text-xs text-gray-800 mt-1">{it.prices}</p> : null}
+            </div>
+          </article>
+        ))}
       </div>
     </main>
   );
