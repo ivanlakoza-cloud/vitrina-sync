@@ -219,9 +219,9 @@ export async function GET(request: Request) {
       getItems(supabase, city, id, preferred),
     ]);
 
-    // build cover urls
-    const withCovers = await Promise.all(
-      items.map(async (p) => ({
+    // build cover urls (annotate p explicitly to avoid implicit any)
+    const withCovers: Item[] = await Promise.all(
+      items.map(async (p: Item) => ({
         ...p,
         cover_url: await firstPhotoUrl(supabase, p.external_id),
       }))
