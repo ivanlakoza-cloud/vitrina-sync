@@ -1,140 +1,129 @@
-// app/api/catalog/route.ts
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-type Row = {
-  id: string;                 // UUID
-  external_id?: string | null;// короткий код из таблицы/скрипта (id53 и т.п.)
-  title?: string | null;
-  address?: string | null;
-  type?: string | null;
-  total_area?: number | null;
-  city?: string | null;       // c.name
-};
+import { NextResponse } from 'next/server';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-type Item = {
-  external_id: string;        // что будем использовать как код карточки и папку фоток
-  title: string;
-  address: string;
-  city_name: string;
-  type: string;
+// Minimal row type from property_public_view we read
+type PropertyRow = {
+  id: string;
+  external_id: string;
+  title: string | null;
+  address: string | null;
+  city_name: string | null;
+  type: string | null;
   total_area: number | null;
-  floor: string | number | null;
-  cover_url: string | null;
+  tip_pomescheniya?: string | null;
+  etazh?: string | number | null;
 };
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
-const BAD_CITY_LABEL = "Обязательность данных";
+// util: get env and client
+function getClient(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+  const key =
+    (process.env.SUPABASE_SERVICE_ROLE_KEY as string) ||
+    (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string);
 
-export const revalidate = 0;
-
-function normalizeCity(s: any): string {
-  return typeof s === "string" ? s.trim() : "";
-}
-
-async function tryListFirstFile(supabase: any, folder: string) {
-  const { data: files, error } = await supabase.storage.from(PHOTOS_BUCKET).list(folder, {
-    limit: 50,
-    sortBy: { column: "name", order: "asc" },
-  });
-  if (error || !files || files.length === 0) return null;
-  const first = files.find((f: any) => !f.name.startsWith(".")) ?? files[0];
-  const path = `${folder}${folder.endsWith("/") ? "" : "/"}${first.name}`;
-  const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
-  return data?.publicUrl ?? null;
-}
-
-async function firstPhotoUrl(supabase: any, code: string, fallbackCode?: string): Promise<string | null> {
-  const candidates = Array.from(new Set([code, fallbackCode].filter(Boolean))) as string[];
-  const variants: string[] = [];
-  for (const c of candidates) {
-    variants.push(`${c}/`, `${c.toLowerCase()}/`, `${c.toUpperCase()}/`);
+  if (!url || !key) {
+    throw new Error('Missing Supabase env: NEXT_PUBLIC_SUPABASE_URL / KEY');
   }
-  for (const v of variants) {
-    const url = await tryListFirstFile(supabase, v);
-    if (url) return url;
+  return createClient(url, key);
+}
+
+async function firstPhotoUrl(supabase: SupabaseClient, idOrExt: string): Promise<string | null> {
+  const bucket = supabase.storage.from('photos');
+
+  // Try <external_id>/ then <UUID>/
+  const candidates = [`${idOrExt}/`];
+
+  // When idOrExt is a UUID-like without "id" prefix, also try with no prefix variants are handled by caller.
+  // List first directory that exists and has files
+  for (const prefix of candidates) {
+    const { data, error } = await bucket.list(prefix, {
+      limit: 1,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    if (error) continue;
+    if (data && data.length > 0) {
+      const path = `${prefix}${data[0].name}`;
+      const pub = bucket.getPublicUrl(path);
+      return pub?.data?.publicUrl ?? null;
+    }
   }
   return null;
 }
 
-export async function GET(request: Request) {
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const url = new URL(request.url);
-  const city = normalizeCity(url.searchParams.get("city"));
-  const id = normalizeCity(url.searchParams.get("id"));
-  const debug = url.searchParams.get("debug") === "1";
+export async function GET(req: Request) {
+  try {
+    const supabase = getClient();
+    const { searchParams } = new URL(req.url);
 
-  // Список городов из cities join (исключаем плейсхолдер)
-  const { data: citiesRaw } = await supabase
-    .from("properties")
-    .select("city:cities(name)")
-    .neq("status", "archived") // на всякий случай
-    .eq("is_public", true);
+    const qCity = (searchParams.get('city') ?? '').trim();
+    const qId = (searchParams.get('id') ?? '').trim();
 
-  const citySet = new Set<string>();
-  (citiesRaw || []).forEach((r: any) => {
-    const name = normalizeCity(r?.city?.name);
-    if (name && name !== BAD_CITY_LABEL) citySet.add(name);
-  });
-  const cities = Array.from(citySet).sort((a, b) => a.localeCompare(b, "ru"));
+    // base query
+    let query = supabase
+      .from('property_public_view')
+      .select(
+        'id, external_id, title, address, city_name, type, total_area, tip_pomescheniya, etazh'
+      )
+      .limit(500);
 
-  // Основной список объектов — напрямую из properties + join cities (чтобы получить внешний id и город)
-  let q = supabase
-    .from("properties")
-    .select("id, external_id, title, address, type, total_area, city: cities(name)")
-    .eq("is_public", true)
-    .eq("status", "active");
+    if (qId) {
+      query = query.eq('external_id', qId);
+    }
+    if (qCity) {
+      query = query.eq('city_name', qCity);
+    }
 
-  if (city) q = q.eq("cities.name", city); // фильтр по тексту города
-  if (id) q = q.eq("id", id);              // если придёт, это UUID
+    const { data, error } = await query;
+    if (error) {
+      return NextResponse.json({ items: [], cities: [], debug: { error } }, { status: 200 });
+    }
 
-  const { data, error } = await q;
-  if (error) {
-    const payload: any = { items: [], cities };
-    if (debug) payload.debug = { error };
-    return NextResponse.json(payload);
+    const rows: PropertyRow[] = (data ?? []) as any[];
+
+    // items + covers
+    const items = await Promise.all(
+      rows.map(async (p) => {
+        const cover =
+          (await firstPhotoUrl(supabase, p.external_id)) ??
+          (await firstPhotoUrl(supabase, p.id));
+        return {
+          external_id: p.external_id,
+          title: (p.title ?? '').trim(),
+          address: p.address ?? '',
+          city_name: p.city_name ?? '',
+          type: p.type ?? '',
+          total_area: p.total_area ?? null,
+          floor: (p as any).floor ?? p.etazh ?? null,
+          cover_url: cover,
+        };
+      })
+    );
+
+    // Cities list (unique, filtered, sorted)
+    const citySet = new Set<string>();
+    for (const r of rows) {
+      if (r.city_name && typeof r.city_name === 'string') citySet.add(r.city_name);
+    }
+    let cities: string[] = Array.from(citySet);
+
+    const banned = new Set<string>(['Обязательность данных']);
+    cities = cities.filter((c: string) => !banned.has(String(c)));
+
+    // <-- explicit parameter types fix the TS "unknown" complaint
+    cities.sort((a: string, b: string) => a.localeCompare(b, 'ru'));
+
+    return NextResponse.json(
+      {
+        items,
+        cities,
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { items: [], cities: [], debug: { fatal: String(e?.message ?? e) } },
+      { status: 200 }
+    );
   }
-
-  const baseItems: Item[] = (data || [])
-    .map((r: any) => {
-      const cityName = normalizeCity(r?.city?.name);
-      if (!cityName || cityName === BAD_CITY_LABEL) return null;
-      const externalCode = (r.external_id || r.id) as string;
-      const it: Item = {
-        external_id: externalCode,
-        title: r.title ?? "",
-        address: r.address ?? "",
-        city_name: cityName,
-        type: r.type ?? "",
-        total_area: r.total_area ?? null,
-        floor: null,
-        cover_url: null,
-      };
-      return it;
-    })
-    .filter(Boolean) as Item[];
-
-  // Фото: используем external_id как основной код папки, fallback — UUID id
-  const items: Item[] = await Promise.all(
-    baseItems.map(async (p, idx) => ({
-      ...p,
-      cover_url: await firstPhotoUrl(supabase, p.external_id, data?.[idx]?.id),
-    }))
-  );
-
-  const payload: any = { items, cities };
-  if (debug) {
-    payload.debug = {
-      query: { city, id },
-      counts: { items: items.length, cities: cities.length },
-      sample: items.slice(0, 5).map((x, i) => ({
-        id: x.external_id, city: x.city_name, hasCover: !!x.cover_url
-      })),
-      note: "Города и список берутся напрямую из properties + cities; фото ищется по папкам external_id/ и UUID/.",
-    };
-  }
-
-  return NextResponse.json(payload);
 }

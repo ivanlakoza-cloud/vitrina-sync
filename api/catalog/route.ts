@@ -1,144 +1,129 @@
 
-import { NextResponse } from "next/server";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { NextResponse } from 'next/server';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
-
-type PriceRow = {
-  price_per_m2_20: number | null;
-  price_per_m2_50: number | null;
-  price_per_m2_100: number | null;
-  price_per_m2_400: number | null;
-  price_per_m2_700: number | null;
-  price_per_m2_1500: number | null;
-};
-
-type PubRow = {
-  id: string; // external id (folder in storage)
+// Minimal row type from property_public_view we read
+type PropertyRow = {
+  id: string;
+  external_id: string;
+  title: string | null;
   address: string | null;
-  city: string | null;
+  city_name: string | null;
   type: string | null;
   total_area: number | null;
-  floor?: number | null;
+  tip_pomescheniya?: string | null;
+  etazh?: string | number | null;
 };
 
-type PropRow = PriceRow & {
-  id: string;
-  tip_pomescheniya: string | null;
-  etazh: string | number | null;
-};
+// util: get env and client
+function getClient(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+  const key =
+    (process.env.SUPABASE_SERVICE_ROLE_KEY as string) ||
+    (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string);
 
-function uniq<T>(arr: T[]) { return Array.from(new Set(arr)); }
-function notEmpty<T>(x: T | null | undefined): x is T { return x !== null && x !== undefined; }
+  if (!url || !key) {
+    throw new Error('Missing Supabase env: NEXT_PUBLIC_SUPABASE_URL / KEY');
+  }
+  return createClient(url, key);
+}
 
-async function firstPhotoUrl(supabase: SupabaseClient, externalId: string): Promise<string | null> {
-  // look for the first file in photos/<externalId>/
-  const { data, error } = await supabase
-    .from("storage.objects")
-    .select("name")
-    .eq("bucket_id", "photos")
-    .ilike("name", `${externalId}/%`)
-    .order("name", { ascending: true })
-    .limit(1);
-  if (error || !data || data.length === 0) return null;
-  const path = data[0].name as string;
-  const { data: pub } = supabase.storage.from("photos").getPublicUrl(path);
-  return pub?.publicUrl ?? null;
+async function firstPhotoUrl(supabase: SupabaseClient, idOrExt: string): Promise<string | null> {
+  const bucket = supabase.storage.from('photos');
+
+  // Try <external_id>/ then <UUID>/
+  const candidates = [`${idOrExt}/`];
+
+  // When idOrExt is a UUID-like without "id" prefix, also try with no prefix variants are handled by caller.
+  // List first directory that exists and has files
+  for (const prefix of candidates) {
+    const { data, error } = await bucket.list(prefix, {
+      limit: 1,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    if (error) continue;
+    if (data && data.length > 0) {
+      const path = `${prefix}${data[0].name}`;
+      const pub = bucket.getPublicUrl(path);
+      return pub?.data?.publicUrl ?? null;
+    }
+  }
+  return null;
 }
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const cityQuery = (url.searchParams.get("city") || "").trim();
-  const idQuery = (url.searchParams.get("id") || "").trim();
-
-  const supabaseUrl = process.env.SUPABASE_URL!;
-  const supabaseAnon = process.env.SUPABASE_ANON_KEY!;
-  const supabase = createClient(supabaseUrl, supabaseAnon);
-
-  // base select from public view
-  let pubSel = supabase
-    .from("property_public_view")
-    .select("id,address,city,type,total_area,floor")
-    .order("city", { ascending: true }) as any;
-
-  if (cityQuery) pubSel = pubSel.eq("city", cityQuery);
-  if (idQuery) pubSel = pubSel.eq("id", idQuery);
-
-  const { data: pubRows, error: pubErr } = await pubSel;
-  if (pubErr) {
-    return NextResponse.json({ error: "Catalog API query error", detail: pubErr }, { status: 500 });
-  }
-
-  const ids = (pubRows ?? []).map((r: PubRow) => r.id);
-  // pull additional fields from base table in one go
-  let propRows: PropRow[] = [];
-  if (ids.length) {
-    const { data: propsData, error: propsErr } = await supabase
-      .from("properties")
-      .select("id,tip_pomescheniya,etazh,price_per_m2_20,price_per_m2_50,price_per_m2_100,price_per_m2_400,price_per_m2_700,price_per_m2_1500")
-      .in("id", ids);
-    if (propsErr) {
-      return NextResponse.json({ error: "Catalog API query error", detail: propsErr }, { status: 500 });
-    }
-    propRows = (propsData || []) as PropRow[];
-  }
-  const propsById = new Map(propRows.map(r => [r.id, r]));
-
-  // build items with covers
-  const items = await Promise.all(
-    (pubRows || []).map(async (p: PubRow) => {
-      const extra = propsById.get(p.id);
-      const cover_url = await firstPhotoUrl(supabase, p.id);
-      return {
-        external_id: p.id,
-        address: p.address,
-        city_name: p.city,
-        tip_pomescheniya: extra?.tip_pomescheniya ?? null,
-        etazh: (extra?.etazh ?? p.floor ?? null),
-        // keep for backwards compatibility, but FE can ignore
-        type: p.type,
-        total_area: p.total_area,
-        cover_url,
-        // price fields as-is; FE will format only those present
-        price_per_m2_20: extra?.price_per_m2_20 ?? null,
-        price_per_m2_50: extra?.price_per_m2_50 ?? null,
-        price_per_m2_100: extra?.price_per_m2_100 ?? null,
-        price_per_m2_400: extra?.price_per_m2_400 ?? null,
-        price_per_m2_700: extra?.price_per_m2_700 ?? null,
-        price_per_m2_1500: extra?.price_per_m2_1500 ?? null,
-        // convenience headline "Город, Адрес"
-        headline: [p.city, p.address].filter(Boolean).join(", "),
-      };
-    })
-  );
-
-  // cities list from view + optional cities table
-  const viewCities = uniq((pubRows || []).map((r: PubRow) => r.city).filter(notEmpty));
-  let cities = viewCities;
-  // try to union with cities table if present, ignore errors
   try {
-    const { data: cityRows } = await supabase.from("cities").select("name");
-    if (Array.isArray(cityRows)) {
-      const names = cityRows.map((c: any) => c.name).filter(notEmpty);
-      cities = uniq(cities.concat(names));
+    const supabase = getClient();
+    const { searchParams } = new URL(req.url);
+
+    const qCity = (searchParams.get('city') ?? '').trim();
+    const qId = (searchParams.get('id') ?? '').trim();
+
+    // base query
+    let query = supabase
+      .from('property_public_view')
+      .select(
+        'id, external_id, title, address, city_name, type, total_area, tip_pomescheniya, etazh'
+      )
+      .limit(500);
+
+    if (qId) {
+      query = query.eq('external_id', qId);
     }
-  } catch {}
-
-  // filter out service/invalid names
-  const banned = new Set(["Обязательность данных", "обязательность данных"]);
-  cities = cities.filter(c => !banned.has(String(c)));
-
-  cities.sort((a, b) => a.localeCompare(b, "ru"));
-
-  return NextResponse.json({
-    items,
-    cities,
-    debug: {
-      query: { city: cityQuery, id: idQuery },
-      counts: { items: items.length, cities: cities.length },
-      sample: items.slice(0, 5).map(i => ({ id: i.external_id, city: i.city_name, hasCover: !!i.cover_url })),
-      note: "price_* поля отдаются как есть; фронт форматирует только непустые значения (от 20, от 50, ...)."
+    if (qCity) {
+      query = query.eq('city_name', qCity);
     }
-  });
+
+    const { data, error } = await query;
+    if (error) {
+      return NextResponse.json({ items: [], cities: [], debug: { error } }, { status: 200 });
+    }
+
+    const rows: PropertyRow[] = (data ?? []) as any[];
+
+    // items + covers
+    const items = await Promise.all(
+      rows.map(async (p) => {
+        const cover =
+          (await firstPhotoUrl(supabase, p.external_id)) ??
+          (await firstPhotoUrl(supabase, p.id));
+        return {
+          external_id: p.external_id,
+          title: (p.title ?? '').trim(),
+          address: p.address ?? '',
+          city_name: p.city_name ?? '',
+          type: p.type ?? '',
+          total_area: p.total_area ?? null,
+          floor: (p as any).floor ?? p.etazh ?? null,
+          cover_url: cover,
+        };
+      })
+    );
+
+    // Cities list (unique, filtered, sorted)
+    const citySet = new Set<string>();
+    for (const r of rows) {
+      if (r.city_name && typeof r.city_name === 'string') citySet.add(r.city_name);
+    }
+    let cities: string[] = Array.from(citySet);
+
+    const banned = new Set<string>(['Обязательность данных']);
+    cities = cities.filter((c: string) => !banned.has(String(c)));
+
+    // <-- explicit parameter types fix the TS "unknown" complaint
+    cities.sort((a: string, b: string) => a.localeCompare(b, 'ru'));
+
+    return NextResponse.json(
+      {
+        items,
+        cities,
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { items: [], cities: [], debug: { fatal: String(e?.message ?? e) } },
+      { status: 200 }
+    );
+  }
 }
