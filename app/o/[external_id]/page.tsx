@@ -17,7 +17,7 @@ function KV({ k, v, strong }: { k: string, v: any, strong?: boolean }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
     <div className="grid grid-cols-[220px,1fr] gap-3 py-1 border-b border-neutral-100">
-      <div className={strong ? "k text-base" : "k"}>{k}</div>
+      <div className={strong ? "font-semibold text-base" : "font-semibold"}>{k}</div>
       <div className="v">{String(v)}</div>
     </div>
   );
