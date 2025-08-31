@@ -26,8 +26,7 @@ function labelize(key: string): string {
   return key.replace(/_/g, " ");
 }
 
-const HIDE_FIELDS = new Set<string>([
-  "external_id","id","created_at","updated_at","id_obekta","otobrazit_vse","avito_id","etazh_avito",
+const \1unnamed_93","external_id","id","created_at","updated_at","id_obekta","otobrazit_vse","avito_id","etazh_avito",
   "ukazannaya_ploschad","ukazannaya_stoimost_za_m2","disk_foto_plan",
   "adres_23_58","adres_avito","city","tekst_obyavleniya","zagolovok","foto_s_avito"
 ]);

@@ -24,14 +24,31 @@ export async function fetchByExternalId(external_id: string): Promise<DomusRecor
 }
 
 export async function getFirstPhoto(id: string): Promise<string> {
-  const { data } = await supabase.storage.from(PHOTOS_BUCKET).list(id + "/", { limit: 100 });
-  if (!data || data.length === 0) return "/placeholder.svg";
-  const first = data[0].name;
-  return publicUrl(`${PHOTOS_BUCKET}/${id}/${first}`);
+  // Try several list variants and buckets to be resilient
+  const buckets = [PHOTOS_BUCKET, "potos", "photos"].filter(Boolean);
+  const paths = [id, id + "/", id.replace(/^\/+|\/+$/g,"")]; // with/without slash
+  for (const b of buckets) {
+    for (const p of paths) {
+      const { data, error } = await supabase.storage.from(b).list(p, { limit: 100 });
+      if (!error && data && data.length > 0) {
+        const first = data[0].name;
+        return publicUrl(`${b}/${id}/${first}`);
+      }
+    }
+  }
+  return "/placeholder.svg";
 }
 
 export async function getGallery(id: string): Promise<string[]> {
-  const { data } = await supabase.storage.from(PHOTOS_BUCKET).list(id + "/", { limit: 100 });
-  if (!data || data.length === 0) return ["/placeholder.svg"];
-  return data.map((f) => publicUrl(`${PHOTOS_BUCKET}/${id}/${f.name}`));
+  const buckets = [PHOTOS_BUCKET, "potos", "photos"].filter(Boolean);
+  const paths = [id, id + "/", id.replace(/^\/+|\/+$/g,"")];
+  for (const b of buckets) {
+    for (const p of paths) {
+      const { data, error } = await supabase.storage.from(b).list(p, { limit: 100 });
+      if (!error && data && data.length > 0) {
+        return data.map((f) => publicUrl(`${b}/${id}/${f.name}`));
+      }
+    }
+  }
+  return ["/placeholder.svg"];
 }
