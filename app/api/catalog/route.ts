@@ -1,140 +1,117 @@
-// app/api/catalog/route.ts
+
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-type Row = {
-  id: string;                 // UUID
-  external_id?: string | null;// короткий код из таблицы/скрипта (id53 и т.п.)
-  title?: string | null;
-  address?: string | null;
-  type?: string | null;
-  total_area?: number | null;
-  city?: string | null;       // c.name
-};
-
-type Item = {
-  external_id: string;        // что будем использовать как код карточки и папку фоток
-  title: string;
-  address: string;
-  city_name: string;
-  type: string;
-  total_area: number | null;
-  floor: string | number | null;
-  cover_url: string | null;
-};
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
-const BAD_CITY_LABEL = "Обязательность данных";
-
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function normalizeCity(s: any): string {
-  return typeof s === "string" ? s.trim() : "";
+type Row = {
+  external_id: string;
+  address: string | null;
+  city_name: string | null;
+  type: string | null;
+  floor: string | number | null;
+  title: string | null;
+  price_per_m2_20?: number | null;
+  price_per_m2_50?: number | null;
+  price_per_m2_100?: number | null;
+  price_per_m2_400?: number | null;
+  price_per_m2_700?: number | null;
+  price_per_m2_1500?: number | null;
+};
+
+const PRICE_KEYS: Array<keyof Row> = [
+  "price_per_m2_20",
+  "price_per_m2_50",
+  "price_per_m2_100",
+  "price_per_m2_400",
+  "price_per_m2_700",
+  "price_per_m2_1500",
+];
+
+function formatPriceKey(k: string): string {
+  const m = k.match(/price_per_m2_(\d+)/);
+  return m ? `от ${m[1]}` : k;
 }
 
-async function tryListFirstFile(supabase: any, folder: string) {
-  const { data: files, error } = await supabase.storage.from(PHOTOS_BUCKET).list(folder, {
-    limit: 50,
-    sortBy: { column: "name", order: "asc" },
-  });
-  if (error || !files || files.length === 0) return null;
-  const first = files.find((f: any) => !f.name.startsWith(".")) ?? files[0];
-  const path = `${folder}${folder.endsWith("/") ? "" : "/"}${first.name}`;
-  const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
-  return data?.publicUrl ?? null;
+function typeRu(t: string | null | undefined): string | null {
+  if (!t) return null;
+  const map: Record<string, string> = {
+    office: "офис",
+    retail: "ритейл",
+    warehouse: "склад",
+    industrial: "производство",
+    other: "другое",
+  };
+  return map[t] ?? t;
 }
 
-async function firstPhotoUrl(supabase: any, code: string, fallbackCode?: string): Promise<string | null> {
-  const candidates = Array.from(new Set([code, fallbackCode].filter(Boolean))) as string[];
-  const variants: string[] = [];
-  for (const c of candidates) {
-    variants.push(`${c}/`, `${c.toLowerCase()}/`, `${c.toUpperCase()}/`);
-  }
-  for (const v of variants) {
-    const url = await tryListFirstFile(supabase, v);
-    if (url) return url;
-  }
-  return null;
-}
+export async function GET() {
+  try {
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE as string;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-export async function GET(request: Request) {
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const url = new URL(request.url);
-  const city = normalizeCity(url.searchParams.get("city"));
-  const id = normalizeCity(url.searchParams.get("id"));
-  const debug = url.searchParams.get("debug") === "1";
+    const { data, error } = await supabase
+      .from("property_public_view")
+      .select("*")
+      .order("city_name", { ascending: true })
+      .order("address", { ascending: true });
 
-  // Список городов из cities join (исключаем плейсхолдер)
-  const { data: citiesRaw } = await supabase
-    .from("properties")
-    .select("city:cities(name)")
-    .neq("status", "archived") // на всякий случай
-    .eq("is_public", true);
+    if (error) throw error;
 
-  const citySet = new Set<string>();
-  (citiesRaw || []).forEach((r: any) => {
-    const name = normalizeCity(r?.city?.name);
-    if (name && name !== BAD_CITY_LABEL) citySet.add(name);
-  });
-  const cities = Array.from(citySet).sort((a, b) => a.localeCompare(b, "ru"));
+    const items = (data as Row[]).map((r) => {
+      const title = [r.city_name, r.address].filter(Boolean).join(", ");
 
-  // Основной список объектов — напрямую из properties + join cities (чтобы получить внешний id и город)
-  let q = supabase
-    .from("properties")
-    .select("id, external_id, title, address, type, total_area, city: cities(name)")
-    .eq("is_public", true)
-    .eq("status", "active");
+      const etazh = r.floor != null && String(r.floor).trim() !== "" ? `этаж ${r.floor}` : null;
+      const tip = r.title && r.title.trim() ? r.title.trim() : typeRu(r.type);
+      const subline = [tip, etazh].filter(Boolean).join(" · ") || (typeRu(r.type) ?? "");
 
-  if (city) q = q.eq("cities.name", city); // фильтр по тексту города
-  if (id) q = q.eq("id", id);              // если придёт, это UUID
+      const priceParts: string[] = [];
+      for (const key of PRICE_KEYS) {
+        const val = (r as any)[key];
+        if (val != null && val !== "") {
+          priceParts.push(`${formatPriceKey(String(key))} — ${val}`);
+        }
+      }
+      const prices_line = priceParts.join(" · ");
 
-  const { data, error } = await q;
-  if (error) {
-    const payload: any = { items: [], cities };
-    if (debug) payload.debug = { error };
-    return NextResponse.json(payload);
-  }
-
-  const baseItems: Item[] = (data || [])
-    .map((r: any) => {
-      const cityName = normalizeCity(r?.city?.name);
-      if (!cityName || cityName === BAD_CITY_LABEL) return null;
-      const externalCode = (r.external_id || r.id) as string;
-      const it: Item = {
-        external_id: externalCode,
-        title: r.title ?? "",
-        address: r.address ?? "",
-        city_name: cityName,
-        type: r.type ?? "",
-        total_area: r.total_area ?? null,
-        floor: null,
-        cover_url: null,
+      return {
+        external_id: r.external_id,
+        cover_url: r.external_id
+          ? `${SUPABASE_URL}/storage/v1/object/public/photos/${r.external_id}/img_01.jpg`
+          : null,
+        title,
+        subline,
+        prices_line,
       };
-      return it;
-    })
-    .filter(Boolean) as Item[];
+    });
 
-  // Фото: используем external_id как основной код папки, fallback — UUID id
-  const items: Item[] = await Promise.all(
-    baseItems.map(async (p, idx) => ({
-      ...p,
-      cover_url: await firstPhotoUrl(supabase, p.external_id, data?.[idx]?.id),
-    }))
-  );
+    const cities = Array.from(new Set(items.map((i) => (i.title.split(", ")[0] || "").trim())))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, "ru"));
 
-  const payload: any = { items, cities };
-  if (debug) {
-    payload.debug = {
-      query: { city, id },
-      counts: { items: items.length, cities: cities.length },
-      sample: items.slice(0, 5).map((x, i) => ({
-        id: x.external_id, city: x.city_name, hasCover: !!x.cover_url
-      })),
-      note: "Города и список берутся напрямую из properties + cities; фото ищется по папкам external_id/ и UUID/.",
+    const json = {
+      ok: true,
+      api_version: "v2",
+      build_time: "2025-08-31 07:41:10",
+      items,
+      cities,
     };
-  }
 
-  return NextResponse.json(payload);
+    return new NextResponse(JSON.stringify(json), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate, proxy-revalidate",
+        "CDN-Cache-Control": "no-store",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, message: e?.message ?? String(e) }, {
+      status: 500,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
 }
