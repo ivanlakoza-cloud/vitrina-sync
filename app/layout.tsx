@@ -4,7 +4,8 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Domus",
   description: "Каталог объектов на Supabase",
-, icons: { icon: "/icon.svg" } };
+  icons: { icon: "/icon.svg" },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
