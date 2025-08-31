@@ -17,7 +17,7 @@ function KV({ k, v }: { k: string, v: any }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
     <div className="grid grid-cols-[200px,1fr] gap-3 py-1 border-b border-neutral-100">
-      <div className="k break-words" title={title || undefined}>{k}</div>
+      <div className="k break-words" >{k}</div>
       <div className="v">{String(v)}</div>
     </div>
   );
@@ -26,8 +26,6 @@ function KV({ k, v }: { k: string, v: any }) {
 function labelize(key: string): string {
   if ((prettyLabels as any)[key]) return (prettyLabels as any)[key];
   return key.replace(/_/g, " ");
-}
-  return { label: key };
 }
 
 const HIDE_FIELDS = new Set<string>([
