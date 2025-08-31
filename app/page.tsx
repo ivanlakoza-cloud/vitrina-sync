@@ -1,147 +1,161 @@
-// app/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
 
 type Item = {
   external_id: string;
-  title: string;
   address: string;
   city_name: string;
-  type: string;
-  total_area?: number | null;
-  floor?: string | number | null;
-  cover_url?: string | null;
+  tip_pomescheniya?: string | null;
+  etazh?: string | number | null;
+  type?: string | null;
+  price_per_m2_20?: number | null;
+  price_per_m2_50?: number | null;
+  price_per_m2_100?: number | null;
+  price_per_m2_400?: number | null;
+  price_per_m2_700?: number | null;
+  price_per_m2_1500?: number | null;
+  cover_url: string | null;
 };
 
-type ApiResponse = {
+type CatalogResponse = {
   items: Item[];
   cities: string[];
   debug?: any;
 };
 
-async function fetchCatalog(city: string): Promise<ApiResponse> {
-  const qs = new URLSearchParams();
-  if (city) qs.set("city", city);
-  qs.set("debug", "1");
-  const resp = await fetch(`/api/catalog?${qs.toString()}`, { cache: "no-store" });
-  if (!resp.ok) throw new Error("Catalog API error");
-  return resp.json();
+const ALL = '';
+
+function formatNumber(n: number) {
+  try { return n.toLocaleString('ru-RU'); } catch { return String(n); }
 }
 
-export default function Page() {
-  const [city, setCity] = useState<string>("");
+function priceLine(p: Item): string {
+  const pairs: Array<[string, number | null | undefined]> = [
+    ['от 20', p.price_per_m2_20],
+    ['от 50', p.price_per_m2_50],
+    ['от 100', p.price_per_m2_100],
+    ['от 400', p.price_per_m2_400],
+    ['от 700', p.price_per_m2_700],
+    ['от 1500', p.price_per_m2_1500],
+  ];
+  const parts = pairs
+    .filter(([, v]) => typeof v === 'number' && Number.isFinite(v as number))
+    .map(([label, v]) => `${label} — ${formatNumber(v as number)}`);
+  return parts.join(' · ');
+}
+
+export default function HomePage() {
+  const [city, setCity] = useState<string>(ALL);
   const [cities, setCities] = useState<string[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [debug, setDebug] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
+  async function load(selectedCity: string) {
+    try {
       setLoading(true);
-      try {
-        const data = await fetchCatalog(city);
-        if (cancelled) return;
-        setItems(data.items ?? []);
-        setCities(data.cities ?? []);
-        setDebug(data.debug ?? null);
-        if (data.debug) console.log("API /api/catalog debug:", data.debug);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (!cancelled) setLoading(false);
+      setError(null);
+      const q = selectedCity ? `?city=${encodeURIComponent(selectedCity)}` : '';
+      const res = await fetch(`/api/catalog${q}`, { cache: 'no-store' });
+      const data: CatalogResponse = await res.json();
+      if (!res.ok) {
+        setError('Catalog API error');
+        setItems([]);
+        setCities(data?.cities || []);
+      } else {
+        setItems(Array.isArray(data?.items) ? data.items : []);
+        setCities(Array.isArray(data?.cities) ? data.cities : []);
       }
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка загрузки');
+      setItems([]);
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { cancelled = true; };
-  }, [city]);
+  }
 
-  const gridItems = useMemo(() => items, [items]);
+  useEffect(() => { load(city); }, [city]);
+
+  const stats = useMemo(() => ({
+    items: items.length,
+    cities: cities.length,
+  }), [items, cities]);
 
   return (
-    <main style={{ padding: 16 }}>
-      <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-        <label htmlFor="city" style={{ marginRight: 8 }}>Город:</label>
+    <main className="p-4 mx-auto max-w-[1600px]" data-ui="home-1.1">
+      <div className="flex flex-wrap gap-4 items-center">
+        <label className="text-lg">Город:</label>
         <select
-          id="city"
+          aria-label="Фильтр по городу"
           value={city}
-          onChange={(e) => setCity(e.target.value)}
-          style={{ padding: 8, minWidth: 220 }}
+          onChange={e => setCity(e.target.value)}
+          className="border rounded-md px-3 py-2 min-w-[260px]"
         >
-          <option value="">Все города</option>
+          <option value={ALL}>Все города</option>
           {cities.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
 
-        <div style={{ color: "#6b7280", fontSize: 14 }}>
-          {loading ? "Загрузка…" : `Найдено: ${items.length} объектов, городов: ${cities.length}`}
-        </div>
+        <span className="text-gray-600">
+          Найдено: {stats.items} объектов, городов: {stats.cities}
+        </span>
 
-        <a href="/api/catalog?debug=1" target="_blank" rel="noreferrer" style={{ marginLeft: "auto", fontSize: 14 }}>
-          Открыть JSON
-        </a>
+        <a href="/api/catalog" className="ml-auto text-sm text-blue-600 hover:underline">Открыть JSON (debug)</a>
       </div>
 
-      {/* Плитка 6 в ряд */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-          gap: 16,
-          alignItems: "start",
-        }}
-      >
-        {gridItems.map((p) => {
-          const caption = [p.city_name, p.address].filter(Boolean).join(", ");
-          const href = `/p/${p.external_id}`;
+      {/* GRID */}
+      <section className="mt-5 grid gap-5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        {loading ? Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} className="animate-pulse border rounded-2xl overflow-hidden">
+            <div className="h-[180px] bg-gray-200" />
+            <div className="p-3 space-y-2">
+              <div className="h-5 bg-gray-200 rounded" />
+              <div className="h-4 bg-gray-100 rounded w-3/4" />
+              <div className="h-4 bg-gray-100 rounded w-2/3" />
+            </div>
+          </div>
+        )) : null}
+
+        {!loading && !items.length && (
+          <div className="col-span-full text-gray-500">Ничего не найдено</div>
+        )}
+
+        {!loading && items.map((p) => {
+          const header = [p.city_name, p.address].filter(Boolean).join(', ');
+          const tip = p.tip_pomescheniya || p.type || null;
+          const second = [tip, p.etazh != null && p.etazh !== '' ? `этаж ${p.etazh}` : null]
+            .filter(Boolean).join(' · ');
+          const third = priceLine(p);
+
           return (
-            <a
-              key={p.external_id}
-              href={href}
-              style={{
-                display: "block",
-                textDecoration: "none",
-                color: "inherit",
-                border: "1px solid #e5e7eb",
-                borderRadius: 12,
-                overflow: "hidden",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-              aria-label={caption}
-            >
-              <div style={{ aspectRatio: "13/8", background: "#f3f4f6" }}>
+            <div key={p.external_id} className="border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white">
+              <div className="h-[180px] bg-gray-100">
                 {p.cover_url ? (
                   <img
                     src={p.cover_url}
-                    alt={caption || p.title}
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    alt={header}
+                    className="w-full h-[180px] object-cover"
                     loading="lazy"
                   />
                 ) : (
-                  <div style={{
-                    width: "100%", height: "100%",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "#9ca3af", fontSize: 12
-                  }}>
-                    нет фото
-                  </div>
+                  <div className="w-full h-[180px] grid place-items-center text-gray-400 text-sm">нет фото</div>
                 )}
               </div>
-              <div style={{ padding: 12 }}>
-                <div style={{ fontWeight: 700, marginBottom: 4, lineHeight: 1.2 }}>{p.title}</div>
-                <div style={{ color: "#374151", fontSize: 14, marginBottom: 6 }}>{caption}</div>
-                <div style={{ display: "flex", gap: 12, color: "#4b5563", fontSize: 12 }}>
-                  {p.type && <span>{p.type}</span>}
-                  {p.total_area ? <span>{p.total_area} м²</span> : null}
-                  {p.floor ? <span>{p.floor} эт.</span> : null}
-                </div>
+              <div className="p-3">
+                <h3 className="font-semibold leading-snug">{header}</h3>
+                {second ? <p className="text-gray-600 text-sm mt-1">{second}</p> : null}
+                {third ? <p className="text-gray-500 text-sm mt-1">{third}</p> : null}
               </div>
-            </a>
+            </div>
           );
         })}
-      </div>
+      </section>
+
+      {error && (
+        <div className="mt-6 text-sm text-red-600">Ошибка: {error}</div>
+      )}
     </main>
   );
 }
