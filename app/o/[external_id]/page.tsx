@@ -13,11 +13,11 @@ export async function generateMetadata({ params }: { params: { external_id: stri
   return { title: (title ? `${title} — Витрина` : "Витрина") };
 }
 
-function KV({ k, v }: { k: string, v: any }) {
+function KV({ k, v, title }: { k: string, v: any, title?: string }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
     <div className="grid grid-cols-[200px,1fr] gap-3 py-1 border-b border-neutral-100">
-      <div className="k">{k}</div>
+      <div className="k" title={title || undefined}>{k}</div>
       <div className="v">{String(v)}</div>
     </div>
   );
@@ -59,7 +59,6 @@ export default async function Page({ params }: { params: { external_id: string }
     return true;
   });
 
-  // Split other entries into 2 columns (blocks 2 and 3)
   const cols: Array<[string, any][]> = [[],[]];
   otherEntries.forEach((pair, i) => cols[i % 2].push(pair as [string, any]));
 
@@ -73,9 +72,7 @@ export default async function Page({ params }: { params: { external_id: string }
       <PhotoStrip urls={gallery} />
 
       <div className="card card-pad">
-        {/* 3 блока: левый (основные+цены), средний и правый (прочие) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
-          {/* Блок 1 */}
           <div className="pr-5">
             {primary.map((key) => (
               <KV key={String(key)} k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />
@@ -85,27 +82,21 @@ export default async function Page({ params }: { params: { external_id: string }
             </div>
           </div>
 
-          {/* Блок 2 */}
           <div className="border-l border-neutral-200 pl-5 pr-5">
             <div className="kv-grid">
-              {cols[0].map(([k,v]) => (
-                <div key={k} className="contents">
-                  <div className="k">{prettyLabels[k] || k}</div>
-                  <div className="v">{String(v)}</div>
-                </div>
-              ))}
+              {cols[0].map(([k,v]) => {
+                const {label, title} = shortKey(k);
+                return <KV key={k} k={label} v={v} title={title} />;
+              })}
             </div>
           </div>
 
-          {/* Блок 3 */}
           <div className="border-l border-neutral-200 pl-5">
             <div className="kv-grid">
-              {cols[1].map(([k,v]) => (
-                <div key={k} className="contents">
-                  <div className="k">{prettyLabels[k] || k}</div>
-                  <div className="v">{String(v)}</div>
-                </div>
-              ))}
+              {cols[1].map(([k,v]) => {
+                const {label, title} = shortKey(k);
+                return <KV key={k} k={label} v={v} title={title} />;
+              })}
             </div>
           </div>
         </div>
