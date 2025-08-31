@@ -9,7 +9,7 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
   const [cities, items] = await Promise.all([fetchCities(), fetchList(currentCity || undefined)]);
   return (<div className="space-y-4">
     <CityFilter cities={cities} />
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
       {await Promise.all(items.map(async (rec) => {
         const id = String(rec.id_obekta || rec.external_id || rec.id);
         const photo = await getFirstPhoto(id);
