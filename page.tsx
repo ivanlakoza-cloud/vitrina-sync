@@ -1,176 +1,95 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-type Item = {
+type CardItem = {
   external_id: string;
-  title?: string | null;
-  address: string;
-  city_name: string;
-  type?: string | null;
-  tip_pomescheniya?: string | null;
-  total_area?: number | null;
-  floor?: number | string | null;
-  etazh?: number | string | null;
-  cover_url?: string | null;
-  price_per_m2_20?: number | null;
-  price_per_m2_50?: number | null;
-  price_per_m2_100?: number | null;
-  price_per_m2_400?: number | null;
-  price_per_m2_700?: number | null;
-  price_per_m2_1500?: number | null;
+  cover_url: string | null;
+  header: string;
+  subline: string;
+  prices_line: string;
 };
 
-type ApiResponse = {
-  items: Item[];
+type ApiResp = {
+  items: CardItem[];
   cities: string[];
-  debug?: any;
 };
 
-const TYPE_MAP: Record<string, string> = {
-  retail: "торговое",
-  office: "офис",
-  warehouse: "склад",
-  industrial: "производство",
-  other: "другое",
-};
-
-function typeLabel(it: Item) {
-  const tip = (it.tip_pomescheniya ?? "").trim();
-  if (tip) return tip;
-  const t = (it.type ?? "").trim().toLowerCase();
-  return TYPE_MAP[t] ?? t;
-}
-
-function floorLabel(it: Item) {
-  const f = it.floor ?? it.etazh;
-  if (f === null || f === undefined || String(f).trim() === "") return "";
-  return `этаж ${f}`;
-}
-
-function priceParts(it: Item) {
-  const mapping: Array<[keyof Item, string]> = [
-    ["price_per_m2_20", "от 20"],
-    ["price_per_m2_50", "от 50"],
-    ["price_per_m2_100", "от 100"],
-    ["price_per_m2_400", "от 400"],
-    ["price_per_m2_700", "от 700"],
-    ["price_per_m2_1500", "от 1500"],
-  ];
-  const parts: string[] = [];
-  for (const [key, label] of mapping) {
-    const v = (it as any)[key];
-    if (v === null || v === undefined) continue;
-    const num = Number(v);
-    if (Number.isNaN(num)) continue;
-    parts.push(`${label} — ${num.toLocaleString("ru-RU")} ₽/м²`);
-  }
-  return parts;
-}
-
-async function fetchCatalog(city: string) {
-  const qs = city ? `?city=${encodeURIComponent(city)}` : "";
-  const res = await fetch(`/api/catalog${qs}`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Catalog API error: ${res.status}`);
-  }
-  return (await res.json()) as ApiResponse;
+async function fetchCatalog(city: string): Promise<ApiResp> {
+  const qs = new URLSearchParams();
+  if (city) qs.set("city", city);
+  const resp = await fetch(`/api/catalog?${qs.toString()}`, { cache: "no-store" });
+  return resp.json();
 }
 
 export default function HomePage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [cities, setCities] = useState<string[]>([]);
   const [city, setCity] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>("");
-
-  async function load(c: string) {
-    try {
-      setLoading(true);
-      setError("");
-      const data = await fetchCatalog(c);
-      setItems(data.items ?? []);
-      setCities(data.cities ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? "Ошибка загрузки");
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [cities, setCities] = useState<string[]>([]);
+  const [items, setItems] = useState<CardItem[]>([]);
 
   useEffect(() => {
-    load(city);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    fetchCatalog(city).then((data) => {
+      if (cancelled) return;
+      setItems(data.items || []);
+      setCities(data.cities || []);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [city]);
 
-  const counts = useMemo(
-    () => ({
-      items: items.length,
-      cities: cities.length,
-    }),
-    [items, cities]
-  );
-
-  const debugHref = `/api/catalog${city ? `?city=${encodeURIComponent(city)}` : ""}`;
-
   return (
-    <main className="wrap">
-      <header className="topbar">
-        <label className="label">Город:</label>
+    <main className="p-4 md:p-6 lg:p-8">
+      <div className="mb-4 flex items-center gap-3">
+        <label htmlFor="city" className="text-sm text-gray-600">Город</label>
         <select
-          className="select"
+          id="city"
           value={city}
           onChange={(e) => setCity(e.target.value)}
+          className="border rounded px-3 py-2 text-sm"
         >
           <option value="">Все города</option>
           {cities.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+            <option key={c} value={c}>{c}</option>
           ))}
         </select>
+      </div>
 
-        <div className="counts">
-          Найдено: <b>{counts.items}</b> объектов, городов: <b>{counts.cities}</b>
-        </div>
-
-        <a className="debug" href={debugHref} target="_blank" rel="noreferrer">
-          Открыть JSON (debug)
-        </a>
-      </header>
-
-      {error && <div className="error">Ошибка: {error}</div>}
-      {loading && <div className="loading">Загрузка...</div>}
-
-      <section className="grid">
-        {items.map((it) => {
-          const title = `${it.city_name}${it.address ? ", " + it.address : ""}`;
-          const meta = [typeLabel(it), floorLabel(it)].filter(Boolean).join(" · ");
-          const prices = priceParts(it).join(" · ");
-          return (
-            <article key={it.external_id} className="card">
-              {it.cover_url ? (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        {items.map((p) => (
+          <article key={p.external_id} className="rounded-xl overflow-hidden border bg-white shadow-sm hover:shadow-md transition-shadow">
+            <div className="aspect-[4/3] bg-gray-100">
+              {p.cover_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  className="photo"
-                  src={it.cover_url}
-                  alt={title}
+                  src={p.cover_url}
+                  alt={p.header}
+                  className="w-full h-full object-cover"
                   loading="lazy"
                 />
               ) : (
-                <div className="photo placeholder">нет фото</div>
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                  нет фото
+                </div>
               )}
-
-              <div className="body">
-                <h3 className="title">{title}</h3>
-                {meta && <div className="meta">{meta}</div>}
-                {prices && <p className="prices">{prices}</p>}
-              </div>
-            </article>
-          );
-        })}
-      </section>
+            </div>
+            <div className="p-3">
+              <h3 className="font-medium text-sm line-clamp-2">{p.header}</h3>
+              {p.subline && (
+                <p className="mt-1 text-[13px] text-gray-600 line-clamp-1">
+                  {p.subline}
+                </p>
+              )}
+              {p.prices_line && (
+                <p className="mt-1 text-[13px] text-gray-800 line-clamp-2">
+                  {p.prices_line}
+                </p>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
     </main>
   );
 }
