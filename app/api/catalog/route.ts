@@ -1,160 +1,179 @@
-// app/api/catalog/route.ts
-// Next.js Route Handler (Server Component). Robust to missing DB columns.
 import { NextResponse } from "next/server";
-
-export const dynamic = "force-dynamic";
 
 type Row = Record<string, any>;
 
 type ItemOut = {
   external_id: string;
   title: string;
-  address: string;
-  city_name: string;
+  address: string | null;
+  city_name: string | null;
   type: string | null;
   total_area: number | null;
-  floor: string | number | null;
+  floor: number | null;
   cover_url: string | null;
   line2: string;
   prices: string;
 };
 
-function env(name: string, fallback?: string): string {
-  const v =
-    process.env[name] ??
-    process.env[name.replace("NEXT_PUBLIC_", "")] ??
-    fallback;
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
+function getEnv() {
+  const url =
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "";
+  const key =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    "";
+  return { url, key };
 }
 
-function supabaseHeaders() {
-  const key = env("NEXT_PUBLIC_SUPABASE_ANON_KEY", env("SUPABASE_ANON_KEY", ""));
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-  };
+function buildQuery(url: string, table: string, params: Record<string, string>) {
+  const qs = new URLSearchParams(params).toString();
+  const trimmed = url.replace(/\/$/, "");
+  return `${trimmed}/rest/v1/${table}?${qs}`;
 }
 
-function supabaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "").replace(/\/+$/, "");
-}
-
-// Remove a single missing column from the select string
-function stripMissing(selectStr: string, missing: string): string {
-  const cols = selectStr.split(",").map(s => s.trim()).filter(Boolean);
-  const filtered = cols.filter(c => c !== missing);
-  return filtered.join(",");
-}
-
-async function fetchRows(selectStr: string): Promise<Row[]> {
-  const url = `${supabaseUrl()}/rest/v1/property_public_view?select=${encodeURIComponent(selectStr)}&limit=1000`;
-  const res = await fetch(url, { headers: supabaseHeaders(), cache: "no-store" });
-  if (res.ok) {
-    return (await res.json()) as Row[];
+async function restFetch(url: string, key: string, table: string, params: Record<string, string>) {
+  const full = buildQuery(url, table, params);
+  const res = await fetch(full, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+    },
+    // never cache in Next
+    next: { revalidate: 0 },
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || `HTTP ${res.status}`);
   }
-  // Try to parse "column property_public_view.xxx does not exist"
-  const txt = await res.text();
-  const m = txt.match(/column\s+[^.]*\.(\w+)\s+does\s+not\s+exist/i);
-  if (m) {
-    const missing = m[1];
-    const nextSelect = stripMissing(selectStr, missing);
-    if (nextSelect === selectStr) {
-      throw new Error(txt);
-    }
-    // retry once recursively
-    return fetchRows(nextSelect);
-  }
-  throw new Error(txt);
-}
-
-function idFromRow(r: Row): string {
-  return String(r.external_id ?? r.uuid ?? r.id ?? "");
-}
-
-function normStr(v: any): string {
-  if (v === null || v === undefined) return "";
-  return String(v).trim();
-}
-
-function buildPrices(r: Row): string {
-  const map: Array<[key: string, label: string]> = [
-    ["price_per_m2_20", "20"],
-    ["price_per_m2_50", "50"],
-    ["price_per_m2_100", "100"],
-    ["price_per_m2_400", "400"],
-    ["price_per_m2_700", "700"],
-    ["price_per_m2_1500", "1500"],
-  ];
-  const parts: string[] = [];
-  for (const [k, label] of map) {
-    const v = r[k];
-    if (v !== null && v !== undefined && String(v).trim() !== "") {
-      parts.push(`от ${label} — ${v}`);
-    }
-  }
-  return parts.join(" · ");
+  return res.json();
 }
 
 export async function GET() {
-  try {
-    const selectCols = [
-      "id",
-      "uuid",
-      "external_id",
-      "address",
-      "city",
-      "type",
-      "total_area",
-      "etazh",
-      "tip_pomescheniya",
-      "price_per_m2_20",
-      "price_per_m2_50",
-      "price_per_m2_100",
-      "price_per_m2_400",
-      "price_per_m2_700",
-      "price_per_m2_1500",
-      "cover_url",
-    ].join(",");
-
-    const rows = await fetchRows(selectCols);
-
-    const items: ItemOut[] = [];
-    for (const r of rows) {
-      const id = idFromRow(r);
-      if (!id) continue; // skip rows without any id
-      const city = normStr(r.city);
-      const address = normStr(r.address);
-      const title = [city, address].filter(Boolean).join(", ");
-
-      // line2: tip_pomescheniya + этаж (если есть), иначе type
-      const tip = normStr(r.tip_pomescheniya);
-      const etazh = normStr(r.etazh);
-      const type = normStr(r.type);
-      const base = tip || type;
-      const line2 = base + (etazh ? ` · этаж ${etazh}` : "");
-
-      const item: ItemOut = {
-        external_id: id,
-        title,
-        address,
-        city_name: city,
-        type: type || null,
-        total_area: r.total_area ?? null,
-        floor: etazh || null,
-        cover_url: r.cover_url ? String(r.cover_url) : null,
-        line2,
-        prices: buildPrices(r),
-      };
-      items.push(item);
-    }
-
-    // client-side order (avoid 'order=' errors if column absent)
-    items.sort((a, b) => a.title.localeCompare(b.title, "ru"));
-
-    return NextResponse.json({ items });
-  } catch (e: any) {
-    return NextResponse.json({ items: [], error: String(e?.message ?? e) });
+  const { url, key } = getEnv();
+  if (!url || !key) {
+    return NextResponse.json({
+      items: [],
+      error:
+        "Missing env: SUPABASE_URL and/or SUPABASE_ANON_KEY (also checks NEXT_PUBLIC_* and SUPABASE_SERVICE_ROLE_KEY). Set them in Vercel → Project → Settings → Environment Variables.",
+    });
   }
+
+  // Desired columns (we'll automatically drop the ones that don't exist)
+  let cols = [
+    "external_id",
+    "uuid",
+    "id",
+    "address",
+    "city",
+    "city_name",
+    "type",
+    "total_area",
+    "etazh",
+    "tip_pomescheniya",
+    "price_per_m2_20",
+    "price_per_m2_50",
+    "price_per_m2_100",
+    "price_per_m2_400",
+    "price_per_m2_700",
+    "price_per_m2_1500",
+    "cover_url",
+  ];
+
+  const table = "property_public_view";
+  let rows: Row[] = [];
+
+  const asSelect = () => cols.join(",");
+
+  try {
+    rows = await restFetch(url, key, table, {
+      select: asSelect(),
+      // no ordering to avoid "order on missing column" issues
+      limit: "1000",
+    });
+  } catch (err: any) {
+    // If PostgREST complains about an unknown column, remove it and retry (up to 5 times)
+    let txt = String(err?.message || err || "");
+    const rx = /column\s+[^"]*"([a-zA-Z0-9_]+)"/i;
+    let attempts = 0;
+    while (attempts < 5) {
+      const m = rx.exec(txt);
+      if (!m) break;
+      const bad = m[1];
+      cols = cols.filter((c) => c !== bad);
+      try {
+        rows = await restFetch(url, key, table, {
+          select: asSelect(),
+          limit: "1000",
+        });
+        txt = "";
+        break;
+      } catch (e2: any) {
+        txt = String(e2?.message || e2 || "");
+        attempts += 1;
+      }
+    }
+    if (!rows.length && txt) {
+      return NextResponse.json({ items: [], error: txt });
+    }
+  }
+
+  const items: ItemOut[] = rows.map((r: Row) => {
+    const id =
+      (r["external_id"] ?? r["uuid"] ?? r["id"] ?? "").toString();
+    const city =
+      (r["city_name"] ?? r["city"] ?? "").toString().trim();
+    const address = (r["address"] ?? "").toString().trim();
+    const title = [city, address].filter(Boolean).join(", ");
+
+    const tip = (r["tip_pomescheniya"] ?? "").toString().trim();
+    const floorVal = r["etazh"];
+    const etazh =
+      floorVal !== null && floorVal !== undefined && `${floorVal}` !== ""
+        ? `этаж ${floorVal}`
+        : "";
+    const line2Raw = [tip, etazh].filter(Boolean).join(" · ");
+    const line2 =
+      line2Raw || (r["type"] ? String(r["type"]) : "");
+
+    const priceFields: Array<[string, string]> = [
+      ["20", "price_per_m2_20"],
+      ["50", "price_per_m2_50"],
+      ["100", "price_per_m2_100"],
+      ["400", "price_per_m2_400"],
+      ["700", "price_per_m2_700"],
+      ["1500", "price_per_m2_1500"],
+    ];
+    const prices = priceFields
+      .map(([label, key]) => [label, r[key]] as const)
+      .filter(([, v]) => v !== null && v !== undefined && `${v}` !== "")
+      .map(([label, v]) => `от ${label} — ${v}`)
+      .join(" · ");
+
+    const cover_url =
+      (r["cover_url"] ?? null) as string | null;
+
+    return {
+      external_id: id,
+      title,
+      address: address || null,
+      city_name: city || null,
+      type: (r["type"] ?? null) as string | null,
+      total_area:
+        r["total_area"] !== undefined && r["total_area"] !== null
+          ? Number(r["total_area"])
+          : null,
+      floor:
+        floorVal !== undefined && floorVal !== null
+          ? Number(floorVal)
+          : null,
+      cover_url,
+      line2,
+      prices,
+    };
+  });
+
+  return NextResponse.json({ items });
 }
