@@ -18,6 +18,9 @@ function KV({ k, v, strong }: { k: string, v: any, strong?: boolean }) {
 function labelize(key: string): string { if ((prettyLabels as any)[key]) return (prettyLabels as any)[key]; return key.replace(/_/g," "); }
 
 const HIDE_FIELDS = new Set<string>([
+  "otdelka",
+  "probki_v_chasy_pik_nizkie_srednie_vysokie",
+  "transportnaya_dostupnost_magistrali_razvyazki",
   "external_id","id","created_at","updated_at","id_obekta","otobrazit_vse",
   "avito_id","etazh_avito","ukazannaya_ploschad","ukazannaya_stoimost_za_m2","disk_foto_plan",
   "adres_23_58","adres_avito","city","tekst_obyavleniya","zagolovok","foto_s_avito",
@@ -31,7 +34,7 @@ export default async function Page({ params }: { params: { external_id: string }
   const heading = shortAddress(rec);
 
   const primary: (keyof DomusRecord)[] = ["tip_pomescheniya","etazh","dostupnaya_ploschad"];
-  const exclude = new Set<string>([...primary.map(String),"ot_20","ot_50","ot_100","ot_400","ot_700","ot_1500","km"]);
+  const exclude = new Set<string>([...primary.map(String),"ot_20","ot_50","ot_100","ot_400","ot_700","ot_1500","km","planirovka","vysota_potolkov"]);
 
   const otherEntries = Object.entries(rec).filter(([k,v])=>{
     if (HIDE_FIELDS.has(k) || exclude.has(k)) return false;
@@ -53,7 +56,8 @@ export default async function Page({ params }: { params: { external_id: string }
           <div className="mt-2"><PriceTable rec={rec} /></div>
           <KV k={prettyLabels["km"]} v={(rec as any).km} />
         </div>
-        <div className="border-l border-neutral-200 pl-5 pr-5">{cols[0].map(([k,v])=><KV key={k} k={labelize(k)} v={v} />)}</div>
+        <div className="border-l border-neutral-200 pl-5 pr-5">{/*__PL_VYS__*/}<KV k={labelize("planirovka")} v={(rec as any).planirovka} />
+        <KV k={labelize("vysota_potolkov")} v={(rec as any).vysota_potolkov} />{cols[0].map(([k,v])=><KV key={k} k={labelize(k)} v={v} />)}</div>
         <div className="border-l border-neutral-200 pl-5">{cols[1].map(([k,v])=><KV key={k} k={labelize(k)} v={v} />)}</div>
       </div>
     </div>
