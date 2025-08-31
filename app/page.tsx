@@ -19,9 +19,9 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
      <div className="p-5 space-y-3">
       <div className="text-lg font-semibold">{addrTitle}</div>
       <div className="text-sm">
-       <div><span className="font-semibold">{prettyLabels["tip_pomescheniya"]}:</span> {rec.tip_pomescheniya || "—"}</div>
+       <div>{rec.tip_pomescheniya || "—"}</div>
        <div><span className="font-semibold">{prettyLabels["etazh"]}:</span> {rec.etazh || "—"}</div>
-       <div><span className="font-semibold">{prettyLabels["dostupnaya_ploschad"]}:</span> {rec.dostupnaya_ploschad || "—"}</div>
+       <div><span className="font-semibold">Доступно:</span> {rec.dostupnaya_ploschad ? `${rec.dostupnaya_ploschad} м²` : "—"}</div>
       </div>
       <PriceTable rec={rec} size="sm" />
      </div>
