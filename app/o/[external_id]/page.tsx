@@ -31,7 +31,7 @@ export default async function Page({ params }: { params: { external_id: string }
   const heading = shortAddress(rec);
 
   const primary: (keyof DomusRecord)[] = ["tip_pomescheniya","etazh","dostupnaya_ploschad"];
-  const exclude = new Set<string>([...primary.map(String),"ot_20","ot_50","ot_100","ot_400","ot_700","ot_1500"]);
+  const exclude = new Set<string>([...primary.map(String),"ot_20","ot_50","ot_100","ot_400","ot_700","ot_1500","km"]);
 
   const otherEntries = Object.entries(rec).filter(([k,v])=>{
     if (HIDE_FIELDS.has(k) || exclude.has(k)) return false;
@@ -51,6 +51,7 @@ export default async function Page({ params }: { params: { external_id: string }
         <div className="pr-5">
           {primary.map((key)=>(<KV key={String(key)} strong k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />))}
           <div className="mt-2"><PriceTable rec={rec} /></div>
+          <KV k={prettyLabels["km"]} v={(rec as any).km} />
         </div>
         <div className="border-l border-neutral-200 pl-5 pr-5">{cols[0].map(([k,v])=><KV key={k} k={labelize(k)} v={v} />)}</div>
         <div className="border-l border-neutral-200 pl-5">{cols[1].map(([k,v])=><KV key={k} k={labelize(k)} v={v} />)}</div>
