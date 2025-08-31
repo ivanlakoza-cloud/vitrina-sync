@@ -53,7 +53,7 @@ export default async function Page({ params }: { params: { external_id: string }
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
         <div className="pr-5">
           {primary.map((key)=>(<KV key={String(key)} strong k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />))}
-          <div className="mt-2"><PriceTable rec={rec} /></div>
+          <div className="mt-2"><PriceTable rec={rec} alignPrices="left" /></div>
           <KV k={prettyLabels["km"]} v={(rec as any).km} />
         </div>
         <div className="border-l border-neutral-200 pl-5 pr-5">{/*__PL_VYS__*/}<KV k={labelize("planirovka")} v={(rec as any).planirovka} />
