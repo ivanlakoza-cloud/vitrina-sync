@@ -1,150 +1,130 @@
+// No "use server" pragma here to avoid Next.js restriction errors.
+
 import { NextResponse } from "next/server";
 
-type AnyRow = Record<string, any>;
+type Row = Record<string, any>;
 
-// ---- Helpers ----
-const BANNED_CITIES = new Set(["Обязательность данных"]);
-
-function safeStr(v: any): string {
-  if (v === null || v === undefined) return "";
-  return String(v);
+function pickExternalId(r: Row): string {
+  return String(
+    r.external_id ?? r.id ?? r.uuid ?? r.property_id ?? r.object_id ?? ""
+  );
 }
 
-function buildLine2(row: AnyRow): string {
-  const tip = safeStr(row.tip_pomescheniya).trim();
-  const floor = row.etazh ?? row.floor ?? null;
-  const floorStr = floor !== null && floor !== undefined && floor !== "" ? ` · этаж ${floor}` : "";
-  if (tip) return `${tip}${floorStr}`;
-  // fallback к type, если tip_pomescheniya пуст
-  const typeStr = safeStr(row.type).trim();
-  return typeStr ? `${typeStr}${floorStr}` : "";
-}
-
-function buildPriceLine(row: AnyRow): string | null {
-  const labels: Record<string, string> = {
-    price_per_m2_20: "от 20",
-    price_per_m2_50: "от 50",
-    price_per_m2_100: "от 100",
-    price_per_m2_400: "от 400",
-    price_per_m2_700: "от 700",
-    price_per_m2_1500: "от 1500",
-  };
-  const parts: string[] = [];
-  for (const k of Object.keys(labels)) {
-    const v = row[k];
-    if (v !== null && v !== undefined && v !== "") {
-      parts.push(`${labels[k]} — ${v}`);
-    }
-  }
-  return parts.length ? parts.join(" · ") : null;
+function notEmpty<T>(v: T | null | undefined): v is T {
+  return v !== null && v !== undefined && (typeof v !== "string" || v.trim() !== "");
 }
 
 export async function GET(req: Request) {
-  // --- Parse query ---
-  const { searchParams } = new URL(req.url);
-  // v параметр — игнорируем логически, этот обработчик уже быстрая версия
-  const cityFilter = searchParams.get("city") ?? "";
-  const idFilter = searchParams.get("id") ?? "";
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !anonKey) {
-    return NextResponse.json({ ok: false, message: "Missing Supabase env vars" }, { status: 500 });
-  }
-
-  // --- Minimal select из публичного вью, только нужные поля ---
-  const selectCols = [
-    "external_id",
-    "address",
-    "city_name",
-    "type",
-    "total_area",
-    "tip_pomescheniya",
-    "etazh",
-    "floor",
-    "price_per_m2_20",
-    "price_per_m2_50",
-    "price_per_m2_100",
-    "price_per_m2_400",
-    "price_per_m2_700",
-    "price_per_m2_1500",
-  ].join(",");
-
-  const qs: string[] = [
-    f"select={selectCols}",
-    "order=city_name.asc",
-    "limit=500",
-  ];
-
-  if (cityFilter) {
-    qs.push(`city_name=eq.${encodeURIComponent(cityFilter)}`);
-  }
-  if (idFilter) {
-    qs.push(`external_id=eq.${encodeURIComponent(idFilter)}`);
-  }
-
-  const url = `${supabaseUrl}/rest/v1/property_public_view?${qs.join("&")}`;
-
   try {
-    const res = await fetch(url, {
+    const url = new URL(req.url || "http://localhost");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json(
+        { ok: false, message: "Supabase env vars are missing" },
+        { status: 500 }
+      );
+    }
+
+    // Build query: select everything to be resilient to column name differences
+    const selectCols = "*";
+    const qs: string[] = [
+      `select=${selectCols}`,
+      "limit=500"
+    ];
+
+    // Optional filtering by id or city (for future-proofing; harmless if unused)
+    const qId = url.searchParams.get("id") ?? "";
+    const qCity = url.searchParams.get("city") ?? "";
+    if (qId) qs.push(`external_id=eq.${encodeURIComponent(qId)}`);
+    if (qCity) qs.push(`city=eq.${encodeURIComponent(qCity)}`);
+
+    const restUrl = `${supabaseUrl}/rest/v1/property_public_view?${qs.join("&")}`;
+    const res = await fetch(restUrl, {
       headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        Prefer: "count=exact"
       },
-      // избегаем ISR кеша, чтобы чувствовать обновления
-      cache: "no-store",
-      // Страховка на таймауты
-      next: { revalidate: 0 },
+      // Don't revalidate at edge; always fresh
+      cache: "no-store"
     });
 
     if (!res.ok) {
       const txt = await res.text();
-      return NextResponse.json({ ok: false, message: txt }, { status: res.status });
+      return NextResponse.json({ ok: false, message: txt || res.statusText }, { status: 500 });
     }
 
-    const rows: AnyRow[] = await res.json();
+    const rows: Row[] = await res.json();
 
-    // --- Сборка элементов без походов в Storage (быстро) ---
-    const items = rows.map((r) => {
-      const city = safeStr(r.city_name).trim();
-      const addr = safeStr(r.address).trim();
-      const title = [city, addr].filter(Boolean).join(", ");
-      return {
-        external_id: r.external_id,
-        title,
-        address: addr,
-        city_name: city,
-        type: r.type ?? null,
-        total_area: r.total_area ?? null,
-        floor: r.etazh ?? r.floor ?? null,
-        cover_url: null as string | null, // умышленно не подставляем — снимем нагрузку со Storage
-        line2: buildLine2(r),
-        prices: buildPriceLine(r),
+    const banned = new Set(["Обязательность данных"]);
+    const items = rows.map((r: Row) => {
+      const city = String(r.city_name ?? r.city ?? "").trim();
+      const addr = String(r.address ?? r.address_line ?? r.addr ?? "").trim();
+
+      const tip = String(r.tip_pomescheniya ?? "").trim();
+      const type = String(r.type ?? "").trim();
+      const floor =
+        r.etazh ?? r.floor ?? r.level ?? r.storey ?? null;
+
+      const line2Parts: string[] = [];
+      if (tip) line2Parts.push(tip);
+      if (!tip && type) line2Parts.push(type);
+      if (notEmpty(floor)) line2Parts.push(`этаж ${floor}`);
+      const line2 = line2Parts.join(" · ");
+
+      const priceMap: Record<string, any> = {
+        "20": r.price_per_m2_20,
+        "50": r.price_per_m2_50,
+        "100": r.price_per_m2_100,
+        "400": r.price_per_m2_400,
+        "700": r.price_per_m2_700,
+        "1500": r.price_per_m2_1500
       };
-    });
+      const priceParts: string[] = [];
+      for (const label of ["20","50","100","400","700","1500"]) {
+        const v = priceMap[label];
+        if (notEmpty(v)) {
+          priceParts.push(`от ${label} — ${v}`);
+        }
+      }
+      const prices = priceParts.join(" · ");
 
-    // --- Города для фильтров ---
-    let cities = Array.from(
-      new Set(
-        rows
-          .map((r) => safeStr(r.city_name).trim())
-          .filter(Boolean)
-      )
-    ).filter((c) => !BANNED_CITIES.has(String(c)));
+      const out = {
+        external_id: pickExternalId(r),
+        title: [city, addr].filter(Boolean).join(", "),
+        address: addr || null,
+        city_name: city || null,
+        type: type || null,
+        total_area: r.total_area ?? r.area_total ?? r.area ?? null,
+        floor: notEmpty(floor) ? floor : null,
+        cover_url: null as string | null, // fast API: no storage roundtrips
+        line2,
+        prices
+      };
+      return out;
+    }).filter((it) => !banned.has(String(it.city_name)));
+
+    // Unique cities list
+    const citySet = new Set<string>();
+    for (const it of items) {
+      if (it.city_name) citySet.add(String(it.city_name));
+    }
+    const cities = Array.from(citySet);
     cities.sort((a, b) => a.localeCompare(b, "ru"));
 
     return NextResponse.json({
       items,
       cities,
       debug: {
-        query: { city: cityFilter, id: idFilter },
         counts: { items: items.length, cities: cities.length },
-        note: "Кавер не вычисляется здесь, чтобы API отвечал быстро. На странице можно лениво достраивать URL фото.",
-      },
+        query: { id: qId, city: qCity }
+      }
     });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, message: err?.message || "fetch error" },
+      { ok: false, message: err?.message || "Catalog API error" },
       { status: 500 }
     );
   }
