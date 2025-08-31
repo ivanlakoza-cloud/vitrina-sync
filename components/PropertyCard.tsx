@@ -9,16 +9,19 @@ function Img({ src, alt }: { src: string; alt: string }) {
 export default function PropertyCard({ rec, href, cover } : { rec: any, href: string, cover: string }) {
   const addr = shortAddress(rec);
   const city = rec.otobrazit_vse || rec.city || "";
-  const typeFloor = [rec.tip_pomescheniya, rec.etazh ? `Этаж - ${rec.etazh}` : ""].filter(Boolean).join(" • ");
+  const parts: string[] = [];
+  if (rec.tip_pomescheniya) parts.push(String(rec.tip_pomescheniya));
+  if (rec.etazh) parts.push(`Этаж - ${rec.etazh}`);
+  const typeFloor = parts.join(", ");
+
+  const heading = city && addr ? `${city}, ${addr}` : (addr || city || "");
 
   return (
     <Link href={href} className="card hover:shadow-md transition-shadow block">
-      {cover ? <Img src={cover} alt={addr || city || 'Объект'} /> : <div className="h-40 bg-neutral-100 rounded-t-2xl" />}
+      {cover ? <Img src={cover} alt={heading || 'Объект'} /> : <div className="h-40 bg-neutral-100 rounded-t-2xl" />}
       <div className="card-pad">
-        <div className="text-sm text-neutral-500">
-          {addr ? `• ${city ? city + ", " : ""}${addr}` : (city ? `• ${city}` : "")}
-        </div>
-        <div className="text-sm mt-1">{typeFloor}</div>
+        {heading && <div className="font-semibold">{heading}</div>}
+        {typeFloor && <div className="text-sm mt-1">{typeFloor}</div>}
         <div className="text-sm mt-1">Площадь: {rec.dostupnaya_ploschad || "—"}</div>
         <PriceTable rec={rec} />
       </div>

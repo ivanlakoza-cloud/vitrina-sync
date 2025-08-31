@@ -5,7 +5,7 @@ export default function PriceTable({ rec }: { rec: any }) {
   if (pairs.length === 0) return null;
   return (
     <div className="mt-3">
-      <div className="text-xs text-neutral-500 mb-1">Цены, ₽/м²</div>
+      <div className="text-xs font-semibold text-center mb-1">Цены, ₽/м²</div>
       <div className="grid grid-cols-2 gap-y-1 text-sm">
         {pairs.map(p => (
           <>
