@@ -13,7 +13,6 @@ export default function PropertyCard({ rec, href, cover } : { rec: any, href: st
   if (rec.tip_pomescheniya) parts.push(String(rec.tip_pomescheniya));
   if (rec.etazh) parts.push(`Этаж - ${rec.etazh}`);
   const typeFloor = parts.join(", ");
-
   const heading = city && addr ? `${city}, ${addr}` : (addr || city || "");
 
   return (
@@ -22,8 +21,14 @@ export default function PropertyCard({ rec, href, cover } : { rec: any, href: st
       <div className="card-pad">
         {heading && <div className="font-semibold">{heading}</div>}
         {typeFloor && <div className="text-sm mt-1">{typeFloor}</div>}
-        <div className="text-sm mt-1">Площадь: {rec.dostupnaya_ploschad || "—"}</div>
-        <PriceTable rec={rec} />
+        <div className="grid grid-cols-2 gap-4 mt-2 items-start">
+          <div className="text-sm">
+            <div>Площадь: {rec.dostupnaya_ploschad || "—"}</div>
+          </div>
+          <div>
+            <PriceTable rec={rec} />
+          </div>
+        </div>
       </div>
     </Link>
   );
