@@ -1,15 +1,40 @@
-import { NextResponse } from "next/server";
+
+import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-/** Row shape we read from `properties` */
-type PropertyRow = {
-  external_id: string;
+// Supabase client (server-side)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Helper: first photo public URL from `photos/<external_id>/...`
+async function firstPhotoUrl(id: string): Promise<string | null> {
+  if (!id) return null;
+  try {
+    const list = await supabase.storage.from("photos").list(id, { limit: 100 });
+    if (list.error) return null;
+    const files = (list.data ?? [])
+      .filter((f: { name: string }) => /\.(?:jpe?g|png|webp|gif|bmp)$/i.test(f.name))
+      .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+    const img = files[0];
+    if (!img) return null;
+    const pub = supabase.storage.from("photos").getPublicUrl(`${id}/${img.name}`);
+    return pub.data?.publicUrl ?? null;
+  } catch {
+    return null;
+  }
+}
+
+type Row = {
+  external_id: string | null;
+  title: string | null;
   address: string | null;
-  city_name: string | null;
+  city: string | null;          // <— вьюха property_public_view использует city
   type: string | null;
+  total_area: number | null;
+  floor: string | number | null;
   tip_pomescheniya: string | null;
-  etazh: number | null;
-  floor: number | null;
+  etazh: string | number | null;
   price_per_m2_20: number | null;
   price_per_m2_50: number | null;
   price_per_m2_100: number | null;
@@ -18,156 +43,94 @@ type PropertyRow = {
   price_per_m2_1500: number | null;
 };
 
-function getSupabase(): SupabaseClient<any, "public", any> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error("Supabase credentials are not configured");
-  }
-  return createClient(url, key, { auth: { persistSession: false } });
+function pricesLine(r: Row): string {
+  const parts: string[] = [];
+  const push = (k: number, v: any) => {
+    if (v !== null && v !== undefined && `${v}`.trim() !== "") parts.push(`от ${k} — ${v}`);
+  };
+  push(20,   (r as any).price_per_m2_20);
+  push(50,   (r as any).price_per_m2_50);
+  push(100,  (r as any).price_per_m2_100);
+  push(400,  (r as any).price_per_m2_400);
+  push(700,  (r as any).price_per_m2_700);
+  push(1500, (r as any).price_per_m2_1500);
+  return parts.join(" · ");
 }
 
-/** Returns first public image url for the external id (photos/{externalId}/...) */
-async function firstPhotoUrl(
-  supabase: SupabaseClient<any, "public", any>,
-  externalId: string
-): Promise<string | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !externalId) return null;
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const cityFilter = url.searchParams.get("city") ?? "";
+  const idFilter   = url.searchParams.get("id") ?? "";
 
-  const bucket = "photos";
-  const folders = [externalId];
+  // Берём только реальные поля из вьюхи.
+  let query = supabase
+    .from("property_public_view")
+    .select(
+      [
+        "external_id",
+        "title",
+        "address",
+        "city",
+        "type",
+        "total_area",
+        "floor",
+        "tip_pomescheniya",
+        "etazh",
+        "price_per_m2_20",
+        "price_per_m2_50",
+        "price_per_m2_100",
+        "price_per_m2_400",
+        "price_per_m2_700",
+        "price_per_m2_1500",
+      ].join(",")
+    )
+    .limit(2000);
 
-  for (const folder of folders) {
-    const { data: files, error } = await supabase.storage
-      .from(bucket)
-      .list(folder, { limit: 100, sortBy: { column: "name", order: "asc" } });
+  if (cityFilter) query = query.eq("city", cityFilter);
+  if (idFilter)   query = query.eq("external_id", idFilter);
 
-    if (error || !files || files.length === 0) continue;
-
-    const imgs = (files as Array<{ name: string }>)
-      .filter((f: { name: string }) => /\.(?:jpe?g|png|webp|gif|bmp)$/i.test(f.name))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const img = imgs[0];
-    if (img) {
-      return `${url}/storage/v1/object/public/${bucket}/${folder}/${img.name}`;
-    }
-  }
-  return null;
-}
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const city = (searchParams.get("city") || "").trim();
-  const id = (searchParams.get("id") || "").trim();
-
-  const supabase = getSupabase();
-
-  const selectCols = `
-    external_id,
-    address,
-    city_name,
-    type,
-    tip_pomescheniya,
-    etazh,
-    floor,
-    price_per_m2_20,
-    price_per_m2_50,
-    price_per_m2_100,
-    price_per_m2_400,
-    price_per_m2_700,
-    price_per_m2_1500
-  `;
-
-  let query = supabase.from("properties").select(selectCols);
-
-  if (id) query = query.eq("external_id", id);
-  if (city) query = query.eq("city_name", city);
-
-  const { data: rows, error } = await query;
+  const { data, error } = await query;
 
   if (error) {
-    return NextResponse.json(
-      { items: [], cities: [], debug: { error } },
-      { status: 200 }
-    );
+    return NextResponse.json({ ok: false, message: error.message, code: error.code });
   }
 
-  // Build items with computed display fields
+  const banned = new Set<string>(["Обязательность данных"]);
+  const citiesSet = new Set<string>();
+
+  const rows: Row[] = (data ?? []) as any;
+
   const items = await Promise.all(
-    (rows as PropertyRow[]).map(async (p) => {
-      const cover_url = await firstPhotoUrl(supabase, p.external_id);
-      const floorN = p.etazh ?? p.floor ?? null;
-      const header = `${p.city_name ?? ""}${p.address ? `, ${p.address}` : ""}`.trim();
+    rows.map(async (r) => {
+      const external_id = (r.external_id ?? "") as string;
+      const city = String(r.city ?? "").trim();
+      if (city && !banned.has(city)) citiesSet.add(city);
+      const address = r.address ?? "";
+      const title = [city, address].filter(Boolean).join(", ");
 
-      const roomType =
-        (p.tip_pomescheniya && p.tip_pomescheniya.trim()) ||
-        (p.type && p.type.trim()) ||
-        "";
+      // tip_pomescheniya + " · этаж N" (если есть). Если нет tip — падение к type.
+      const base = r.tip_pomescheniya || r.type || "";
+      const etazh = (r.etazh ?? r.floor);
+      const subline = [base || null, etazh ? `этаж ${etazh}` : null].filter(Boolean).join(" · ");
 
-      const subline = `${roomType}${floorN ? ` · этаж ${floorN}` : ""}`.trim();
-
-      const pricePairs: Array<[string, number | null | undefined]> = [
-        ["20", p.price_per_m2_20],
-        ["50", p.price_per_m2_50],
-        ["100", p.price_per_m2_100],
-        ["400", p.price_per_m2_400],
-        ["700", p.price_per_m2_700],
-        ["1500", p.price_per_m2_1500],
-      ];
-
-      const prices_line = pricePairs
-        .filter(([, v]) => v !== null && v !== undefined && v !== 0)
-        .map(([k, v]) => `от ${k} — ${v}`)
-        .join(" · ");
-
+      const cover_url = await firstPhotoUrl(external_id);
       return {
-        external_id: p.external_id,
+        external_id,
+        title,                         // "Город, Адрес"
+        subline,                       // "тип · этаж N"
+        prices_line: pricesLine(r),    // "от 20 — N · от 50 — N · ..."
+        city_name: city,               // для обратной совместимости фронта
+        address,
+        type: r.type,
+        floor: r.floor ?? r.etazh ?? null,
         cover_url,
-        header,
-        subline,
-        prices_line,
-
-        // raw fields (keep for details/future)
-        city_name: p.city_name,
-        address: p.address,
-        type: p.type,
-        tip_pomescheniya: p.tip_pomescheniya,
-        etazh: p.etazh,
-        floor: p.floor,
       };
     })
   );
 
-  // Build city list from all properties (ignores filters)
-  const { data: all, error: allErr } = await supabase
-    .from("properties")
-    .select("city_name");
-  let cities: string[] = [];
-  if (!allErr && all) {
-    const set = new Set<string>();
-    for (const r of all as Array<{ city_name: string | null }>) {
-      const c = (r.city_name || "").trim();
-      if (!c) continue;
-      set.add(c);
-    }
-    cities = Array.from(set.values());
-  }
+  const cities = Array.from(citiesSet)
+    .filter((c: string) => !banned.has(String(c)))
+    .sort((a: string, b: string) => a.localeCompare(b, "ru"));
 
-  // Exclude service artifacts
-  const banned = new Set(["Обязательность данных"]);
-  cities = cities.filter((c) => !banned.has(String(c)));
-
-  // Sort RU
-  cities.sort((a: string, b: string) => a.localeCompare(b, "ru"));
-
-  return NextResponse.json(
-    {
-      items,
-      cities,
-    },
-    { status: 200 }
-  );
+  return NextResponse.json({ ok: true, items, cities });
 }
