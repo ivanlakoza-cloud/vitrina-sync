@@ -25,6 +25,11 @@ type Item = {
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
+const BAD_CITY_LABEL = "Обязательность данных";
+
+function isUUID(v: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
 
 async function tryListFirstFile(supabase: any, folder: string) {
   const { data: files, error } = await supabase.storage.from(PHOTOS_BUCKET).list(folder, {
@@ -61,12 +66,13 @@ export async function GET(request: Request) {
   const id = (url.searchParams.get("id") || "").trim();
   const debug = url.searchParams.get("debug") === "1";
 
-  // 1) города
+  // 1) города (исключаем плейсхолдер)
   const { data: citiesRaw } = await supabase
     .from("property_public_view")
     .select("city")
     .not("city", "is", null)
     .neq("city", "")
+    .neq("city", BAD_CITY_LABEL)
     .order("city", { ascending: true });
 
   const citiesSet = new Set<string>();
@@ -80,16 +86,16 @@ export async function GET(request: Request) {
     .from("property_public_view")
     .select("id,title,address,city,type,total_area")
     .not("id", "is", null)
-    .neq("id", "")
     .not("city", "is", null)
-    .neq("city", "");
+    .neq("city", "")
+    .neq("city", BAD_CITY_LABEL);
 
   if (city) q = q.eq("city", city);
-  if (id) q = q.eq("id", id);
+  // ВАЖНО: фильтруем по id только если это валидный UUID
+  if (id && isUUID(id)) q = q.eq("id", id);
 
   const { data, error } = await q;
   if (error) {
-    // Никогда не отдаём 500 — возвращаем пустой список с деталями в debug
     const payload: any = { items: [], cities };
     if (debug) payload.debug = { error };
     return NextResponse.json(payload);
