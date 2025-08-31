@@ -21,7 +21,7 @@ export default function PropertyCard({ rec, href, cover } : { rec: any, href: st
       <div className="card-pad">
         {heading && <div className="font-semibold">{heading}</div>}
         {typeFloor && <div className="text-sm mt-1">{typeFloor}</div>}
-        <div className="text-sm mt-1">Площадь: {rec.dostupnaya_ploschad || "—"}</div>
+        <div className="text-sm mt-1">Доступно: {(rec.dostupnaya_ploschad ? String(rec.dostupnaya_ploschad) + " м²" : "—")}</div>
         <PriceTable rec={rec} />
       </div>
     </Link>
