@@ -17,11 +17,14 @@ type Item = {
 type ApiResponse = {
   items: Item[];
   cities: string[];
+  debug?: any;
 };
 
 async function fetchCatalog(city: string): Promise<ApiResponse> {
-  const qs = city ? `?city=${encodeURIComponent(city)}` : "";
-  const resp = await fetch(`/api/catalog${qs}`, { cache: "no-store" });
+  const qs = new URLSearchParams();
+  if (city) qs.set("city", city);
+  qs.set("debug", "1");
+  const resp = await fetch(`/api/catalog?${qs.toString()}`, { cache: "no-store" });
   if (!resp.ok) throw new Error("Catalog API error");
   return resp.json();
 }
@@ -30,6 +33,7 @@ export default function Page() {
   const [city, setCity] = useState<string>("");
   const [cities, setCities] = useState<string[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [debug, setDebug] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -41,6 +45,8 @@ export default function Page() {
         if (cancelled) return;
         setItems(data.items ?? []);
         setCities(data.cities ?? []);
+        setDebug(data.debug ?? null);
+        if (data.debug) console.log("API /api/catalog debug:", data.debug);
       } catch (e) {
         console.error(e);
       } finally {
@@ -55,7 +61,7 @@ export default function Page() {
 
   return (
     <main style={{ padding: 16 }}>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
         <label htmlFor="city" style={{ marginRight: 8 }}>Город:</label>
         <select
           id="city"
@@ -68,10 +74,17 @@ export default function Page() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+
+        <div style={{ color: "#6b7280", fontSize: 14 }}>
+          {loading ? "Загрузка…" : `Найдено: ${items.length} объектов, городов: ${cities.length}`}
+        </div>
+
+        <a href="/api/catalog?debug=1" target="_blank" rel="noreferrer" style={{ marginLeft: "auto", fontSize: 14 }}>
+          Открыть JSON
+        </a>
       </div>
 
-      {loading && <p>Загрузка…</p>}
-
+      {/* Плитка 6 в ряд */}
       <div
         style={{
           display: "grid",

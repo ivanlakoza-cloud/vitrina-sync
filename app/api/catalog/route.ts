@@ -11,10 +11,12 @@ type RowBase = {
   total_area?: number | null;
   city_name?: string | null;
   city?: string | null;
+  floor?: string | number | null;
+  etazh?: string | number | null;
 };
 
 type Item = {
-  external_id: string; // the code we will use for URLs and storage lookup
+  external_id: string;
   title: string;
   address: string;
   city_name: string;
@@ -41,36 +43,42 @@ async function tryListFirstFile(supabase: any, folder: string) {
   return data?.publicUrl ?? null;
 }
 
-async function firstPhotoUrl(supabase: any, codes: string[]): Promise<string | null> {
-  // Try multiple code variants (id, external_id, normalized forms)
+async function firstPhotoUrl(supabase: any, code: string): Promise<string | null> {
+  if (!code) return null;
   const tried = new Set<string>();
-  for (const raw of codes) {
-    if (!raw) continue;
-    const base = raw.trim();
-    if (!base) continue;
-    const variants = [
-      `${base}/`,
-      `${base.toLowerCase()}/`,
-      `${base.toUpperCase()}/`,
-      `${base.replace(/\s+/g, "-")}/`,
-      `${base.replace(/\s+/g, "_")}/`,
-      `${base.toLowerCase().replace(/\s+/g, "-")}/`,
-      `${base.toLowerCase().replace(/\s+/g, "_")}/`,
-    ];
-    for (const v of variants) {
-      if (tried.has(v)) continue;
-      tried.add(v);
-      const url = await tryListFirstFile(supabase, v);
-      if (url) return url;
-    }
+  const variants = [
+    `${code}/`,
+    `${code.toLowerCase()}/`,
+    `${code.toUpperCase()}/`,
+    `${code.replace(/\s+/g, "-")}/`,
+    `${code.replace(/\s+/g, "_")}/`,
+    `${code.toLowerCase().replace(/\s+/g, "-")}/`,
+    `${code.toLowerCase().replace(/\s+/g, "_")}/`,
+  ];
+  for (const v of variants) {
+    if (tried.has(v)) continue;
+    tried.add(v);
+    const url = await tryListFirstFile(supabase, v);
+    if (url) return url;
   }
   return null;
 }
 
-export const revalidate = 0;
+function mapRowToItem(r: RowBase): Item {
+  return {
+    external_id: (r.external_id || r.id) as string,
+    title: r.title ?? "",
+    address: r.address ?? "",
+    city_name: (r.city_name ?? r.city ?? "") as string,
+    type: r.type ?? "",
+    total_area: r.total_area ?? null,
+    floor: (r.floor ?? r.etazh ?? null) as any,
+    cover_url: null,
+  };
+}
 
-async function fetchCities(supabase: any): Promise<string[]> {
-  try {
+async function getCities(supabase: any, preferred: "full" | "public" | "auto") {
+  const tryFull = async () => {
     const { data, error } = await supabase
       .from("property_full_view")
       .select("city_name")
@@ -81,92 +89,71 @@ async function fetchCities(supabase: any): Promise<string[]> {
     const s = new Set<string>();
     (data || []).forEach((r: any) => r?.city_name && s.add(String(r.city_name).trim()));
     return Array.from(s);
-  } catch {
-    const { data } = await supabase
+  };
+
+  const tryPublic = async () => {
+    const { data, error } = await supabase
       .from("property_public_view")
       .select("city")
       .not("city", "is", null)
       .neq("city", "")
       .order("city", { ascending: true });
+    if (error) throw error;
     const s = new Set<string>();
     (data || []).forEach((r: any) => r?.city && s.add(String(r.city).trim()));
     return Array.from(s);
-  }
-}
+  };
 
-async function fetchFromFullView(supabase: any, city?: string, id?: string): Promise<Item[]> {
-  // Try with external_id present
-  try {
-    let q = supabase
-      .from("property_full_view")
-      .select("id,external_id,title,address,type,total_area,city_name,city")
-      .not("id", "is", null)
-      .neq("id", "");
-    if (city) {
-      // prefer city_name, fallback to city
-      q = q.or(`city_name.eq.${city},city.eq.${city}`);
+  if (preferred === "full") {
+    try {
+      const cities = await tryFull();
+      return { cities, source: "property_full_view" };
+    } catch {
+      const cities = await tryPublic();
+      return { cities, source: "property_public_view" };
     }
-    if (id) q = q.eq("id", id);
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data || []).map((r: RowBase) => ({
-      external_id: (r.external_id || r.id) as string,
-      title: r.title ?? "",
-      address: r.address ?? "",
-      city_name: (r.city_name ?? r.city ?? "") as string,
-      type: r.type ?? "",
-      total_area: r.total_area ?? null,
-      floor: null,
-      cover_url: null,
-    }));
+  }
+
+  if (preferred === "public") {
+    try {
+      const cities = await tryPublic();
+      return { cities, source: "property_public_view" };
+    } catch {
+      const cities = await tryFull();
+      return { cities, source: "property_full_view" };
+    }
+  }
+
+  // auto: prefer full, but fallback if empty OR error
+  try {
+    const cities = await tryFull();
+    if (cities.length === 0) {
+      const cities2 = await tryPublic();
+      return { cities: cities2, source: "property_public_view" };
+    }
+    return { cities, source: "property_full_view" };
   } catch {
-    // If external_id column truly doesn't exist, select without it
-    let q = supabase
-      .from("property_full_view")
-      .select("id,title,address,type,total_area,city_name,city")
-      .not("id", "is", null)
-      .neq("id", "");
-    if (city) q = q.or(`city_name.eq.${city},city.eq.${city}`);
-    if (id) q = q.eq("id", id);
-    const { data } = await q;
-    return (data || []).map((r: RowBase) => ({
-      external_id: r.id,
-      title: r.title ?? "",
-      address: r.address ?? "",
-      city_name: (r.city_name ?? r.city ?? "") as string,
-      type: r.type ?? "",
-      total_area: r.total_area ?? null,
-      floor: null,
-      cover_url: null,
-    }));
+    const cities = await tryPublic();
+    return { cities, source: "property_public_view" };
   }
 }
 
-async function fetchFromPublicView(supabase: any, city?: string, id?: string): Promise<Item[]> {
-  // Try with external_id present
-  try {
+async function getItems(supabase: any, city: string, id: string, preferred: "full" | "public" | "auto") {
+  const selectFull = async () => {
     let q = supabase
-      .from("property_public_view")
-      .select("id,external_id,title,address,city,type,total_area")
+      .from("property_full_view")
+      .select("id,external_id,title,address,city_name,city,type,total_area,floor,etazh")
       .not("id", "is", null)
       .neq("id", "")
-      .not("city", "is", null)
-      .neq("city", "");
-    if (city) q = q.eq("city", city);
+      .or("city_name.not.is.null,city.not.is.null");
+    if (city) q = q.or(`city_name.eq.${city},city.eq.${city}`);
     if (id) q = q.eq("id", id);
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []).map((r: any) => ({
-      external_id: (r.external_id || r.id) as string,
-      title: r.title ?? "",
-      address: r.address ?? "",
-      city_name: r.city ?? "",
-      type: r.type ?? "",
-      total_area: r.total_area ?? null,
-      floor: null,
-      cover_url: null,
-    }));
-  } catch {
+    return (data || []).map(mapRowToItem);
+  };
+
+  const selectPublic = async () => {
     let q = supabase
       .from("property_public_view")
       .select("id,title,address,city,type,total_area")
@@ -176,43 +163,81 @@ async function fetchFromPublicView(supabase: any, city?: string, id?: string): P
       .neq("city", "");
     if (city) q = q.eq("city", city);
     if (id) q = q.eq("id", id);
-    const { data } = await q;
-    return (data || []).map((r: any) => ({
-      external_id: r.id,
-      title: r.title ?? "",
-      address: r.address ?? "",
-      city_name: r.city ?? "",
-      type: r.type ?? "",
-      total_area: r.total_area ?? null,
-      floor: null,
-      cover_url: null,
-    }));
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []).map(mapRowToItem);
+  };
+
+  if (preferred === "full") {
+    try {
+      const items = await selectFull();
+      return { items, source: "property_full_view" };
+    } catch {
+      const items = await selectPublic();
+      return { items, source: "property_public_view" };
+    }
+  }
+
+  if (preferred === "public") {
+    try {
+      const items = await selectPublic();
+      return { items, source: "property_public_view" };
+    } catch {
+      const items = await selectFull();
+      return { items, source: "property_full_view" };
+    }
+  }
+
+  // auto: prefer full, but fallback if empty OR error
+  try {
+    const items = await selectFull();
+    if (items.length === 0) {
+      const items2 = await selectPublic();
+      return { items: items2, source: "property_public_view" };
+    }
+    return { items, source: "property_full_view" };
+  } catch {
+    const items = await selectPublic();
+    return { items, source: "property_public_view" };
   }
 }
+
+export const revalidate = 0;
 
 export async function GET(request: Request) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const url = new URL(request.url);
+
   const city = (url.searchParams.get("city") || "").trim();
   const id = (url.searchParams.get("id") || "").trim();
+  const preferred = ((url.searchParams.get("source") || "auto").toLowerCase() as any) as "auto" | "full" | "public";
+  const debug = url.searchParams.get("debug") === "1";
 
   try {
-    const [cities, primary] = await Promise.all([
-      fetchCities(supabase),
-      fetchFromFullView(supabase, city, id),
+    const [{ cities, source: citiesSource }, { items, source: itemsSource }] = await Promise.all([
+      getCities(supabase, preferred),
+      getItems(supabase, city, id, preferred),
     ]);
 
-    const base = primary.length ? primary : await fetchFromPublicView(supabase, city, id);
-
-    const items = await Promise.all(
-      base.map(async (p) => ({
+    // build cover urls
+    const withCovers = await Promise.all(
+      items.map(async (p) => ({
         ...p,
-        // try both: UUID id (current) and any external_id like "id53"
-        cover_url: await firstPhotoUrl(supabase, [p.external_id]),
+        cover_url: await firstPhotoUrl(supabase, p.external_id),
       }))
     );
 
-    return NextResponse.json({ items, cities });
+    const payload: any = { items: withCovers, cities };
+    if (debug) {
+      payload.debug = {
+        query: { city, id, preferred },
+        counts: { items: withCovers.length, cities: cities.length },
+        sources: { citiesSource, itemsSource },
+        sample: withCovers.slice(0, 3).map((x) => ({ id: x.external_id, city: x.city_name, hasCover: !!x.cover_url })),
+      };
+    }
+
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("Catalog API fatal error:", error);
     return NextResponse.json({ error: "Catalog API error" }, { status: 500 });
