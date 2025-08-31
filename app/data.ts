@@ -3,19 +3,15 @@ import type { DomusRecord } from "@/lib/fields";
 
 export async function fetchCities(): Promise<string[]> {
   const { data } = await supabase.from(DOMUS_TABLE).select("otobrazit_vse").not("otobrazit_vse","is",null);
-  const set = new Set<string>();
-  for (const row of (data as any[]) || []) {
-    const v = (row.otobrazit_vse || "").toString().trim();
-    if (v) set.add(v);
-  }
-  return Array.from(set).sort();
+  const s = new Set<string>(); for (const r of (data as any[])||[]) { const v=(r.otobrazit_vse||"").toString().trim(); if(v) s.add(v); }
+  return Array.from(s).sort();
 }
 
 export async function fetchList(city?: string): Promise<DomusRecord[]> {
-  let query = supabase.from(DOMUS_TABLE).select("*").order("created_at", { ascending: false });
-  if (city) query = query.eq("otobrazit_vse", city);
-  const { data } = await query;
-  return (data || []) as DomusRecord[];
+  let q = supabase.from(DOMUS_TABLE).select("*").order("created_at",{ascending:false});
+  if (city) q = q.eq("otobrazit_vse", city);
+  const { data } = await q;
+  return (data||[]) as DomusRecord[];
 }
 
 export async function fetchByExternalId(external_id: string): Promise<DomusRecord | null> {
@@ -23,32 +19,23 @@ export async function fetchByExternalId(external_id: string): Promise<DomusRecor
   return (data as DomusRecord) || null;
 }
 
-export async function getFirstPhoto(id: string): Promise<string> {
-  // Try several list variants and buckets to be resilient
-  const buckets = [PHOTOS_BUCKET, "potos", "photos"].filter(Boolean);
-  const paths = [id, id + "/", id.replace(/^\/+|\/+$/g,"")]; // with/without slash
-  for (const b of buckets) {
-    for (const p of paths) {
-      const { data, error } = await supabase.storage.from(b).list(p, { limit: 100 });
-      if (!error && data && data.length > 0) {
-        const first = data[0].name;
-        return publicUrl(`${b}/${id}/${first}`);
-      }
-    }
+async function listAny(bucket: string, id: string) {
+  const variants = [id, id + "/", id.replace(/^\/+|\/+$/g,"")];
+  for (const p of variants) {
+    const { data } = await supabase.storage.from(bucket).list(p, { limit: 100 });
+    if (data && data.length) return data;
   }
+  return null;
+}
+
+export async function getFirstPhoto(id: string): Promise<string> {
+  const data = await listAny(PHOTOS_BUCKET, id);
+  if (data && data.length) return publicUrl(`${PHOTOS_BUCKET}/${id}/${data[0].name}`);
   return "/placeholder.svg";
 }
 
 export async function getGallery(id: string): Promise<string[]> {
-  const buckets = [PHOTOS_BUCKET, "potos", "photos"].filter(Boolean);
-  const paths = [id, id + "/", id.replace(/^\/+|\/+$/g,"")];
-  for (const b of buckets) {
-    for (const p of paths) {
-      const { data, error } = await supabase.storage.from(b).list(p, { limit: 100 });
-      if (!error && data && data.length > 0) {
-        return data.map((f) => publicUrl(`${b}/${id}/${f.name}`));
-      }
-    }
-  }
+  const data = await listAny(PHOTOS_BUCKET, id);
+  if (data && data.length) return data.map(f => publicUrl(`${PHOTOS_BUCKET}/${id}/${f.name}`));
   return ["/placeholder.svg"];
 }
