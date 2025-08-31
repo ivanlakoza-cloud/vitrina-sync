@@ -2,13 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { color-scheme: light; }
 body { @apply bg-neutral-50 text-neutral-900; }
-.container { @apply max-w-7xl mx-auto px-4; }
+.container { @apply max-w-6xl mx-auto px-4; }
 .card { @apply bg-white rounded-2xl shadow-sm border border-neutral-200; }
-.card-pad { @apply p-4; }
-.select { @apply border border-neutral-300 rounded-xl px-3 py-2 text-sm bg-white; }
-.hscroll { @apply overflow-x-auto whitespace-nowrap; }
-.badge { @apply inline-flex items-center rounded-full border border-neutral-300 px-2 py-0.5 text-xs; }
-.kv-grid { @apply grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2; }
-.kv-grid .k { @apply font-semibold; }
-.kv-grid .v { @apply font-normal; }
+.card-pad { @apply p-6; }
+.kv-row { @apply grid grid-cols-[220px,1fr] gap-3 py-1 border-b border-neutral-100; }

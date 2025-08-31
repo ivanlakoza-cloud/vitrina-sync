@@ -1,37 +1,25 @@
 "use client";
-
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
 
 export default function CityFilter({ cities }: { cities: string[] }) {
+  const params = useSearchParams();
   const router = useRouter();
-  const sp = useSearchParams();
-  const city = sp.get("city") || "";
-
-  const opts = useMemo(
-    () => ["", ...cities.filter(Boolean).sort((a,b)=>a.localeCompare(b,"ru"))],
-    [cities]
-  );
-
+  const value = params.get("city") || "";
   return (
-    <form className="flex items-center gap-3 mb-4">
-      <label className="text-sm">Город:</label>
+    <div className="flex items-center gap-3 mb-4">
+      <span className="text-lg">Город:</span>
       <select
-        className="select"
-        name="city"
-        defaultValue={city}
+        className="border rounded-lg px-3 py-2 bg-white"
+        value={value}
         onChange={(e) => {
-          const v = e.currentTarget.value;
-          const url = new URL(window.location.href);
-          if (v) url.searchParams.set('city', v);
-          else url.searchParams.delete('city');
-          router.push(url.toString());
-        }}
-      >
-        {opts.map((c, i) => (
-          <option key={i} value={c}>{c || "Все города"}</option>
-        ))}
+          const v = e.target.value;
+          const q = new URLSearchParams(Array.from(params.entries()));
+          if (v) q.set("city", v); else q.delete("city");
+          router.push(`/?${q.toString()}`);
+        }}>
+        <option value="">Все города</option>
+        {cities.map((c) => <option key={c} value={c}>{c}</option>)}
       </select>
-    </form>
+    </div>
   );
 }

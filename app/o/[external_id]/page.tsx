@@ -7,16 +7,14 @@ import { prettyLabels, DomusRecord, shortAddress } from "@/lib/fields";
 
 export async function generateMetadata({ params }: { params: { external_id: string } }): Promise<Metadata> {
   const rec = await fetchByExternalId(decodeURIComponent(params.external_id));
-  const city = (rec?.otobrazit_vse || (rec as any)?.city || "") as string;
-  const addr = (rec?.adres_23_58 || (rec?.adres_avito || "").replace(/^([^,]+),\s*/, "") || "") as string;
-  const title = [city, addr].filter(Boolean).join(", ");
-  return { title: (title ? `${title} — Витрина` : "Витрина") };
+  const title = rec ? `${shortAddress(rec)} — Витрина` : "Витрина";
+  return { title };
 }
 
 function KV({ k, v, strong }: { k: string, v: any, strong?: boolean }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
-    <div className="grid grid-cols-[220px,1fr] gap-3 py-1 border-b border-neutral-100">
+    <div className="kv-row">
       <div className={strong ? "font-semibold text-base" : "font-semibold"}>{k}</div>
       <div className="v">{String(v)}</div>
     </div>
@@ -30,19 +28,16 @@ function labelize(key: string): string {
 
 const HIDE_FIELDS = new Set<string>([
   "external_id","id","created_at","updated_at","id_obekta","otobrazit_vse","km","avito_id","etazh_avito",
-  "ukazannaya_ploschad","ukazannaya_stoimost_za_m2","transportnaya_dostupnost_magistrali_razvyazki",
-  "blizost_obschestvennogo_transporta","probki_v_chasy_pik_nizkie_srednie_vysokie","foto_s_avito",
-  "unnamed_93","disk_foto_plan","adres_23_58","adres_avito","city","tekst_obyavleniya","zagolovok"
+  "ukazannaya_ploschad","ukazannaya_stoimost_za_m2","disk_foto_plan",
+  "adres_23_58","adres_avito","city","tekst_obyavleniya","zagolovok","foto_s_avito"
 ]);
 
 export default async function Page({ params }: { params: { external_id: string } }) {
   const rec = await fetchByExternalId(decodeURIComponent(params.external_id));
-  if (!rec) {
-    return <div className="card card-pad">Объект не найден.</div>;
-  }
-  const gallery = await getGallery(rec.external_id);
+  if (!rec) return <div className="card card-pad">Объект не найден.</div>;
 
-  const heading = (rec as any).adres_avito || shortAddress(rec) || (rec as any).external_id;
+  const gallery = await getGallery(String(rec.id_obekta || rec.external_id || rec.id));
+  const heading = shortAddress(rec);
 
   const primary: (keyof DomusRecord)[] = ["tip_pomescheniya","etazh","dostupnaya_ploschad"];
   const exclude = new Set<string>([...primary.map(String), "ot_20","ot_50","ot_100","ot_400","ot_700","ot_1500"]);
@@ -68,40 +63,25 @@ export default async function Page({ params }: { params: { external_id: string }
 
       <div className="card card-pad">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
-          {/* Блок 1: ключевые + цены */}
           <div className="pr-5">
             {primary.map((key) => (
               <KV key={String(key)} strong k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />
             ))}
-            <div className="mt-2">
-              <PriceTable rec={rec} />
-            </div>
+            <div className="mt-2"><PriceTable rec={rec} /></div>
           </div>
-
-          {/* Блок 2 */}
           <div className="border-l border-neutral-200 pl-5 pr-5">
-            {cols[0].map(([k,v]) => (
-              <KV key={k} k={labelize(k)} v={v} />
-            ))}
+            {cols[0].map(([k,v]) => <KV key={k} k={labelize(k)} v={v} />)}
           </div>
-
-          {/* Блок 3 */}
           <div className="border-l border-neutral-200 pl-5">
-            {cols[1].map(([k,v]) => (
-              <KV key={k} k={labelize(k)} v={v} />
-            ))}
+            {cols[1].map(([k,v]) => <KV key={k} k={labelize(k)} v={v} />)}
           </div>
         </div>
       </div>
 
       {(rec as any).zagolovok || (rec as any).tekst_obyavleniya ? (
         <div className="card card-pad">
-          {(rec as any).zagolovok && (
-            <div className="text-xl font-semibold mb-2">{(rec as any).zagolovok}</div>
-          )}
-          {(rec as any).tekst_obyavleniya && (
-            <div className="whitespace-pre-wrap">{(rec as any).tekst_obyavleniya}</div>
-          )}
+          {(rec as any).zagolovok && <div className="text-xl font-semibold mb-2">{(rec as any).zagolovok}</div>}
+          {(rec as any).tekst_obyavleniya && <div className="whitespace-pre-wrap">{(rec as any).tekst_obyavleniya}</div>}
         </div>
       ) : null}
     </div>

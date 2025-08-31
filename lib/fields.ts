@@ -1,65 +1,22 @@
-export type DomusRecord = Record<string, any> & {
-  id?: number | string;
-  external_id: string;
-  city?: string | null;
-  zagolovok?: string | null;
-  adres_23_58?: string | null;
-  adres_avito?: string | null;
-  tip_pomescheniya?: string | null;
-  etazh?: string | null;
-  dostupnaya_ploschad?: string | null;
-  disk_foto_plan?: string | null;
-  ot_20?: string | null;
-  ot_50?: string | null;
-  ot_100?: string | null;
-  ot_400?: string | null;
-  ot_700?: string | null;
-  ot_1500?: string | null;
-  tekst_obyavleniya?: string | null;
-};
+export type DomusRecord = Record<string, any>;
+export const prettyLabels: Record<string,string> = {"external_id": "Внешний ID", "id_obekta": "ID объекта", "otobrazit_vse": "Город", "adres_23_58": "Адрес (23/58)", "zagolovok": "Заголовок", "tip_pomescheniya": "Тип помещения", "dostupnaya_ploschad": "Доступная площадь", "etazh": "Этаж", "ot_20": "от 20", "ot_50": "от 50", "ot_100": "от 100", "ot_400": "от 400", "ot_700": "от 700", "ot_1500": "от 1500", "kommentarii": "Комментарии", "km": "КМ %", "disk_foto_plan": "Диск (фото, план)", "avito": "Авито", "avito_id": "Авито ID", "etazh_avito": "Этаж Авито", "ukazannaya_ploschad": "Указанная площадь", "ukazannaya_stoimost_za_m2": "Указанная стоимость за м²", "adres_avito": "Адрес Авито", "gde": "Где?", "tip_zdaniya": "Тип здания", "parkovka": "Парковка", "vhod": "Вход", "planirovka": "Планировка", "vysota_potolkov": "Высота потолков", "vysota_potolkov_m": "Высота потолков (м)", "otoplenie": "Отопление", "tekst_obyavleniya": "Текст объявления", "nedostatki": "Недостатки", "col_1_lokaciya_i_okruzhenie": "1. Локация и окружение", "transportnaya_dostupnost_magistrali_razvyazki": "Транспортная доступность (магистрали, развязки)", "blizost_obschestvennogo_transporta": "Близость общественного транспорта", "probki_v_chasy_pik_nizkie_srednie_vysokie": "Пробки в часы пик (низкие/средние/высокие)", "infrastruktura_poblizosti_magaziny_banki_kafe_bc_gosuchrezhdeni": "Инфраструктура поблизости (магазины, банки, кафе, БЦ, госучреждения)", "imidzh_raiona": "Имидж района", "col_2_dostup_i_logistika": "2. Доступ и логистика", "podezdy_dlya_gruzovogo_transporta": "Подъезды для грузового транспорта", "vozmozhnost_razvorota_fur": "Возможность разворота фур", "nalichie_i_sostoyanie_podemnyh_kranov_ramp_gruzovyh_liftov": "Наличие и состояние подъёмных кранов/рамп/грузовых лифтов", "gruzopodemnost_oborudovaniya_t": "Грузоподъёмность оборудования (т)", "parkovka_kol_vo_mest_besplatnaya_platnaya": "Парковка (кол-во мест, бесплатная/платная)", "parkovka_dlya_gruzovogo_transporta": "Парковка для грузового транспорта", "col_3_harakteristiki_pomescheniya": "3. Характеристики помещения", "obschaya_ploschad_m²": "Общая площадь (м²)", "otdelka": "Отделка", "vozmozhnost_deleniya_obedineniya_pomeschenii": "Возможность деления/объединения помещений", "planirovka_otkrytaya_kabinetnaya_smeshannaya": "Планировка (открытая/кабинетная/смешанная)", "sostoyanie_gotovo_k_vezdu_remont_shell_core": "Состояние (готово к въезду/ремонт/shell&core)", "kakoi_pol": "Какой пол", "vitriny_da_net": "Витрины (да/нет)", "pomeschenie_otaplivaemoe_da_net": "Помещение отапливаемое (да/нет)", "temperatura_pomescheniya_zimoi": "Температура помещения зимой", "sostoyanie_krovli": "Состояние кровли", "iz_chego_karkaz_zdaniya": "Из чего каркас здания", "perekrykryya_m_u_etazhami_iz_chego": "Перекрытия между этажами (из чего)", "vorota_nalichie_kolichestvo_razmery": "Ворота (наличие, количество, размеры)", "okna_kakoe_osveschenie_prioritet_estestvennoe": "Окна, какое освещение (приоритет — естественное)", "zony_razgruzki_pogruzki": "Зоны разгрузки/погрузки", "col_4_kommunikacii_i_tehnicheskie_parametry": "4. Коммуникации и технические параметры", "voda_da_net_rasstoyanie_do_mokroi_tochki": "Вода (да/нет, расстояние до мокрой точки)", "nalichie_tualeta_ili_vozmozhnost_ustroistva": "Наличие туалета / возможность устройства", "vozmozhnost_podvedeniya_vody_pri_otsutstvii": "Возможность подведения воды при отсутствии", "elektrichestvo_moschnost_vozmozhnost_uvelicheniya": "Электричество (мощность, возможность увеличения)", "otoplenie_centralnoe_avtonomnoe_net": "Отопление (центральное/автономное/нет)", "vozmozhnost_podvedeniya_otopleniya": "Возможность подведения отопления", "ventilyaciya_kondicionirovanie": "Вентиляция / кондиционирование", "internet_provaidery_skorost": "Интернет (провайдеры, скорость)", "gaz_da_net": "Газ (да/нет)", "kanalizaciya_centralnaya_avtonomnaya": "Канализация (центральная/автономная)", "sistema_ohrany_videonablyudeniya": "Система охраны / видеонаблюдения", "pozharnaya_signalizaciya": "Пожарная сигнализация", "col_5_marketingovye_vozmozhnosti": "5. Маркетинговые возможности", "naruzhnaya_reklama_fasad_krysha_shtendery": "Наружная реклама (фасад, крыша, штендеры)", "vnutrennyaya_reklama_stendy_bannery": "Внутренняя реклама (стенды, баннеры)", "vidimost_s_dorogi_peshehodnyh_marshrutov": "Видимость с дороги / пешеходных маршрутов", "col_6_usloviya_arendy": "6. Условия аренды", "razreshennye_vidy_deyatelnosti": "Разрешённые виды деятельности", "srok_dogovora_let": "Срок договора (лет)", "opex_kommunalnye_platezhi": "OPEX / коммунальные платежи", "obespechitelnyi_platezh": "Обеспечительный платёж", "srok_gotovnosti_k_vezdu": "Срок готовности к въезду", "grafik_pokazov": "График показов", "kto_pokazhet": "Кто покажет?", "vozmozhnost_remonta_pereplanirovki": "Возможность ремонта / перепланировки", "arendnye_kanikuly": "Арендные каникулы", "zapreschennye_vidy_deyatelnosti_zhmyh_semena": "Запрещённые виды деятельности (жмых, семена)", "foto_s_avito": "Фото с Авито"};
 
-export const prettyLabels: Record<string,string> = {
-  external_id: "Внешний ID",
-  city: "Город",
-  zagolovok: "Заголовок",
-  tip_pomescheniya: "Тип помещения",
-  etazh: "Этаж",
-  dostupnaya_ploschad: "Доступная площадь",
-  adres_23_58: "Адрес",
-  adres_avito: "Адрес (Avito)",
-  ot_20: "Цена от 20 м², ₽/м²",
-  ot_50: "Цена от 50 м², ₽/м²",
-  ot_100: "Цена от 100 м², ₽/м²",
-  ot_400: "Цена от 400 м², ₽/м²",
-  ot_700: "Цена от 700 м², ₽/м²",
-  ot_1500: "Цена от 1500 м², ₽/м²",
-  tekst_obyavleniya: "Описание",
-};
-
-const PRICE_FIELDS = ["ot_20","ot_50","ot_100","ot_400","ot_700","ot_1500"] as const;
-export type PriceKey = typeof PRICE_FIELDS[number];
-
-export function shortAddress(r: DomusRecord): string {
-  return (r.adres_23_58 || r.adres_avito || "").trim();
-}
-
-export function pricePairs(r: DomusRecord): {label: string, key: PriceKey, value: string}[] {
-  const map: Record<PriceKey,string> = {
-    ot_20: "от 20",
-    ot_50: "от 50",
-    ot_100: "от 100",
-    ot_400: "от 400",
-    ot_700: "от 700",
-    ot_1500: "от 1500",
-  };
-  const out: {label: string, key: PriceKey, value: string}[] = [];
-  (Object.keys(map) as PriceKey[]).forEach((k) => {
-    const v = (r[k] || "").toString().trim();
-    if (v) out.push({ label: map[k], key: k, value: v });
-  });
+export function pricePairs(rec: any): Array<{ label: string; value: string }> {
+  const keys: Array<[string,string]> = [
+    ["ot_20","от 20"],["ot_50","от 50"],["ot_100","от 100"],
+    ["ot_400","от 400"],["ot_700","от 700"],["ot_1500","от 1500"],
+  ];
+  const out: Array<{label: string; value: string}> = [];
+  for (const [k, label] of keys) {
+    const v = rec?.[k];
+    if (v !== null && v !== undefined && String(v).trim() !== "") {
+      out.push({ label, value: String(v) });
+    }
+  }
   return out;
 }
-
-export function titleOf(r: DomusRecord): string {
-  return r.zagolovok || `${r.tip_pomescheniya || "Помещение"} — ${shortAddress(r)}`;
+export function shortAddress(rec: any): string {
+  const city = rec?.otobrazit_vse || rec?.city || "";
+  const addr = (rec?.adres_23_58) || ((rec?.adres_avito || "").replace(/^([^,]+),\s*/, ""));
+  return [city, addr].filter(Boolean).join(", ");
 }

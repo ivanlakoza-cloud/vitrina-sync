@@ -1,34 +1,39 @@
+import Link from "next/link";
 import CityFilter from "@/components/CityFilter";
-import PropertyCard from "@/components/PropertyCard";
-import { fetchAll, getCoverUrl } from "./data";
+import { fetchCities, fetchList, getFirstPhoto } from "./data";
+import PriceTable from "@/components/PriceTable";
+import { prettyLabels, shortAddress } from "@/lib/fields";
 
-export default async function Home({ searchParams }: { searchParams: { city?: string } }) {
-  const rows = await fetchAll();
-
-  const cities = Array.from(new Set(rows.map(r => (r.otobrazit_vse || r.city || "").trim()).filter(Boolean))) as string[];
-  const city = (searchParams?.city || "").trim();
-
-  const filtered = city
-    ? rows.filter(r => (r.otobrazit_vse || r.city || "") === city)
-    : rows;
-
-  const covers = Object.fromEntries(await Promise.all(filtered.map(async (r) => {
-    return [r.external_id, await getCoverUrl(r.external_id)];
-  })));
+export default async function Page({ searchParams }: { searchParams: { city?: string } }) {
+  const currentCity = searchParams.city || "";
+  const [cities, items] = await Promise.all([fetchCities(), fetchList(currentCity || undefined)]);
 
   return (
-    <div>
+    <div className="space-y-4">
       <CityFilter cities={cities} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
-        {filtered.map((r) => (
-          <div key={r.external_id}>
-            <PropertyCard
-              rec={r}
-              href={`/o/${encodeURIComponent(r.external_id)}`}
-              cover={covers[r.external_id]}
-            />
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+        {await Promise.all(items.map(async (rec) => {
+          const id = String(rec.id_obekta || rec.external_id || rec.id);
+          const photo = await getFirstPhoto(id);
+          const addrTitle = shortAddress(rec);
+          const tip = rec.tip_pomescheniya;
+          const etazh = rec.etazh;
+          const plosh = rec.dostupnaya_ploschad;
+          return (
+            <Link key={id} href={`/o/${encodeURIComponent(id)}`} className="card overflow-hidden">
+              <img src={photo} alt={addrTitle} className="h-48 w-full object-cover" />
+              <div className="p-5 space-y-3">
+                <div className="text-lg font-semibold">{addrTitle}</div>
+                <div className="text-sm">
+                  <div><span className="font-semibold">{prettyLabels["tip_pomescheniya"]}:</span> {tip || "—"}</div>
+                  <div><span className="font-semibold">{prettyLabels["etazh"]}:</span> {etazh || "—"}</div>
+                  <div><span className="font-semibold">{prettyLabels["dostupnaya_ploschad"]}:</span> {plosh || "—"}</div>
+                </div>
+                <PriceTable rec={rec} />
+              </div>
+            </Link>
+          );
+        }))}
       </div>
     </div>
   );
