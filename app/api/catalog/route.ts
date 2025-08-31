@@ -3,16 +3,17 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 type Row = {
-  id: string;
+  id: string;                 // UUID
+  external_id?: string | null;// короткий код из таблицы/скрипта (id53 и т.п.)
   title?: string | null;
   address?: string | null;
-  city?: string | null;
   type?: string | null;
   total_area?: number | null;
+  city?: string | null;       // c.name
 };
 
 type Item = {
-  external_id: string;
+  external_id: string;        // что будем использовать как код карточки и папку фоток
   title: string;
   address: string;
   city_name: string;
@@ -27,8 +28,10 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 const BAD_CITY_LABEL = "Обязательность данных";
 
-function isUUID(v: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+export const revalidate = 0;
+
+function normalizeCity(s: any): string {
+  return typeof s === "string" ? s.trim() : "";
 }
 
 async function tryListFirstFile(supabase: any, folder: string) {
@@ -43,13 +46,12 @@ async function tryListFirstFile(supabase: any, folder: string) {
   return data?.publicUrl ?? null;
 }
 
-async function firstPhotoUrl(supabase: any, code: string): Promise<string | null> {
-  if (!code) return null;
-  const variants = new Set<string>([
-    `${code}/`,
-    `${code.toLowerCase()}/`,
-    `${code.toUpperCase()}/`,
-  ]);
+async function firstPhotoUrl(supabase: any, code: string, fallbackCode?: string): Promise<string | null> {
+  const candidates = Array.from(new Set([code, fallbackCode].filter(Boolean))) as string[];
+  const variants: string[] = [];
+  for (const c of candidates) {
+    variants.push(`${c}/`, `${c.toLowerCase()}/`, `${c.toUpperCase()}/`);
+  }
   for (const v of variants) {
     const url = await tryListFirstFile(supabase, v);
     if (url) return url;
@@ -57,42 +59,36 @@ async function firstPhotoUrl(supabase: any, code: string): Promise<string | null
   return null;
 }
 
-export const revalidate = 0;
-
 export async function GET(request: Request) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const url = new URL(request.url);
-  const city = (url.searchParams.get("city") || "").trim();
-  const id = (url.searchParams.get("id") || "").trim();
+  const city = normalizeCity(url.searchParams.get("city"));
+  const id = normalizeCity(url.searchParams.get("id"));
   const debug = url.searchParams.get("debug") === "1";
 
-  // 1) города (исключаем плейсхолдер)
+  // Список городов из cities join (исключаем плейсхолдер)
   const { data: citiesRaw } = await supabase
-    .from("property_public_view")
-    .select("city")
-    .not("city", "is", null)
-    .neq("city", "")
-    .neq("city", BAD_CITY_LABEL)
-    .order("city", { ascending: true });
+    .from("properties")
+    .select("city:cities(name)")
+    .neq("status", "archived") // на всякий случай
+    .eq("is_public", true);
 
-  const citiesSet = new Set<string>();
+  const citySet = new Set<string>();
   (citiesRaw || []).forEach((r: any) => {
-    if (r?.city && typeof r.city === "string") citiesSet.add(r.city.trim());
+    const name = normalizeCity(r?.city?.name);
+    if (name && name !== BAD_CITY_LABEL) citySet.add(name);
   });
-  const cities = Array.from(citiesSet);
+  const cities = Array.from(citySet).sort((a, b) => a.localeCompare(b, "ru"));
 
-  // 2) объекты
+  // Основной список объектов — напрямую из properties + join cities (чтобы получить внешний id и город)
   let q = supabase
-    .from("property_public_view")
-    .select("id,title,address,city,type,total_area")
-    .not("id", "is", null)
-    .not("city", "is", null)
-    .neq("city", "")
-    .neq("city", BAD_CITY_LABEL);
+    .from("properties")
+    .select("id, external_id, title, address, type, total_area, city: cities(name)")
+    .eq("is_public", true)
+    .eq("status", "active");
 
-  if (city) q = q.eq("city", city);
-  // ВАЖНО: фильтруем по id только если это валидный UUID
-  if (id && isUUID(id)) q = q.eq("id", id);
+  if (city) q = q.eq("cities.name", city); // фильтр по тексту города
+  if (id) q = q.eq("id", id);              // если придёт, это UUID
 
   const { data, error } = await q;
   if (error) {
@@ -101,21 +97,30 @@ export async function GET(request: Request) {
     return NextResponse.json(payload);
   }
 
-  const baseItems: Item[] = (data || []).map((r: Row) => ({
-    external_id: r.id,
-    title: r.title ?? "",
-    address: r.address ?? "",
-    city_name: r.city ?? "",
-    type: r.type ?? "",
-    total_area: r.total_area ?? null,
-    floor: null,
-    cover_url: null,
-  }));
+  const baseItems: Item[] = (data || [])
+    .map((r: any) => {
+      const cityName = normalizeCity(r?.city?.name);
+      if (!cityName || cityName === BAD_CITY_LABEL) return null;
+      const externalCode = (r.external_id || r.id) as string;
+      const it: Item = {
+        external_id: externalCode,
+        title: r.title ?? "",
+        address: r.address ?? "",
+        city_name: cityName,
+        type: r.type ?? "",
+        total_area: r.total_area ?? null,
+        floor: null,
+        cover_url: null,
+      };
+      return it;
+    })
+    .filter(Boolean) as Item[];
 
+  // Фото: используем external_id как основной код папки, fallback — UUID id
   const items: Item[] = await Promise.all(
-    baseItems.map(async (p) => ({
+    baseItems.map(async (p, idx) => ({
       ...p,
-      cover_url: await firstPhotoUrl(supabase, p.external_id),
+      cover_url: await firstPhotoUrl(supabase, p.external_id, data?.[idx]?.id),
     }))
   );
 
@@ -124,7 +129,10 @@ export async function GET(request: Request) {
     payload.debug = {
       query: { city, id },
       counts: { items: items.length, cities: cities.length },
-      sample: items.slice(0, 3).map((x) => ({ id: x.external_id, city: x.city_name, hasCover: !!x.cover_url })),
+      sample: items.slice(0, 5).map((x, i) => ({
+        id: x.external_id, city: x.city_name, hasCover: !!x.cover_url
+      })),
+      note: "Города и список берутся напрямую из properties + cities; фото ищется по папкам external_id/ и UUID/.",
     };
   }
 
