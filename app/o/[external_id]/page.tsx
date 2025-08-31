@@ -16,13 +16,8 @@ export async function generateMetadata({ params }: { params: { external_id: stri
 function KV({ k, v, strong }: { k: string, v: any, strong?: boolean }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
-    <div className="grid grid-cols-[200px,1fr] gap-3 py-1 border-b border-neutral-100">
+    <div className="grid grid-cols-[220px,1fr] gap-3 py-1 border-b border-neutral-100">
       <div className={strong ? "k text-base" : "k"}>{k}</div>
-      <div className="v">{String(v)}</div>
-    </div>
-  );
-}
-</div>
       <div className="v">{String(v)}</div>
     </div>
   );
@@ -73,6 +68,7 @@ export default async function Page({ params }: { params: { external_id: string }
 
       <div className="card card-pad">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
+          {/* Блок 1: ключевые + цены */}
           <div className="pr-5">
             {primary.map((key) => (
               <KV key={String(key)} strong k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />
@@ -82,20 +78,18 @@ export default async function Page({ params }: { params: { external_id: string }
             </div>
           </div>
 
+          {/* Блок 2 */}
           <div className="border-l border-neutral-200 pl-5 pr-5">
-            {cols[0].map(([k,v]) => {
-  const label = labelize(k);
-  return <KV key={k} k={label} v={v} />;
-})}
-
+            {cols[0].map(([k,v]) => (
+              <KV key={k} k={labelize(k)} v={v} />
+            ))}
           </div>
 
+          {/* Блок 3 */}
           <div className="border-l border-neutral-200 pl-5">
-            {cols[1].map(([k,v]) => {
-  const label = labelize(k);
-  return <KV key={k} k={label} v={v} />;
-})}
-
+            {cols[1].map(([k,v]) => (
+              <KV key={k} k={labelize(k)} v={v} />
+            ))}
           </div>
         </div>
       </div>
