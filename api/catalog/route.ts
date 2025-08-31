@@ -1,136 +1,160 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 type Row = {
-  id: string | number | null;
+  id: string;
   title: string | null;
   address: string | null;
   city: string | null;
   type: string | null;
-  etazh: string | number | null;
-  tip_pomescheniya: string | null;
-  price_per_m2_20: number | null;
-  price_per_m2_50: number | null;
-  price_per_m2_100: number | null;
-  price_per_m2_400: number | null;
-  price_per_m2_700: number | null;
-  price_per_m2_1500: number | null;
+  total_area: number | null;
+  lat: number | null;
+  lng: number | null;
 };
 
-// Try both env names so it works on local & Vercel
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+type Ext = {
+  property_id: string;
+  price_per_m2_20?: string | null;
+  price_per_m2_50?: string | null;
+  price_per_m2_100?: string | null;
+  price_per_m2_400?: string | null;
+  price_per_m2_700?: string | null;
+  price_per_m2_1500?: string | null;
+  etazh_avito?: string | null;
+};
 
-const sb = SUPABASE_URL && SUPABASE_ANON_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+type Photo = {
+  property_id: string;
+  url?: string | null;
+  created_at?: string | null;
+};
 
-function buildPricesLine(r: Row): string {
-  const pairs: Array<[keyof Row, string]> = [
-    ['price_per_m2_20', 'от 20'],
-    ['price_per_m2_50', 'от 50'],
-    ['price_per_m2_100', 'от 100'],
-    ['price_per_m2_400', 'от 400'],
-    ['price_per_m2_700', 'от 700'],
-    ['price_per_m2_1500', 'от 1500'],
-  ];
-  return pairs
-    .map(([k, label]) => {
-      const v = (r as any)[k];
-      if (v === undefined || v === null || v === '') return null;
-      return `${label} — ${v}`;
-    })
-    .filter(Boolean)
-    .join(' · ');
-}
+export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    if (!sb) {
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
       return NextResponse.json(
-        { ok: false, message: 'Supabase env is not configured' },
+        { ok: false, message: "Supabase env vars are missing" },
         { status: 500 }
       );
     }
 
-    // NOTE: intentionally do NOT reference uuid/external_id/city_name here
-    const { data, error } = await sb
-      .from('property_public_view')
-      .select(
-        [
-          'id',
-          'title',
-          'address',
-          'city',
-          'type',
-          'etazh',
-          'tip_pomescheniya',
-          'price_per_m2_20',
-          'price_per_m2_50',
-          'price_per_m2_100',
-          'price_per_m2_400',
-          'price_per_m2_700',
-          'price_per_m2_1500',
-        ].join(',')
-      )
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+    });
+
+    // 1) Base rows from the *existing* view
+    const { data: rows, error } = await supabase
+      .from("property_public_view")
+      .select("id,title,address,city,type,total_area,lat,lng")
+      .order("city", { ascending: true })
       .limit(2000);
 
     if (error) {
-      return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, message: error.message },
+        { status: 500 }
+      );
     }
 
-    const rows: Row[] = (data as any[]) ?? [];
+    const safeRows: Row[] = (rows ?? []) as Row[];
+    const ids = safeRows.map((r) => r.id).filter(Boolean);
 
-    const items = rows.map((r) => {
-      const city = (r.city ?? '').toString().trim();
-      const address = (r.address ?? '').toString().trim();
+    // 2) Prices + floor from property_ext
+    let extById = new Map<string, Ext>();
+    if (ids.length) {
+      const { data: extRows, error: extErr } = await supabase
+        .from("property_ext")
+        .select(
+          "property_id,price_per_m2_20,price_per_m2_50,price_per_m2_100,price_per_m2_400,price_per_m2_700,price_per_m2_1500,etazh_avito"
+        )
+        .in("property_id", ids)
+        .limit(5000);
+      if (extErr) {
+        return NextResponse.json(
+          { ok: false, message: extErr.message },
+          { status: 500 }
+        );
+      }
+      for (const e of (extRows ?? []) as Ext[]) {
+        extById.set(e.property_id, e);
+      }
+    }
 
-      // Header (Город, Адрес)
-      const header = [city, address].filter(Boolean).join(', ');
+    // 3) First photo per object
+    let photoFirstById = new Map<string, string>();
+    if (ids.length) {
+      const { data: photoRows, error: photoErr } = await supabase
+        .from("photos")
+        .select("property_id,url,created_at")
+        .in("property_id", ids)
+        .order("created_at", { ascending: true })
+        .limit(10000);
 
-      // Second line: tip_pomescheniya (fallback: type) + этаж
-      const primary = (r.tip_pomescheniya || r.type || '').toString().trim();
-      const etazh =
-        r.etazh !== null && r.etazh !== undefined && `${r.etazh}` !== ''
-          ? ` · этаж ${r.etazh}`
-          : '';
-      const subtitle = (primary + etazh).trim();
+      if (photoErr) {
+        return NextResponse.json(
+          { ok: false, message: photoErr.message },
+          { status: 500 }
+        );
+      }
+      for (const p of (photoRows ?? []) as Photo[]) {
+        if (p.property_id && p.url && !photoFirstById.has(p.property_id)) {
+          photoFirstById.set(p.property_id, p.url);
+        }
+      }
+    }
 
-      // Prices
-      const prices_line = buildPricesLine(r);
+    const items = safeRows.map((r) => {
+      const e = extById.get(r.id);
+      const title = [r.city, r.address].filter(Boolean).join(", ");
+
+      const parts2: string[] = [];
+      if (r.type) parts2.push(String(r.type).trim());
+      if (e?.etazh_avito && String(e.etazh_avito).trim()) {
+        parts2.push(`этаж ${String(e.etazh_avito).trim()}`);
+      }
+      const subtitle = parts2.join(" · ");
+
+      const priceParts: string[] = [];
+      const add = (k: number, v?: string | null) => {
+        if (v && String(v).trim()) priceParts.push(`от ${k} — ${String(v).trim()}`);
+      };
+      add(20, e?.price_per_m2_20);
+      add(50, e?.price_per_m2_50);
+      add(100, e?.price_per_m2_100);
+      add(400, e?.price_per_m2_400);
+      add(700, e?.price_per_m2_700);
+      add(1500, e?.price_per_m2_1500);
 
       return {
-        external_id: String(r.id ?? ''), // avoid uuid usage
-        // keep legacy fields to not break old frontend
-        title: header,
-        address,
-        city_name: city, // legacy alias
-        type: r.type,
-        floor: r.etazh,
-        cover_url: null, // can be filled later if needed
-        // new fields (for the new homepage)
+        id: r.id,
+        title,
         subtitle,
-        prices_line,
+        prices: priceParts.join(" · "),
+        city: r.city,
+        address: r.address,
+        type: r.type,
+        total_area: r.total_area,
+        cover_url: photoFirstById.get(r.id) || null,
       };
     });
 
     const cities = Array.from(
-      new Set(items.map((i) => i.city_name).filter(Boolean))
-    ).sort((a, b) => a!.localeCompare(b!, 'ru'));
+      new Set(safeRows.map((r) => r.city).filter(Boolean))
+    )
+      .map((c) => String(c))
+      .sort((a, b) => a.localeCompare(b, "ru"));
 
-    return NextResponse.json({
-      items,
-      cities,
-      debug: {
-        v: 3,
-        source: 'property_public_view',
-        selected_columns:
-          'id,title,address,city,type,etazh,tip_pomescheniya,price_per_m2_*',
-      },
-    });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ ok: true, items, cities });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ ok: false, message: msg }, { status: 500 });
   }
 }
