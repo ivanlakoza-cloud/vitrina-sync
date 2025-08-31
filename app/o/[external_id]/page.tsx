@@ -13,11 +13,16 @@ export async function generateMetadata({ params }: { params: { external_id: stri
   return { title: (title ? `${title} — Витрина` : "Витрина") };
 }
 
-function KV({ k, v }: { k: string, v: any }) {
+function KV({ k, v, strong }: { k: string, v: any, strong?: boolean }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
     <div className="grid grid-cols-[200px,1fr] gap-3 py-1 border-b border-neutral-100">
-      <div className="k break-words" >{k}</div>
+      <div className={strong ? "k text-base" : "k"}>{k}</div>
+      <div className="v">{String(v)}</div>
+    </div>
+  );
+}
+</div>
       <div className="v">{String(v)}</div>
     </div>
   );
@@ -70,7 +75,7 @@ export default async function Page({ params }: { params: { external_id: string }
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
           <div className="pr-5">
             {primary.map((key) => (
-              <KV key={String(key)} k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />
+              <KV key={String(key)} strong k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />
             ))}
             <div className="mt-2">
               <PriceTable rec={rec} />
@@ -78,21 +83,19 @@ export default async function Page({ params }: { params: { external_id: string }
           </div>
 
           <div className="border-l border-neutral-200 pl-5 pr-5">
-            <div className="kv-grid">
-              {cols[0].map(([k,v]) => {
-                const label = labelize(k);
-                return <KV key={k} k={label} v={v} />;
-              })}
-            </div>
+            {cols[0].map(([k,v]) => {
+  const label = labelize(k);
+  return <KV key={k} k={label} v={v} />;
+})}
+
           </div>
 
           <div className="border-l border-neutral-200 pl-5">
-            <div className="kv-grid">
-              {cols[1].map(([k,v]) => {
-                const label = labelize(k);
-                return <KV key={k} k={label} v={v} />;
-              })}
-            </div>
+            {cols[1].map(([k,v]) => {
+  const label = labelize(k);
+  return <KV key={k} k={label} v={v} />;
+})}
+
           </div>
         </div>
       </div>
