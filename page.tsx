@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from "react";
 
 type Item = {
   external_id: string;
@@ -9,11 +9,10 @@ type Item = {
   city_name: string;
   type?: string | null;
   tip_pomescheniya?: string | null;
-  etazh?: number | string | null;
-  floor?: number | string | null;
-  cover_url?: string | null;
   total_area?: number | null;
-
+  floor?: number | string | null;
+  etazh?: number | string | null;
+  cover_url?: string | null;
   price_per_m2_20?: number | null;
   price_per_m2_50?: number | null;
   price_per_m2_100?: number | null;
@@ -29,71 +28,94 @@ type ApiResponse = {
 };
 
 const TYPE_MAP: Record<string, string> = {
-  retail: 'торговое',
-  office: 'офис',
-  warehouse: 'склад',
-  industrial: 'производство',
-  other: 'другое',
+  retail: "торговое",
+  office: "офис",
+  warehouse: "склад",
+  industrial: "производство",
+  other: "другое",
 };
 
-function fmt(n?: number | null) {
-  if (n === null || n === undefined) return '';
-  try {
-    return n.toLocaleString('ru-RU');
-  } catch {
-    return String(n);
-  }
+function typeLabel(it: Item) {
+  const tip = (it.tip_pomescheniya ?? "").trim();
+  if (tip) return tip;
+  const t = (it.type ?? "").trim().toLowerCase();
+  return TYPE_MAP[t] ?? t;
 }
 
-function typeLabel(item: Item) {
-  if (item.tip_pomescheniya && item.tip_pomescheniya.trim()) return item.tip_pomescheniya.trim();
-  if (item.type && TYPE_MAP[item.type]) return TYPE_MAP[item.type];
-  return 'помещение';
+function floorLabel(it: Item) {
+  const f = it.floor ?? it.etazh;
+  if (f === null || f === undefined || String(f).trim() === "") return "";
+  return `этаж ${f}`;
 }
 
-function floorLabel(item: Item) {
-  const f = item.floor ?? item.etazh;
-  if (f === null || f === undefined || f === '') return '';
-  return `${f} эт.`;
-}
-
-function buildPriceLine(item: Item) {
-  const rows: [string, number | null | undefined][] = [
-    ['от 20', item.price_per_m2_20],
-    ['от 50', item.price_per_m2_50],
-    ['от 100', item.price_per_m2_100],
-    ['от 400', item.price_per_m2_400],
-    ['от 700', item.price_per_m2_700],
-    ['от 1500', item.price_per_m2_1500],
+function priceParts(it: Item) {
+  const mapping: Array<[keyof Item, string]> = [
+    ["price_per_m2_20", "от 20"],
+    ["price_per_m2_50", "от 50"],
+    ["price_per_m2_100", "от 100"],
+    ["price_per_m2_400", "от 400"],
+    ["price_per_m2_700", "от 700"],
+    ["price_per_m2_1500", "от 1500"],
   ];
-  const parts = rows
-    .filter(([, v]) => v !== null && v !== undefined)
-    .map(([label, v]) => `${label} — ${fmt(v)} ₽/м²`);
-  return parts.length ? parts.join(' · ') : '';
+  const parts: string[] = [];
+  for (const [key, label] of mapping) {
+    const v = (it as any)[key];
+    if (v === null || v === undefined) continue;
+    const num = Number(v);
+    if (Number.isNaN(num)) continue;
+    parts.push(`${label} — ${num.toLocaleString("ru-RU")} ₽/м²`);
+  }
+  return parts;
 }
 
-export default function Page() {
-  const [data, setData] = useState<ApiResponse | null>(null);
-  const [city, setCity] = useState<string>('');
+async function fetchCatalog(city: string) {
+  const qs = city ? `?city=${encodeURIComponent(city)}` : "";
+  const res = await fetch(`/api/catalog${qs}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Catalog API error: ${res.status}`);
+  }
+  return (await res.json()) as ApiResponse;
+}
+
+export default function HomePage() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [city, setCity] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
+
+  async function load(c: string) {
+    try {
+      setLoading(true);
+      setError("");
+      const data = await fetchCatalog(c);
+      setItems(data.items ?? []);
+      setCities(data.cities ?? []);
+    } catch (e: any) {
+      setError(e?.message ?? "Ошибка загрузки");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const url = `/api/catalog${city ? `?city=${encodeURIComponent(city)}` : ''}`;
-    fetch(url, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((j) => setData(j))
-      .catch((e) => {
-        console.error('Catalog fetch error', e);
-        setData({ items: [], cities: [], debug: { error: String(e) } });
-      });
+    load(city);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city]);
 
-  const counts = useMemo(() => ({
-    items: data?.items?.length ?? 0,
-    cities: data?.cities?.length ?? 0,
-  }), [data]);
+  const counts = useMemo(
+    () => ({
+      items: items.length,
+      cities: cities.length,
+    }),
+    [items, cities]
+  );
+
+  const debugHref = `/api/catalog${city ? `?city=${encodeURIComponent(city)}` : ""}`;
 
   return (
-    <main className="container">
+    <main className="wrap">
       <header className="topbar">
         <label className="label">Город:</label>
         <select
@@ -102,59 +124,52 @@ export default function Page() {
           onChange={(e) => setCity(e.target.value)}
         >
           <option value="">Все города</option>
-          {(data?.cities ?? []).map((c) => (
+          {cities.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
         </select>
 
-        <div className="spacer" />
-
         <div className="counts">
           Найдено: <b>{counts.items}</b> объектов, городов: <b>{counts.cities}</b>
         </div>
 
-        <a className="debug" href={`/api/catalog${city ? `?city=${encodeURIComponent(city)}` : ''}`}>
+        <a className="debug" href={debugHref} target="_blank" rel="noreferrer">
           Открыть JSON (debug)
         </a>
       </header>
 
+      {error && <div className="error">Ошибка: {error}</div>}
+      {loading && <div className="loading">Загрузка...</div>}
+
       <section className="grid">
-        {(data?.items ?? []).map((p) => (
-          <article key={p.external_id} className="card">
-            <div className="thumb">
-              {p.cover_url ? (
+        {items.map((it) => {
+          const title = `${it.city_name}${it.address ? ", " + it.address : ""}`;
+          const meta = [typeLabel(it), floorLabel(it)].filter(Boolean).join(" · ");
+          const prices = priceParts(it).join(" · ");
+          return (
+            <article key={it.external_id} className="card">
+              {it.cover_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.cover_url} alt="" />
+                <img
+                  className="photo"
+                  src={it.cover_url}
+                  alt={title}
+                  loading="lazy"
+                />
               ) : (
-                <div className="no-photo">нет фото</div>
+                <div className="photo placeholder">нет фото</div>
               )}
-            </div>
 
-            <div className="body">
-              <h3 className="title">
-                {p.city_name}
-                {p.address ? `, ${p.address}` : ''}
-              </h3>
-
-              <div className="meta">
-                {typeLabel(p)}
-                {floorLabel(p) ? ` · ${floorLabel(p)}` : ''}
+              <div className="body">
+                <h3 className="title">{title}</h3>
+                {meta && <div className="meta">{meta}</div>}
+                {prices && <p className="prices">{prices}</p>}
               </div>
-
-              {buildPriceLine(p) && (
-                <p className="prices">{buildPriceLine(p)}</p>
-              )}
-
-              {p.total_area ? (
-                <div className="area">
-                  Площадь: {fmt(p.total_area)} м²
-                </div>
-              ) : null}
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </section>
     </main>
   );
