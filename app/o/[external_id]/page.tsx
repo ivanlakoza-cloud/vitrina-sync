@@ -27,7 +27,7 @@ const HIDE_FIELDS = new Set<string>([
   "external_id","id","created_at","updated_at","id_obekta","otobrazit_vse","km","avito_id","etazh_avito",
   "ukazannaya_ploschad","ukazannaya_stoimost_za_m2","transportnaya_dostupnost_magistrali_razvyazki",
   "blizost_obschestvennogo_transporta","probki_v_chasy_pik_nizkie_srednie_vysokie","foto_s_avito",
-  "unnamed_93","disk_foto_plan","adres_23_58","adres_avito","city","tekst_obyavleniya"
+  "unnamed_93","disk_foto_plan","adres_23_58","adres_avito","city","tekst_obyavleniya","zagolovok"
 ]);
 
 export default async function Page({ params }: { params: { external_id: string } }) {
@@ -49,9 +49,9 @@ export default async function Page({ params }: { params: { external_id: string }
     return true;
   });
 
-  // split otherEntries into 3 roughly equal columns
-  const cols: Array<[string, any][]> = [[],[],[]];
-  otherEntries.forEach((pair, i) => cols[i % 3].push(pair as [string, any]));
+  // Split other entries into 2 columns (blocks 2 and 3)
+  const cols: Array<[string, any][]> = [[],[]];
+  otherEntries.forEach((pair, i) => cols[i % 2].push(pair as [string, any]));
 
   return (
     <div className="space-y-4">
@@ -63,8 +63,10 @@ export default async function Page({ params }: { params: { external_id: string }
       <PhotoStrip urls={gallery} />
 
       <div className="card card-pad">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div>
+        {/* 3 блока: левый (основные+цены), средний и правый (прочие) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
+          {/* Блок 1 */}
+          <div className="pr-5">
             {primary.map((key) => (
               <KV key={String(key)} k={prettyLabels[key as string] || String(key)} v={(rec as any)[key]} />
             ))}
@@ -72,26 +74,43 @@ export default async function Page({ params }: { params: { external_id: string }
               <PriceTable rec={rec} />
             </div>
           </div>
-          {cols.map((list, idx) => (
-            <div key={idx}>
-              <div className="kv-grid">
-                {list.map(([k,v]) => (
-                  <div key={k} className="contents">
-                    <div className="k">{prettyLabels[k] || k}</div>
-                    <div className="v">{String(v)}</div>
-                  </div>
-                ))}
-              </div>
+
+          {/* Блок 2 */}
+          <div className="border-l border-neutral-200 pl-5 pr-5">
+            <div className="kv-grid">
+              {cols[0].map(([k,v]) => (
+                <div key={k} className="contents">
+                  <div className="k">{prettyLabels[k] || k}</div>
+                  <div className="v">{String(v)}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+
+          {/* Блок 3 */}
+          <div className="border-l border-neutral-200 pl-5">
+            <div className="kv-grid">
+              {cols[1].map(([k,v]) => (
+                <div key={k} className="contents">
+                  <div className="k">{prettyLabels[k] || k}</div>
+                  <div className="v">{String(v)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {(rec as any).tekst_obyavleniya && (
+      {(rec as any).zagolovok || (rec as any).tekst_obyavleniya ? (
         <div className="card card-pad">
-          <div className="whitespace-pre-wrap">{(rec as any).tekst_obyavleniya}</div>
+          {(rec as any).zagolovok && (
+            <div className="text-xl font-semibold mb-2">{(rec as any).zagolovok}</div>
+          )}
+          {(rec as any).tekst_obyavleniya && (
+            <div className="whitespace-pre-wrap">{(rec as any).tekst_obyavleniya}</div>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
