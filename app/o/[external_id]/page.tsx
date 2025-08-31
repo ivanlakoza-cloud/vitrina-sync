@@ -23,6 +23,16 @@ function KV({ k, v }: { k: string, v: any }) {
   );
 }
 
+function shortKey(key: string): {label: string, title?: string} {
+  if ((prettyLabels as any)[key]) return { label: (prettyLabels as any)[key] };
+  const parts = key.split("_");
+  if (parts.length >= 2) {
+    const label = parts.slice(0,2).join("_");
+    return { label, title: key };
+  }
+  return { label: key };
+}
+
 const HIDE_FIELDS = new Set<string>([
   "external_id","id","created_at","updated_at","id_obekta","otobrazit_vse","km","avito_id","etazh_avito",
   "ukazannaya_ploschad","ukazannaya_stoimost_za_m2","transportnaya_dostupnost_magistrali_razvyazki",
