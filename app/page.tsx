@@ -1,107 +1,151 @@
-tsx
 // app/page.tsx
 import { headers } from "next/headers";
 
 type Item = {
   external_id: string;
-  title: string;           // e.g. "Кирово-Чепецк, Луначарского 6"
-  address: string | null;
-  city_name: string | null;
+  title: string;        // "Город, Адрес"
+  address: string;
+  city_name: string;
   type: string | null;
   total_area: number | null;
   floor: number | null;
   cover_url: string | null;
-  line2?: string | null;   // tip_pomescheniya + "этаж N" | fallback к type
-  prices?: string | null;  // "от 20 — … · от 50 — …" (может быть пустым)
+  line2?: string | null;   // tip_pomescheniya + этаж N  (или type)
+  prices?: string | null;  // 'от 20 — N · от 50 — ...'
 };
 
-type Catalog = { items?: Item[] };
-
-function getBaseUrl(): string {
+async function fetchCatalog(): Promise<{ items: Item[] }> {
   const h = headers();
-  const proto = h.get("x-forwarded-proto") || "https";
-  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
-  return `${proto}://${host}`;
-}
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "vitran.ru";
+  const url = `${proto}://${host}/api/catalog?v=3`;
 
-async function fetchCatalog(): Promise<Item[]> {
-  const base = getBaseUrl();
-  const url = `${base}/api/catalog?v=3`;
+  const res = await fetch(url, {
+    // кеш на минуту; страница остаётся быстрой
+    next: { revalidate: 60 },
+  });
 
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    const ct = res.headers.get("content-type") || "";
-    if (!res.ok || !ct.includes("application/json")) {
-      // вернём пусто, чтобы страница не падала
-      return [];
-    }
-    const data: Catalog = await res.json();
-    return Array.isArray(data?.items) ? data.items! : [];
-  } catch {
-    return [];
+  if (!res.ok) {
+    // не валимся — отдаём пустой список
+    return { items: [] };
   }
-}
-
-function Prices({ text }: { text?: string | null }) {
-  if (!text) return null;
-  const clean = String(text).trim();
-  if (!clean) return null;
-  return (
-    <div className="text-xs text-muted-foreground mt-1">{clean}</div>
-  );
-}
-
-function Card({ it }: { it: Item }) {
-  const img = it.cover_url && it.cover_url.trim().length > 0 ? it.cover_url : null;
-
-  return (
-    <article className="rounded-2xl border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 transition-colors shadow-sm overflow-hidden">
-      <div className="aspect-[4/3] bg-zinc-800/60 flex items-center justify-center">
-        {img ? (
-          // Используем <img>, чтобы не требовать next/image конфигурацию
-          <img
-            src={img}
-            alt={it.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm select-none">
-            нет фото
-          </div>
-        )}
-      </div>
-
-      <div className="p-3">
-        <h3 className="font-semibold leading-snug text-base">
-          {it.title}
-        </h3>
-
-        <div className="text-sm text-zinc-300 mt-1">
-          {it.line2 && it.line2.trim() ? it.line2 : (it.type || "")}
-        </div>
-
-        <Prices text={it.prices} />
-      </div>
-    </article>
-  );
+  // API возвращает { items: [...] }
+  return res.json();
 }
 
 export default async function Page() {
-  const items = await fetchCatalog();
+  const { items } = await fetchCatalog();
 
   return (
-    <main className="mx-auto max-w-[1400px] px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold">Объекты</h1>
-        <p className="text-sm text-zinc-400 mt-1">Всего: {items.length}</p>
-      </header>
+    <main className="wrap">
+      <h1 className="h1">Объекты</h1>
+      <div className="meta">Всего: {items.length}</div>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-        {items.map((it) => (
-          <Card key={it.external_id} it={it} />
-        ))}
-      </section>
+      <div className="grid">
+        {items.map((it) => {
+          const hasImg = Boolean(it.cover_url);
+          const line2 = it.line2 ?? it.type ?? "";
+          const line3 = it.prices ?? "";
+
+          return (
+            <article className="card" key={it.external_id}>
+              <div className="imgBox">
+                {hasImg ? (
+                  // используем обычный <img>, чтобы не трогать next/image и конфиг доменов
+                  <img src={it.cover_url as string} alt={it.title} />
+                ) : (
+                  <span>нет фото</span>
+                )}
+              </div>
+              <div className="body">
+                <h2 className="title">{it.title}</h2>
+                {line2 && <div className="line2">{line2}</div>}
+                {line3 && <div className="line3">{line3}</div>}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {/* локальные стили без Tailwind/next-themes */}
+      <style jsx>{`
+        .wrap {
+          max-width: 1280px;
+          margin: 0 auto;
+          padding: 24px 16px 40px;
+          color: #e7e7e7;
+        }
+        .h1 {
+          font-size: 32px;
+          font-weight: 800;
+          margin: 8px 0 6px;
+        }
+        .meta {
+          color: #9aa0a6;
+          margin-bottom: 16px;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(1, minmax(0, 1fr));
+          gap: 16px;
+        }
+        @media (min-width: 640px) {
+          .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (min-width: 768px) {
+          .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1024px) {
+          .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1280px) {
+          .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        }
+        .card {
+          background: #0f1115;
+          border: 1px solid #1c1f27;
+          border-radius: 14px;
+          overflow: hidden;
+          transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+        }
+        .card:hover {
+          transform: translateY(-2px);
+          border-color: #2a3140;
+          box-shadow: 0 8px 24px rgba(0,0,0,.35);
+        }
+        .imgBox {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 4 / 3;
+          background: #12151b;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6b7280;
+          font-size: 12px;
+        }
+        .imgBox img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .body {
+          padding: 12px 14px 14px;
+        }
+        .title {
+          margin: 0 0 6px;
+          font-size: 16px;
+          line-height: 1.35;
+          font-weight: 700;
+          color: #f3f4f6;
+        }
+        .line2, .line3 {
+          font-size: 13px;
+          color: #b9c0cc;
+        }
+        .line3 { color: #93c5fd; } /* цены — чуть выделим */
+      `}</style>
     </main>
   );
 }
