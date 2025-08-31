@@ -1,219 +1,201 @@
 // app/api/catalog/route.ts
-"use server";
+// Robust catalog API with graceful fallback for missing DB columns
+// - Tries to select preferred columns; if PostgREST returns 42703 (column missing),
+//   removes the missing column and retries automatically.
+// - Computes title, line2, prices on the server.
+// - Keeps fast PostgREST access (no Supabase client).
 
 import { NextResponse } from "next/server";
 
-type Row = {
-  id: string;            // uuid
-  address: string | null;
-  city: string | null;
-  type: string | null;
-  total_area: number | null;
-  etazh?: string | number | null;
-  tip_pomescheniya?: string | null;
-  // ext prices may or may not exist in view — we don't rely on them here
-  price_per_m2_20?: number | null;
-  price_per_m2_50?: number | null;
-  price_per_m2_100?: number | null;
-  price_per_m2_400?: number | null;
-  price_per_m2_700?: number | null;
-  price_per_m2_1500?: number | null;
-};
+export const dynamic = "force-dynamic";
 
-type Item = {
-  external_id: string;
-  title: string;
-  address: string | null;
-  city_name: string | null;
-  type: string | null;
-  total_area: number | null;
-  floor: string | number | null;
-  cover_url: string | null;
-  line2: string;
-  prices: string;
-};
+type AnyRow = Record<string, any>;
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SB_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const TABLE = "property_public_view";
 
-function f(s: string) { return s; }
+const PREFERRED_COLS = [
+  // identity & main props (order matters but is not strict)
+  "uuid",
+  "id",
+  "external_id",
+  "address",
+  "city",
+  "city_name",
+  "type",
+  "tip_pomescheniya",
+  "etazh",
+  "total_area",
+  // prices (some may be missing in the view)
+  "price_per_m2_20",
+  "price_per_m2_50",
+  "price_per_m2_100",
+  "price_per_m2_400",
+  "price_per_m2_700",
+  "price_per_m2_1500",
+];
 
-async function sbRest(path: string, init?: RequestInit) {
-  const url = `${SB_URL}/rest/v1/${path}`;
-  const res = await fetch(url, {
-    ...(init || {}),
-    headers: {
-      apikey: SB_ANON,
-      Authorization: `Bearer ${SB_ANON}`,
-      ...(init?.headers || {}),
-    },
-    // never cache in edge
-    cache: "no-store",
-    // small timeout shim
-  });
-  return res;
+const PRICE_KEYS = [
+  ["price_per_m2_20", "20"],
+  ["price_per_m2_50", "50"],
+  ["price_per_m2_100", "100"],
+  ["price_per_m2_400", "400"],
+  ["price_per_m2_700", "700"],
+  ["price_per_m2_1500", "1500"],
+] as const;
+
+function env(name: string): string {
+  const v =
+    process.env["NEXT_PUBLIC_" + name] ??
+    process.env[name] ??
+    "";
+  return v;
 }
 
-function pricesLine(row: Partial<Row>): string {
-  const labels: Record<string,string> = {
-    price_per_m2_20:   "20",
-    price_per_m2_50:   "50",
-    price_per_m2_100:  "100",
-    price_per_m2_400:  "400",
-    price_per_m2_700:  "700",
-    price_per_m2_1500: "1500",
+function postgrestUrl(table: string, qs: string): string {
+  const base = env("SUPABASE_URL").replace(/\/+$/, "");
+  return `${base}/rest/v1/${table}?${qs}`;
+}
+
+function authHeaders(): HeadersInit {
+  const key = env("SUPABASE_ANON_KEY") || env("SUPABASE_SERVICE_ROLE_KEY");
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
   };
-  const out: string[] = [];
-  for (const [k, lbl] of Object.entries(labels)) {
-    const v = (row as any)[k];
-    if (v !== null && v !== undefined && v !== "") {
-      out.push(`от ${lbl} — ${v}`);
+}
+
+function buildSelect(cols: string[]): string {
+  // Deduplicate & keep order
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const c of cols) {
+    if (!c) continue;
+    const k = String(c).trim();
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      ordered.push(k);
     }
   }
-  return out.join(" · ");
+  return ordered.join(",");
 }
 
-function buildTitle(city: string | null | undefined, addr: string | null | undefined) {
-  const parts = [city?.trim(), addr?.trim()].filter(Boolean);
-  return parts.join(", ");
-}
+async function fetchWithFallback(cols: string[]): Promise<AnyRow[]> {
+  // Try up to 8 times removing missing columns reported by PostgREST
+  let wanted = cols.slice();
+  let attempt = 0;
+  while (attempt < 8 && wanted.length > 0) {
+    const selectCols = buildSelect(wanted);
+    const qs = [
+      `select=${encodeURIComponent(selectCols)}`,
+      "order=city.asc",
+      "limit=600",
+    ].join("&");
+    const url = postgrestUrl(TABLE, qs);
+    const res = await fetch(url, { headers: authHeaders(), cache: "no-store" });
 
-// --- photos probing helpers ---
-
-type PhotosProbe = {
-  ok: boolean;
-  idCol?: string;       // property_id / property_uuid / object_id / project_id
-  pathCol?: string;     // public_url / path / file_path / name
-};
-
-async function probePhotosSchema(): Promise<PhotosProbe> {
-  const idCandidates = ["property_id","property_uuid","project_id","object_id","property","prop_id","pid"];
-  const pathCandidates = ["public_url","path","file_path","filepath","name","filename"];
-  for (const idCol of idCandidates) {
-    // try to select 1 row with this id col and any of path candidates
-    const selectCols = [idCol, ...pathCandidates].join(",");
-    const res = await sbRest(`photos?select=${selectCols}&limit=1`);
-    if (!res.ok) continue;
-    const arr = await res.json();
-    const row = Array.isArray(arr) && arr.length ? arr[0] : null;
-    if (!row) continue;
-    const hitPath = pathCandidates.find(c => c in row);
-    if (!hitPath) continue;
-    return { ok: true, idCol, pathCol: hitPath };
-  }
-  return { ok: false };
-}
-
-function buildStorageUrl(pathLike: string) {
-  // If the column already stores full URL, just return it
-  if (/^https?:\/\//i.test(pathLike)) return pathLike;
-  // Otherwise assume it's a relative path inside the 'photos' bucket
-  return `${SB_URL}/storage/v1/object/public/photos/${pathLike}`;
-}
-
-async function fetchCovers(idList: string[]): Promise<Record<string,string>> {
-  const covers: Record<string,string> = {};
-  if (!idList.length) return covers;
-
-  const probe = await probePhotosSchema();
-  if (!probe.ok || !probe.idCol || !probe.pathCol) {
-    return covers; // silent fallback
-  }
-
-  // Build IN filter (chunk to respect URL length)
-  const chunks: string[][] = [];
-  const maxChunk = 80;
-  for (let i=0; i<idList.length; i+=maxChunk) chunks.push(idList.slice(i, i+maxChunk));
-
-  for (const part of chunks) {
-    const inList = part.map(v => `"${v}"`).join(",");
-    const where = `${probe.idCol}=in.(${inList})`;
-    // select first image by created_at asc if such column exists;
-    // we can still phase it client-side
-    const res = await sbRest(`photos?select=${probe.idCol},${probe.pathCol},created_at&${where}&limit=10000`);
-    if (!res.ok) continue;
-    const rows = await res.json();
-    // Group by id and take earliest (or first)
-    const byId: Record<string, any[]> = {};
-    for (const r of rows) {
-      const pid = r[probe.idCol];
-      const pth = r[probe.pathCol];
-      if (!pid || !pth) continue;
-      (byId[pid] ||= []).push(r);
+    if (res.ok) {
+      return (await res.json()) as AnyRow[];
     }
-    for (const [pid, arr] of Object.entries(byId)) {
-      arr.sort((a,b) => String(a.created_at||"").localeCompare(String(b.created_at||"")));
-      const best = arr[0];
-      const url = buildStorageUrl(String(best[probe.pathCol]));
-      if (url) covers[pid] = url;
+
+    // If it's a "column ... does not exist" -> drop that column and retry
+    let dropCol: string | null = null;
+    try {
+      const err = await res.json();
+      if (err && err.message && typeof err.message === "string") {
+        // Example: 'column property_public_view.etazh does not exist'
+        const m = err.message.match(
+          /column\s+[a-zA-Z0-9_."]*\.?("?)([a-zA-Z0-9_]+)\1\s+does\s+not\s+exist/i
+        );
+        if (m) dropCol = m[2];
+      }
+    } catch {
+      // ignore parsing errors
+    }
+
+    if (dropCol) {
+      wanted = wanted.filter((c) => c !== dropCol);
+      attempt++;
+      continue;
+    }
+
+    // Not a missing-column error -> throw up
+    const text = await res.text();
+    throw new Error(`PostgREST error (${res.status}): ${text}`);
+  }
+
+  // Nothing left to select — return empty
+  return [];
+}
+
+function buildPrices(row: AnyRow): string {
+  const parts: string[] = [];
+  for (const [key, label] of PRICE_KEYS) {
+    if (key in row) {
+      const v = row[key];
+      if (v !== null && v !== undefined && v !== "") {
+        parts.push(`от ${label} — ${v}`);
+      }
     }
   }
-  return covers;
+  return parts.join(" · ");
 }
 
-// ---- handler ----
+function firstNonEmpty(...vals: any[]): string {
+  for (const v of vals) {
+    if (v !== null && v !== undefined) {
+      const s = String(v).trim();
+      if (s) return s;
+    }
+  }
+  return "";
+}
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const limit = Math.min(Number(searchParams.get("limit") || "500"), 1000);
+    // 1) Load rows with graceful column fallback
+    const rows = await fetchWithFallback(PREFERRED_COLS);
 
-    // Base select from property_public_view
-    const selectCols = [
-      "id",
-      "address",
-      "city",
-      "type",
-      "total_area",
-      "etazh",
-      "tip_pomescheniya",
-      "price_per_m2_20",
-      "price_per_m2_50",
-      "price_per_m2_100",
-      "price_per_m2_400",
-      "price_per_m2_700",
-      "price_per_m2_1500",
-    ].join(",");
+    // 2) Map to public items
+    const items = rows.map((r: AnyRow) => {
+      // external_id preference order
+      const external_id =
+        firstNonEmpty(r["external_id"], r["uuid"], r["id"]) || "";
 
-    const baseRes = await sbRest(`property_public_view?select=${selectCols}&order=city.asc&limit=${limit}`);
-    if (!baseRes.ok) {
-      const txt = await baseRes.text();
-      return NextResponse.json({ ok:false, message: txt }, { status: 500 });
-    }
-    const rows = (await baseRes.json()) as Row[];
+      const city = firstNonEmpty(r["city_name"], r["city"]);
+      const address = firstNonEmpty(r["address"]);
+      const title = [city, address].filter(Boolean).join(", ");
 
-    // Fetch covers in one go
-    const idList = rows.map(r => r.id).filter(Boolean);
-    const coverIndex = await fetchCovers(idList);
+      // line2: tip_pomescheniya + этаж N ; fallback к type
+      const tip = firstNonEmpty(r["tip_pomescheniya"]);
+      const etazh = r.hasOwnProperty("etazh") ? firstNonEmpty(r["etazh"]) : "";
+      const type = firstNonEmpty(r["type"]);
+      const line2 = tip
+        ? (etazh ? `${tip} · этаж ${etazh}` : tip)
+        : type;
 
-    const items: Item[] = rows.map((r) => {
-      const title = buildTitle(r.city, r.address);
-      const floor = (r.etazh ?? null);
-      const line2 = (r.tip_pomescheniya ? `${r.tip_pomescheniya}${floor ? ` · этаж ${floor}` : ""}` : (floor ? `этаж ${floor}` : (r.type ?? ""))) || "";
-      const prices = pricesLine(r);
-      const cover_url = coverIndex[r.id] || null;
+      const prices = buildPrices(r);
 
       return {
-        external_id: r.id,
+        external_id,
         title,
-        address: r.address ?? null,
-        city_name: r.city ?? null,
-        type: r.type ?? null,
-        total_area: r.total_area ?? null,
-        floor,
-        cover_url,
+        address,
+        city_name: city,
+        type,
+        total_area: r["total_area"] ?? null,
+        floor: r["floor"] ?? null,
+        cover_url: null as string | null, // filled later when we add photos
         line2,
         prices,
       };
     });
 
-    // unique, sorted cities (for the dropdown)
-    const citySet = new Set<string>();
-    for (const r of rows) if (r.city) citySet.add(String(r.city));
-    const cities = Array.from(citySet).sort((a,b) => a.localeCompare(b, "ru"));
-
-    return NextResponse.json({ items, cities });
+    return NextResponse.json({ items });
   } catch (e: any) {
-    return NextResponse.json({ ok:false, message: e?.message || String(e) }, { status: 500 });
+    const msg = e?.message ?? String(e);
+    return NextResponse.json(
+      { ok: false, message: msg },
+      { status: 500 }
+    );
   }
 }
