@@ -1,152 +1,190 @@
 import { NextResponse } from "next/server";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-type Row = {
-  id?: string | null;
-  uuid?: string | null;
-  title?: string | null;
-  address?: string | null;
-  city?: string | null;
-  type?: string | null;
-  etazh?: number | null;
-  tip_pomescheniya?: string | null;
-  price_per_m2_20?: number | null;
-  price_per_m2_50?: number | null;
-  price_per_m2_100?: number | null;
-  price_per_m2_400?: number | null;
-  price_per_m2_700?: number | null;
-  price_per_m2_1500?: number | null;
-};
+export const dynamic = "force-dynamic";
 
-type ItemOut = {
-  external_id: string;
-  cover_url: string | null;
-  title: string; // "Город, Адрес"
-  address: string | null;
-  city_name: string | null;
-  type: string | null;
-  tip_pomescheniya: string | null;
-  etazh: number | null;
-  prices_line: string; // "от 20 — N · от 50 — N · ..."
-};
+type AnyRow = Record<string, any>;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const SUPABASE_KEY =
-  (process.env.SUPABASE_SERVICE_ROLE_KEY as string) ||
-  (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string);
+const REST_BASE =
+  process.env.SUPABASE_REST_URL ||
+  (process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/, "")}/rest/v1`
+    : (process.env.SUPABASE_URL
+        ? `${process.env.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1`
+        : ""));
 
-function makeClient(): SupabaseClient {
-  if (!SUPABASE_URL || !SUPABASE_KEY) {
-    throw new Error("Supabase env vars are missing");
-  }
-  return createClient(SUPABASE_URL, SUPABASE_KEY);
+const API_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  "";
+
+function badEnv() {
+  return !REST_BASE || !API_KEY;
 }
 
-function priceLine(r: Row): string {
+async function rest(table: string, query: string) {
+  const url = `${REST_BASE}/${table}?${query}`;
+  return fetch(url, {
+    method: "GET",
+    headers: {
+      apikey: API_KEY,
+      Authorization: `Bearer ${API_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "count=none",
+    },
+    cache: "no-store",
+  });
+}
+
+function uniqSorted(arr: (string | null | undefined)[]) {
+  const set = new Set(arr.filter(Boolean).map((x) => String(x).trim()));
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+function buildPriceLine(ext: AnyRow | undefined) {
+  if (!ext) return "";
+  const keys: [string, string][] = [
+    ["price_per_m2_20", "20"],
+    ["price_per_m2_50", "50"],
+    ["price_per_m2_100", "100"],
+    ["price_per_m2_400", "400"],
+    ["price_per_m2_700", "700"],
+    ["price_per_m2_1500", "1500"],
+  ];
   const parts: string[] = [];
-  const push = (label: string, val: number | null | undefined) => {
-    if (val != null) parts.push(`${label} — ${val}`);
-  };
-  push("от 20", r.price_per_m2_20);
-  push("от 50", r.price_per_m2_50);
-  push("от 100", r.price_per_m2_100);
-  push("от 400", r.price_per_m2_400);
-  push("от 700", r.price_per_m2_700);
-  push("от 1500", r.price_per_m2_1500);
+  for (const [k, label] of keys) {
+    const v = ext[k];
+    if (v !== null && v !== undefined && v !== "") {
+      parts.append ? parts.append("") : null; // no-op (defensive for some bundlers)
+      parts.push(`от ${label} — ${v}`);
+    }
+  }
   return parts.join(" · ");
 }
 
-async function resolveCover(supabase: SupabaseClient, folders: (string | null | undefined)[]): Promise<string | null> {
-  const bucket = supabase.storage.from("photos");
-  for (const f of folders) {
-    const folder = (f ?? "").trim();
-    if (!folder) continue;
-    const { data, error } = await bucket.list(folder, { limit: 100 });
-    if (error || !data || data.length === 0) continue;
-    const img = data
-      .filter((fi: { name: string }) => /\.(?:jpe?g|png|webp|gif|bmp)$/i.test(fi.name))
-      .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))[0];
-    if (!img) continue;
-    // public bucket expected
-    return `${SUPABASE_URL}/storage/v1/object/public/photos/${folder}/${img.name}`;
+export async function GET() {
+  const version = `api-v3-${new Date().toISOString()}`;
+
+  if (badEnv()) {
+    return NextResponse.json(
+      { ok: false, message: "Supabase REST env is not configured", version },
+      {
+        status: 500,
+        headers: { "x-api-version": version, "Cache-Control": "no-store" },
+      }
+    );
   }
-  return null;
-}
 
-export async function GET(req: Request) {
   try {
-    const url = new URL(req.url);
-    const cityFilter = url.searchParams.get("city")?.trim() ?? "";
-    const supabase = makeClient();
-
-    const selectCols = [
-      "uuid",
+    // 1) Базовые поля из представления
+    const baseSel = [
       "id",
-      "title",
       "address",
       "city",
-      "type",
-      "etazh",
-      "tip_pomescheniya",
-      "price_per_m2_20",
-      "price_per_m2_50",
-      "price_per_m2_100",
-      "price_per_m2_400",
-      "price_per_m2_700",
-      "price_per_m2_1500",
+      "type"
     ].join(",");
-
-    let query = supabase.from("property_public_view").select(selectCols);
-    if (cityFilter) query = query.eq("city", cityFilter);
-
-    const { data, error } = await query.limit(2000);
-    if (error) {
-      return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
-    }
-
-    const rows: Row[] = Array.isArray(data) ? (data as Row[]) : [];
-    // gather unique cities
-    let cities = Array.from(
-      new Set(rows.map((r) => (r.city ?? "").trim()).filter(Boolean))
+    const baseRes = await rest(
+      "property_public_view",
+      `select=${encodeURIComponent(baseSel)}&order=city.asc,address.asc&limit=2000`
     );
-    cities.sort((a, b) => a.localeCompare(b, "ru"));
+    if (!baseRes.ok) {
+      const text = await baseRes.text();
+      return NextResponse.json(
+        { ok: false, message: `property_public_view: ${text}`, version },
+        { status: 500, headers: { "x-api-version": version, "Cache-Control": "no-store" } }
+      );
+    }
+    const baseRows: AnyRow[] = await baseRes.json();
 
-    const items: ItemOut[] = [];
-    for (const r of rows) {
-      const title = [r.city, r.address].filter(Boolean).join(", ");
+    const ids: string[] = baseRows
+      .map((r) => (r.id ?? "").toString())
+      .filter((x) => x);
 
-      const typeOrTip = (r.tip_pomescheniya ?? r.type ?? "").trim();
-      const etazhPart = r.etazh == null ? "" : ` · этаж ${r.etazh}`;
-      const line2 = `${typeOrTip}${etazhPart}`.trim();
-
-      const prices_line = priceLine(r);
-
-      const external_id = String(r.uuid ?? r.id ?? "");
-
-      const cover_url = await resolveCover(supabase, [r.uuid, r.id, r.title]);
-
-      items.push({
-        external_id,
-        cover_url,
-        title,
-        address: r.address ?? null,
-        city_name: r.city ?? null,
-        type: r.type ?? null,
-        tip_pomescheniya: r.tip_pomescheniya ?? null,
-        etazh: r.etazh ?? null,
-        prices_line,
-      });
+    // 2) Расширения/цены/этаж
+    let extMap: Record<string, AnyRow> = {};
+    if (ids.length) {
+      const extSel = [
+        "property_id",
+        "tip_pomescheniya",
+        "etazh",
+        "price_per_m2_20",
+        "price_per_m2_50",
+        "price_per_m2_100",
+        "price_per_m2_400",
+        "price_per_m2_700",
+        "price_per_m2_1500",
+      ].join(",");
+      const inList = encodeURIComponent(`(${ids.join(",")})`);
+      const extRes = await rest(
+        "property_ext",
+        `select=${encodeURIComponent(extSel)}&property_id=in.${inList}`
+      );
+      if (extRes.ok) {
+        const extRows: AnyRow[] = await extRes.json();
+        for (const e of extRows) {
+          extMap[String(e.property_id)] = e;
+        }
+      }
     }
 
-    const debug = {
-      query: { city: cityFilter },
-      counts: { items: items.length, cities: cities.length },
-      sample: items.slice(0, 5).map((i) => ({ id: i.external_id, title: i.title, hasCover: !!i.cover_url })),
-      note: "Using property_public_view.city (no city_name) and uuid/id as external_id",
-    };
+    // 3) Фото (если есть таблица photos с property_id, url)
+    let photoMap: Record<string, string> = {};
+    if (ids.length) {
+      const photoSel = ["property_id", "url", "created_at"].join(",");
+      const inList = encodeURIComponent(`(${ids.join(",")})`);
+      const phRes = await rest(
+        "photos",
+        `select=${encodeURIComponent(photoSel)}&property_id=in.${inList}&order=created_at.asc`
+      );
+      if (phRes.ok) {
+        const photos: AnyRow[] = await phRes.json();
+        for (const p of photos) {
+          const k = String(p.property_id);
+          if (!photoMap[k] && p.url) {
+            photoMap[k] = p.url;
+          }
+        }
+      }
+    }
 
-    return NextResponse.json({ items, cities, debug });
+    const items = baseRows.map((r) => {
+      const id = String(r.id);
+      const city = (r.city ?? "").toString().trim();
+      const address = (r.address ?? "").toString().trim();
+      const title = [city, address].filter(Boolean).join(", ");
+
+      const ext = extMap[id];
+      const typeOrTip = (ext?.tip_pomescheniya ?? r.type ?? "").toString().trim();
+      const etazh = (ext?.etazh ?? "").toString().trim();
+      const line2 = typeOrTip
+        ? `${typeOrTip}${etazh ? ` · этаж ${etazh}` : ""}`
+        : (etazh ? `этаж ${etazh}` : "");
+
+      const prices = buildPriceLine(ext);
+      const cover_url = photoMap[id] ?? null;
+
+      return {
+        external_id: id,
+        title,
+        line2,
+        prices,
+        cover_url,
+        type: r.type ?? null,
+        city,
+        address,
+      };
+    });
+
+    const cities = uniqSorted(baseRows.map((r) => r.city));
+
+    return NextResponse.json(
+      { ok: true, items, cities, version },
+      { headers: { "x-api-version": version, "Cache-Control": "no-store" } }
+    );
   } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? "Unexpected error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, message: e?.message || "Unexpected error", version },
+      { status: 500, headers: { "x-api-version": version, "Cache-Control": "no-store" } }
+    );
   }
 }
