@@ -1,0 +1,6 @@
+
+/* Simple utility: ensure background and font rendering */
+html, body { background: #f9fafb; color: #0f172a; }
+* { box-sizing: border-box; }
+img { display:block; }
+a { color: #4f46e5; }
