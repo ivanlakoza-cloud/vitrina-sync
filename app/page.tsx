@@ -23,7 +23,7 @@ export default async function Page({ searchParams }: { searchParams: { city?: st
               <div><span className="font-semibold">{prettyLabels["etazh"]}:</span> {rec.etazh || "—"}</div>
               <div><span className="font-semibold">{prettyLabels["dostupnaya_ploschad"]}:</span> {rec.dostupnaya_ploschad || "—"}</div>
             </div>
-            <PriceTable rec={rec} />
+            <PriceTable rec={rec} size="sm" />
           </div>
         </Link>);
       }))}
