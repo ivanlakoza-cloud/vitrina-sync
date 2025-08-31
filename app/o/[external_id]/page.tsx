@@ -13,23 +13,20 @@ export async function generateMetadata({ params }: { params: { external_id: stri
   return { title: (title ? `${title} — Витрина` : "Витрина") };
 }
 
-function KV({ k, v, title }: { k: string, v: any, title?: string }) {
+function KV({ k, v }: { k: string, v: any }) {
   if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   return (
     <div className="grid grid-cols-[200px,1fr] gap-3 py-1 border-b border-neutral-100">
-      <div className="k" title={title || undefined}>{k}</div>
+      <div className="k break-words" title={title || undefined}>{k}</div>
       <div className="v">{String(v)}</div>
     </div>
   );
 }
 
-function shortKey(key: string): {label: string, title?: string} {
-  if ((prettyLabels as any)[key]) return { label: (prettyLabels as any)[key] };
-  const parts = key.split("_");
-  if (parts.length >= 2) {
-    const label = parts.slice(0,2).join("_");
-    return { label, title: key };
-  }
+function labelize(key: string): string {
+  if ((prettyLabels as any)[key]) return (prettyLabels as any)[key];
+  return key.replace(/_/g, " ");
+}
   return { label: key };
 }
 
@@ -85,8 +82,8 @@ export default async function Page({ params }: { params: { external_id: string }
           <div className="border-l border-neutral-200 pl-5 pr-5">
             <div className="kv-grid">
               {cols[0].map(([k,v]) => {
-                const {label, title} = shortKey(k);
-                return <KV key={k} k={label} v={v} title={title} />;
+                const label = labelize(k);
+                return <KV key={k} k={label} v={v} />;
               })}
             </div>
           </div>
@@ -94,8 +91,8 @@ export default async function Page({ params }: { params: { external_id: string }
           <div className="border-l border-neutral-200 pl-5">
             <div className="kv-grid">
               {cols[1].map(([k,v]) => {
-                const {label, title} = shortKey(k);
-                return <KV key={k} k={label} v={v} title={title} />;
+                const label = labelize(k);
+                return <KV key={k} k={label} v={v} />;
               })}
             </div>
           </div>
