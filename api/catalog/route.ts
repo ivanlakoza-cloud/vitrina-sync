@@ -1,160 +1,189 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-type Row = {
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type BaseRow = {
   id: string;
-  title: string | null;
   address: string | null;
   city: string | null;
   type: string | null;
   total_area: number | null;
-  lat: number | null;
-  lng: number | null;
 };
 
-type Ext = {
+type ExtRow = {
   property_id: string;
-  price_per_m2_20?: string | null;
-  price_per_m2_50?: string | null;
-  price_per_m2_100?: string | null;
-  price_per_m2_400?: string | null;
-  price_per_m2_700?: string | null;
-  price_per_m2_1500?: string | null;
-  etazh_avito?: string | null;
+  etazh_avito: string | number | null;
+  price_per_m2_20: number | null;
+  price_per_m2_50: number | null;
+  price_per_m2_100: number | null;
+  price_per_m2_400: number | null;
+  price_per_m2_700: number | null;
+  price_per_m2_1500: number | null;
 };
 
-type Photo = {
+type PhotoRow = {
   property_id: string;
-  url?: string | null;
-  created_at?: string | null;
+  url: string;
 };
 
-export const dynamic = "force-dynamic";
+type ItemOut = {
+  external_id: string;
+  title: string;
+  line2: string; // tip/etazh string
+  prices: string; // "от 20 — N · от 50 — N · ..."
+  cover_url: string | null;
+};
+
+const VERSION = "api-v3-" + new Date().toISOString();
+
+function money(n: number | null | undefined) {
+  if (typeof n !== "number" || !isFinite(n)) return null;
+  return Math.round(n).toLocaleString("ru-RU");
+}
+
+function buildPrices(ext?: ExtRow): string {
+  if (!ext) return "";
+  const parts: string[] = [];
+  const m: Array<[string, number | null | undefined]> = [
+    ["20", ext.price_per_m2_20],
+    ["50", ext.price_per_m2_50],
+    ["100", ext.price_per_m2_100],
+    ["400", ext.price_per_m2_400],
+    ["700", ext.price_per_m2_700],
+    ["1500", ext.price_per_m2_1500],
+  ];
+  for (const [lbl, v] of m) {
+    const s = money(v as any);
+    if (s) parts.push(`от ${lbl} — ${s}`);
+  }
+  return parts.join(" · ");
+}
 
 export async function GET(req: Request) {
   try {
-    const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_ANON_KEY;
+    const url = process.env.SUPABASE_REST_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!url || !key) {
       return NextResponse.json(
-        { ok: false, message: "Supabase env vars are missing" },
-        { status: 500 }
+        { ok: false, message: "Missing SUPABASE_REST_URL/SUPABASE_URL or KEY env" },
+        { status: 500, headers: { "x-api-version": VERSION } }
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false },
-    });
+    const rest = (path: string, qs: string) =>
+      fetch(`${url.replace(/\/$/, "")}/rest/v1/${path}?${qs}`, {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json",
+        },
+        // disable edge cache
+        cache: "no-store",
+      });
 
-    // 1) Base rows from the *existing* view
-    const { data: rows, error } = await supabase
-      .from("property_public_view")
-      .select("id,title,address,city,type,total_area,lat,lng")
-      .order("city", { ascending: true })
-      .limit(2000);
+    // 1) Base list (NO 'uuid' here; use 'id')
+    const baseSel = [
+      "id",
+      "address",
+      "city",
+      "type",
+      "total_area",
+    ].join(",");
 
-    if (error) {
+    const baseRes = await rest("property_public_view", f"select={baseSel}");
+    if (!baseRes.ok) {
+      const txt = await baseRes.text();
       return NextResponse.json(
-        { ok: false, message: error.message },
-        { status: 500 }
+        { ok: false, step: "base", error: txt },
+        { status: 500, headers: { "x-api-version": VERSION } }
       );
     }
+    const baseRows = (await baseRes.json()) as BaseRow[];
 
-    const safeRows: Row[] = (rows ?? []) as Row[];
-    const ids = safeRows.map((r) => r.id).filter(Boolean);
+    // Pack IDs
+    const ids = baseRows.map(r => r.id).filter(Boolean);
+    const inList = ids.map(i => `"${i}"`).join(",");
 
-    // 2) Prices + floor from property_ext
-    let extById = new Map<string, Ext>();
+    // 2) Ext
+    let extMap = new Map<string, ExtRow>();
     if (ids.length) {
-      const { data: extRows, error: extErr } = await supabase
-        .from("property_ext")
-        .select(
-          "property_id,price_per_m2_20,price_per_m2_50,price_per_m2_100,price_per_m2_400,price_per_m2_700,price_per_m2_1500,etazh_avito"
-        )
-        .in("property_id", ids)
-        .limit(5000);
-      if (extErr) {
-        return NextResponse.json(
-          { ok: false, message: extErr.message },
-          { status: 500 }
-        );
-      }
-      for (const e of (extRows ?? []) as Ext[]) {
-        extById.set(e.property_id, e);
+      const extSel = [
+        "property_id",
+        "etazh_avito",
+        "price_per_m2_20",
+        "price_per_m2_50",
+        "price_per_m2_100",
+        "price_per_m2_400",
+        "price_per_m2_700",
+        "price_per_m2_1500",
+      ].join(",");
+      const extRes = await rest("property_ext", f"select={extSel}&property_id=in.({inList})");
+      if (extRes.ok) {
+        const extRows = (await extRes.json()) as ExtRow[];
+        for (const e of extRows) extMap.set(e.property_id, e);
       }
     }
 
-    // 3) First photo per object
-    let photoFirstById = new Map<string, string>();
+    // 3) Photos (first by created_at asc)
+    let photoMap = new Map<string, string>();
     if (ids.length) {
-      const { data: photoRows, error: photoErr } = await supabase
-        .from("photos")
-        .select("property_id,url,created_at")
-        .in("property_id", ids)
-        .order("created_at", { ascending: true })
-        .limit(10000);
-
-      if (photoErr) {
-        return NextResponse.json(
-          { ok: false, message: photoErr.message },
-          { status: 500 }
-        );
-      }
-      for (const p of (photoRows ?? []) as Photo[]) {
-        if (p.property_id && p.url && !photoFirstById.has(p.property_id)) {
-          photoFirstById.set(p.property_id, p.url);
-        }
+      const photoSel = "property_id,url";
+      const phRes = await rest("photos", f"select={photoSel}&property_id=in.({inList})&order=created_at.asc");
+      if (phRes.ok) {
+        const phRows = (await phRes.json()) as PhotoRow[];
+        for (const p of phRows) if (!photoMap.has(p.property_id)) photoMap.set(p.property_id, p.url);
       }
     }
 
-    const items = safeRows.map((r) => {
-      const e = extById.get(r.id);
-      const title = [r.city, r.address].filter(Boolean).join(", ");
-
-      const parts2: string[] = [];
-      if (r.type) parts2.push(String(r.type).trim());
-      if (e?.etazh_avito && String(e.etazh_avito).trim()) {
-        parts2.push(`этаж ${String(e.etazh_avito).trim()}`);
+    // 4) Compose output
+    const items: ItemOut[] = baseRows.map(r => {
+      const ext = extMap.get(r.id);
+      const title = [r.city || "", r.address || ""].filter(Boolean).join(", ");
+      const line2Parts: string[] = [];
+      if (r.type) line2Parts.push(r.type);
+      const etazh = ext?.etazh_avito;
+      if (etazh !== null && etazh !== undefined && String(etazh).trim() !== "") {
+        line2Parts.push(`этаж ${etazh}`);
       }
-      const subtitle = parts2.join(" · ");
-
-      const priceParts: string[] = [];
-      const add = (k: number, v?: string | null) => {
-        if (v && String(v).trim()) priceParts.push(`от ${k} — ${String(v).trim()}`);
-      };
-      add(20, e?.price_per_m2_20);
-      add(50, e?.price_per_m2_50);
-      add(100, e?.price_per_m2_100);
-      add(400, e?.price_per_m2_400);
-      add(700, e?.price_per_m2_700);
-      add(1500, e?.price_per_m2_1500);
+      const line2 = line2Parts.join(" · ");
+      const prices = buildPrices(ext);
+      const cover = photoMap.get(r.id) || null;
 
       return {
-        id: r.id,
+        external_id: r.id,
         title,
-        subtitle,
-        prices: priceParts.join(" · "),
-        city: r.city,
-        address: r.address,
-        type: r.type,
-        total_area: r.total_area,
-        cover_url: photoFirstById.get(r.id) || null,
+        line2,
+        prices,
+        cover_url: cover,
       };
     });
 
-    const cities = Array.from(
-      new Set(safeRows.map((r) => r.city).filter(Boolean))
-    )
-      .map((c) => String(c))
-      .sort((a, b) => a.localeCompare(b, "ru"));
+    // Cities list
+    const citySet = new Set<string>();
+    for (const r of baseRows) {
+      const c = (r.city || "").trim();
+      if (c) citySet.add(c);
+    }
+    const cities = Array.from(citySet).sort((a, b) => a.localeCompare(b, "ru"));
 
-    return NextResponse.json({ ok: true, items, cities });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ ok: false, message: msg }, { status: 500 });
+    const res = NextResponse.json(
+      { ok: true, items, cities, version: VERSION },
+      { headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
+          "x-api-version": VERSION
+        }
+      }
+    );
+    return res;
+  } catch (err: any) {
+    return NextResponse.json(
+      { ok: false, message: String(err?.message || err), version: VERSION },
+      { status: 500, headers: { "x-api-version": VERSION } }
+    );
   }
 }
