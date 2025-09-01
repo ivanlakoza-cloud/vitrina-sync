@@ -1,45 +1,52 @@
 import React from "react";
 
-type PricesRec = Record<string, any>;
+type Size = "sm" | "md";
 
-function pick(rec: PricesRec, keys: string[]) {
+type Props = {
+  rec: Record<string, any>;
+  size?: Size;
+};
+
+/** Возвращает первое непустое значение из списка возможных ключей */
+function pickValue(obj: Record<string, any>, keys: string[]): string | number {
   for (const k of keys) {
-    const v = rec?.[k];
-    if (v !== undefined && v !== null && v !== "" && v !== "—" && v !== "-") return v;
+    const v = obj?.[k];
+    if (v !== undefined && v !== null) {
+      const s = String(v).trim();
+      if (s !== "" && s !== "—" && s !== "-") return v;
+    }
   }
-  return null;
+  return "—";
 }
 
-export default function PriceTable({ rec, size = "md" }: { rec: PricesRec; size?: "sm" | "md" }) {
-  const cls = size === "sm" ? "text-sm" : "";
+// Утилита помогает зафиксировать тип кортежа [string, ReactNode]
+const row = (label: string, value: React.ReactNode): [string, React.ReactNode] => [label, value];
 
+export default function PriceTable({ rec, size = "md" }: Props) {
+  const cls = size === "sm" ? "text-sm" : undefined;
+
+  // Собираем строки таблицы. Для совместимости учитываем и snake_case и названия c пробелами.
   const rows: Array<[string, React.ReactNode]> = [
-    ["от 20",  pick(rec, ["price_per_m2_20",  "price per m2 20"])],
-    ["от 50",  pick(rec, ["price_per_m2_50",  "price per m2 50"])],
-    ["от 100", pick(rec, ["price_per_m2_100", "price per m2 100"])],
-    ["от 400", pick(rec, ["price_per_m2_400", "price per m2 400"])],
-    ["от 700", pick(rec, ["price_per_m2_700", "price per m2 700"])],
-    ["от 1500",pick(rec, ["price_per_m2_1500","price per m2 1500"])],
-  ].filter(([, v]) => v !== null);
-
-  if (rows.length === 0) return null;
+    row("от 20", pickValue(rec, ["price_per_m2_20", "price per m2 20"])),
+    row("от 50", pickValue(rec, ["price_per_m2_50", "price per m2 50"])),
+    row("от 100", pickValue(rec, ["price_per_m2_100", "price per m2 100"])),
+    row("от 400", pickValue(rec, ["price_per_m2_400", "price per m2 400"])),
+    row("от 700", pickValue(rec, ["price_per_m2_700", "price per m2 700"])),
+    row("от 1500", pickValue(rec, ["price_per_m2_1500", "price per m2 1500"])),
+  ];
 
   return (
-    <table className={"w-full " + cls}>
-      <thead>
-        <tr>
-          <th className="text-left font-semibold">Площадь</th>
-          <th className="text-left font-semibold">Цены, ₽/м²</th>
-        </tr>
-      </thead>
-      <tbody>
+    <div className={cls}>
+      <div className="grid grid-cols-[auto_auto] gap-x-6 gap-y-1">
+        <div className="text-muted-foreground">Площадь</div>
+        <div className="text-muted-foreground">Цены, ₽/м²</div>
         {rows.map(([label, value]) => (
-          <tr key={label}>
-            <td className="pr-6 py-1">{label}</td>
-            <td className="py-1">{value}</td>
-          </tr>
+          <React.Fragment key={label}>
+            <div className="text-muted-foreground">{label}</div>
+            <div>{value}</div>
+          </React.Fragment>
         ))}
-      </tbody>
-    </table>
+      </div>
+    </div>
   );
 }
