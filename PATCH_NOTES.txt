@@ -1,1 +1,1 @@
-Detail: single block; Home: CitySelect filter restored.
+Detail: single block; Home: CitySelect + title City, Address.

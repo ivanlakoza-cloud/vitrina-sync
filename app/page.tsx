@@ -1,7 +1,7 @@
 import Link from "next/link";
 import PriceTable from "@/components/PriceTable";
-import CitySelect from "@/components/CitySelect";
 import { fetchCities, fetchList, getFirstPhoto } from "./data";
+import CitySelect from "@/components/CitySelect";
 
 export default async function Page({ searchParams }: { searchParams: { [k: string]: string | string[] | undefined } }) {
   const selectedCity = (searchParams?.city as string) || "Все города";
@@ -18,7 +18,7 @@ export default async function Page({ searchParams }: { searchParams: { [k: strin
         {await Promise.all(items.map(async (rec) => {
           const id = String(rec.external_id || rec.id);
           const photo = await getFirstPhoto(id);
-          const addrTitle = (rec.address as string) || "—";
+          const addrTitle = [rec.City || rec.city || rec["Город"], rec.address || rec.adres_avito || rec.adres_23_58].filter(Boolean).join(", ") || "—";
           return (
             <Link key={id} href={`/o/${encodeURIComponent(id)}`} className="card overflow-hidden">
               {photo ? <img src={photo} alt={addrTitle} className="h-48 w-full object-cover" /> : <div className="h-48 bg-gray-100 flex items-center justify-center">Фото недоступно</div>}

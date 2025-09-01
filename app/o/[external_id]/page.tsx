@@ -58,31 +58,23 @@ export default async function Page({ params }: { params: { external_id: string }
   }
   entries.sort((a,b)=> a[2] - b[2]);
 
-  // convert to display tuples: main first, then others by sort_order
+  // build labels dict and unified rows (exclude section keys)
 const labelsDict = Object.entries(dict).reduce((acc, [k, v]) => {
   if (v && typeof v.display_name_ru === 'string') acc[k] = v.display_name_ru;
   return acc;
 }, {} as Record<string, string>);
 
-const others: Array<[string, any, number]> = entries
+const rows: Array<[string, any]> = entries
   .filter(([key]) => !/^\d+_/.test(String(key)))
-  .map(([key, val, order]) => {
+  .map(([key, val]) => {
     const base = prettyLabel(String(key), labelsDict);
     const so = dict[String(key)]?.sort_order;
     const label = (typeof so === 'number') ? `${base} (${so})` : base;
-    return [label, val as any, order as number];
-  })
-  .sort((a, b) => a[2] - b[2]);
+    return [label, val];
+  });
 
-const rows: Array<[string, any]> = others.map(([label, val]) => [label, val]);
-  const cols: Array<Array<[string, any, boolean]>> = [[],[],[]];
-  let ci = 0;
-  for (const r of rows) {
-    cols[ci].push(r);
-    ci = (ci + 1) % 3;
-  }
+// footer: show hidden title & description if present
 
-  // footer: show hidden title & description if present
   const footerTitle = rec.zagolovok || rec.zagolovok_ru || null;
   const footerText = rec.tekst_obyavleniya || rec.tekst || null;
 
@@ -95,7 +87,7 @@ const rows: Array<[string, any]> = others.map(([label, val]) => [label, val]);
 
       {!!photos.length && <PhotoStrip photos={photos} />}
 
-      <div className="section space-y-2">
+      <div className="section space-y-4">
   <div className="text-lg font-semibold">Характеристики</div>
   {mainBlock.map(([k,v]) => (
     <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
@@ -103,6 +95,7 @@ const rows: Array<[string, any]> = others.map(([label, val]) => [label, val]);
       <div className="font-medium">{String(v)}</div>
     </div>
   ))}
+  <PriceTable rec={rec} />
   {rows.map(([label, value], i) => (
     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
       <div className="text-gray-600">{label}</div>
@@ -110,7 +103,6 @@ const rows: Array<[string, any]> = others.map(([label, val]) => [label, val]);
     </div>
   ))}
 </div>
-
 </div>
 
       {(footerTitle || footerText) && (
