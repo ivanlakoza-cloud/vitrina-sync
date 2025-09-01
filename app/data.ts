@@ -3,8 +3,16 @@ import { supabase } from "@/lib/supabase";
 
 type AnyRec = Record<string, any>;
 
-const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE as string;
-const BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET as string;
+// Safe fallbacks so PostgREST never sees public.undefined
+const TABLE = (process.env.NEXT_PUBLIC_DOMUS_TABLE ?? "domus_export") as string;
+const BUCKET = (process.env.NEXT_PUBLIC_PHOTOS_BUCKET ?? "photos") as string;
+
+if (!process.env.NEXT_PUBLIC_DOMUS_TABLE) {
+  console.warn("[Domus] NEXT_PUBLIC_DOMUS_TABLE is not set; falling back to 'domus_export'.");
+}
+if (!process.env.NEXT_PUBLIC_PHOTOS_BUCKET) {
+  console.warn("[Domus] NEXT_PUBLIC_PHOTOS_BUCKET is not set; falling back to 'photos'.");
+}
 
 // -------- Normalization layer (new/old columns compatibility) ----------
 export function normalize(rec: AnyRec): AnyRec {
