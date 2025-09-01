@@ -1,8 +1,26 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-body { @apply bg-neutral-50 text-neutral-900; }
-.container { @apply max-w-6xl mx-auto px-4; }
-.card { @apply bg-white rounded-2xl shadow-sm border border-neutral-200; }
-.card-pad { @apply p-6; }
-.kv-row { @apply grid grid-cols-2 gap-3 py-2 border-b border-neutral-100; }
+
+/* minimal helpers if not using Tailwind fully in environment */
+.card {}
+.text-muted-foreground { color: #6b7280; }
+.border { border: 1px solid #e5e7eb; }
+.rounded-2xl { border-radius: 1rem; }
+.rounded-xl { border-radius: 0.75rem; }
+.p-4 { padding: 1rem; } .p-5 { padding: 1.25rem; }
+.space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
+.space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+.h-48 { height: 12rem; } .h-32 { height: 8rem; }
+.w-full { width: 100%; }
+.overflow-hidden { overflow: hidden; }
+.object-cover { object-fit: cover; }
+.grid { display: grid; }
+.gap-3 { gap: 0.75rem; } .gap-4 { gap: 1rem; }
+.inline-block { display: inline-block; }
+.whitespace-nowrap { white-space: nowrap; }
+.overflow-x-auto { overflow-x: auto; }
+.text-right { text-align: right; }
+.mt-2 { margin-top: .5rem; } .mb-1 { margin-bottom: .25rem; }
+.text-lg { font-size: 1.125rem; } .text-2xl { font-size: 1.5rem; }
+.font-semibold { font-weight: 600; } .font-medium { font-weight: 500; }
+.text-gray-500 { color: #6b7280; }
+.leading-relaxed { line-height: 1.625; }

@@ -1,88 +1,112 @@
+
 // Server utilities for Vitrina
 import { createClient as createSbClient } from "@supabase/supabase-js";
 
-export const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-export const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-export const TABLE = (process.env.NEXT_PUBLIC_DOMUS_TABLE as string) || "domus_export";
-const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
+export type Row = Record<string, any>;
 
-export const sb = createSbClient(URL, KEY, { auth: { persistSession: false } });
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+const TABLE = (process.env.NEXT_PUBLIC_DOMUS_TABLE as string) || "domus_export";
+const ORDER_TABLE = "domus_field_order"; // columns: column_name, description, sort_order
+const STORAGE_BUCKET = (process.env.NEXT_PUBLIC_STORAGE_BUCKET as string) || "photos";
 
-export async function fetchCities(): Promise<string[]> {
-  const { data, error } = await sb.from(TABLE).select("city").neq("city", null);
-  if (error) throw error;
-  const set = new Set<string>();
-  for (const row of (data ?? [])) {
-    const v = (row as any).city as string | null;
-    if (v) set.add(v);
-  }
-  const list = Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
-  return list;
+function sb() {
+  return createSbClient(URL, KEY, { auth: { persistSession: false } });
 }
 
+// ---- field order + labels (ru) ----
+export type FieldMeta = { column_name: string; description?: string | null; sort_order?: number | null };
+export async function fetchFieldOrder(): Promise<FieldMeta[]> {
+  try {
+    const { data, error } = await sb()
+      .from(ORDER_TABLE)
+      .select("column_name, description, sort_order")
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  } catch (e) {
+    // graceful fallback
+    return [];
+  }
+}
+
+export const mainKeys = [
+  "tip_pomescheniya",
+  "etazh",
+  "dostupnaya_ploschad",
+  "price_per_m2_20",
+  "price_per_m2_50",
+  "price_per_m2_100",
+  "price_per_m2_400",
+  "price_per_m2_700",
+  "price_per_m2_1500",
+];
+
+// ---- list / cities ----
+export async function fetchCities(): Promise<string[]> {
+  const client = sb();
+  const { data, error } = await client.from(TABLE).select("city").not("city","is",null);
+  if (error) {
+    return ["Все города"];
+  }
+  const uniq = Array.from(new Set((data ?? []).map(r => r.city).filter(Boolean))).sort((a:string,b:string)=>a.localeCompare(b));
+  // Ensure single "Все города"
+  return ["Все города", ...uniq.filter(c => c !== "Все города")];
+}
+
+export type Prices = Partial<{
+  price_per_m2_20: number | string | null;
+  price_per_m2_50: number | string | null;
+  price_per_m2_100: number | string | null;
+  price_per_m2_400: number | string | null;
+  price_per_m2_700: number | string | null;
+  price_per_m2_1500: number | string | null;
+}>;
+
 export async function fetchList(city?: string) {
-  let q = sb.from(TABLE).select("*").order("id", { ascending: true }).limit(300);
-  if (city && city !== "Все города") q = q.eq("city", city);
-  const { data, error } = await q;
+  const client = sb();
+  let query = client
+    .from(TABLE)
+    .select(`id, external_id, address, city, dostupnaya_ploschad, tip_pomescheniya, etazh,
+      price_per_m2_20, price_per_m2_50, price_per_m2_100, price_per_m2_400, price_per_m2_700, price_per_m2_1500`)
+    .limit(200);
+  if (city && city !== "Все города") {
+    query = query.eq("city", city);
+  }
+  const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as any[];
+  return (data ?? []) as Row[];
 }
 
 export async function fetchByExternalId(external_id: string) {
-  const { data, error } = await sb.from(TABLE).select("*").eq("external_id", external_id).single();
+  const { data, error } = await sb().from(TABLE).select("*").eq("external_id", external_id).single();
   if (error) throw error;
-  return data as any;
+  return data as Row;
+}
+
+// ---- storage (photos by external_id folder) ----
+const IMAGE_EXT = [".jpg",".jpeg",".png",".webp",".gif"];
+function isImage(name: string) {
+  const lower = name.toLowerCase();
+  return IMAGE_EXT.some(ext => lower.endsWith(ext));
 }
 
 export async function getGallery(external_id: string): Promise<string[]> {
-  if (!external_id) return [];
-  const { data, error } = await sb
-    .storage
-    .from(PHOTOS_BUCKET)
-    .list(external_id, { sortBy: { column: "name", order: "asc" } });
-  if (error) return [];
-  return (data ?? [])
-    .filter(o => /\.(jpe?g|png|webp)$/i.test(o.name))
-    .map(o => sb.storage.from(PHOTOS_BUCKET).getPublicUrl(`${external_id}/${o.name}`).data.publicUrl);
-}
-
-export async function getFirstPhoto(external_id?: string | null): Promise<string | null> {
-  if (!external_id) return null;
-  const urls = await getGallery(external_id);
-  return urls[0] || null;
-}
-
-export type FieldOrder = {
-  column_name: string;
-  display_name_ru: string | null;
-  sort_order: number | null;
-  visible: boolean | null;
-};
-
-export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
-  // берем из таблицы domus_field_order (или вью, если нужна) — сортировка будет применяться на уровне страницы
-  const { data, error } = await sb
-    .from("domus_field_order")
-    .select("column_name, display_name_ru, sort_order, visible");
-  if (error) return {};
-  const map: Record<string, FieldOrder> = {};
-  for (const r of (data ?? []) as any[]) {
-    map[r.column_name] = r as FieldOrder;
+  try {
+    const client = sb();
+    const { data, error } = await client.storage.from(STORAGE_BUCKET).list(external_id, {
+      limit: 200, sortBy: { column: "name", order: "asc" }
+    });
+    if (error) throw error;
+    const list = (data ?? []).filter(f => !f.id || f.name).filter(f => isImage(f.name));
+    const urls = list.map(f => client.storage.from(STORAGE_BUCKET).getPublicUrl(`${external_id}/${f.name}`).data.publicUrl);
+    return urls;
+  } catch (e) {
+    return [];
   }
-  return map;
 }
 
-export function mainKeys() {
-  return [
-    "tip_pomescheniya",
-    "etazh",
-    "dostupnaya_ploschad",
-    "price_per_m2_20",
-    "price_per_m2_50",
-    "price_per_m2_100",
-    "price_per_m2_400",
-    "price_per_m2_700",
-    "price_per_m2_1500",
-    "km_",
-  ];
+export async function getFirstPhoto(external_id: string): Promise<string | null> {
+  const g = await getGallery(external_id);
+  return g[0] ?? null;
 }

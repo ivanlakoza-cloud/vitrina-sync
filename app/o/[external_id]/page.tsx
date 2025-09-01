@@ -1,97 +1,135 @@
+
 import BackButton from "@/components/BackButton";
-import type { Metadata } from "next";
-import { fetchByExternalId, getGallery, fetchFieldOrder, mainKeys } from "@/app/data";
-import { prettyLabel, chunkEvenly } from "@/lib/fields";
 import PhotoStrip from "@/components/PhotoStrip";
 import PriceTable from "@/components/PriceTable";
+import { fetchByExternalId, getGallery, fetchFieldOrder, mainKeys } from "@/app/data";
+import { prettyLabel, chunkEvenly } from "@/lib/fields";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: { external_id: string } }): Promise<Metadata> {
-  const rec: any = await fetchByExternalId(params.external_id);
-  const title = (rec?.address as string) || "Объект";
-  return { title };
+  try {
+    const rec: any = await fetchByExternalId(params.external_id);
+    const title = (rec?.address as string) || "Объект";
+    return { title };
+  } catch {
+    return { title: "Объект" };
+  }
 }
 
-const HIDE = new Set<string>([
-  "created_at","city","etazh_avito","adres_avito","probki_v_chasy_pik_nizkiesrednievysokie",
-  "foto_s_avito","updated_at","zagolovok","address","disk_foto_plan","ukazannaya_ploschad",
-  "avito_id","ukazannaya_stoimost_za_m2","razreshennye_vidy_deyatelnosti",
-  "rasstoyanie_ot_tsentra_goroda_km_min","tekst_obyavleniya","tip_rayona_delovoykommercheskiypromyshlennyyzhiloysmeshannyy"
+const SECTION_KEYS = [
+  "1_lokatsiya_i_okruzhenie",
+  "2_dostup_i_logistika",
+  "3_kharakteristiki_pomescheniya",
+  "4_kommunikatsii_i_tekhnicheskie_parametry",
+  "5_marketingovye_vozmozhnosti",
+  "6_usloviya_arendy",
+];
+
+const HIDE = new Set([
+  "external_id","id_obekta","avito","planirovka","unnamed_94","unnamed_95","id","nedostatki",
+  "srok_dogovora_let","arendnye_kanikuly","unnamed_93","vozmozhnost_remontapereplanirovki",
+  "zapreschennye_vidy_deyatelnosti_zhmykh_semena","rasstoyanie_ot_tsentra_goroda_km__min",
+  "created_at","updated_at","foto_s_avito","city","adres_avito","zagolovok","tekst_obyavleniya"
 ]);
 
-export default async function ObjectPage({ params }: { params: { external_id: string } }) {
+export default async function Page({ params }: { params: { external_id: string }}) {
   const rec: any = await fetchByExternalId(params.external_id);
-  const photos = await getGallery(params.external_id);
-  const order = await fetchFieldOrder();
-  const main = mainKeys();
-
-  // Собираем пары ключ-значение, кроме основных и скрытых
-  const entries = Object.entries(rec || {})
-    .filter(([k, v]) => !main.includes(k) && !HIDE.has(k))
-    .map(([k, v]) => ({
-      key: k,
-      label: prettyLabel(k, order),
-      value: (v === null || v === undefined || String(v).toLowerCase() === "null") ? "" : String(v),
-      sort: order?.[k]?.sort_order ?? 9999
-    }))
-    .sort((a, b) => (a.sort - b.sort) || a.label.localeCompare(b.label, "ru"));
-
-  // Вставляем разделители-заголовки из order, даже если значения пустые
-  const sectionKeys = Object.keys(order).filter(k => /^[1-6]_/.test(k));
-  for (const sk of sectionKeys) {
-    entries.push({ key: sk, label: order[sk].display_name_ru || prettyLabel(sk), value: "", sort: order[sk].sort_order ?? 0 });
+  if (!rec) {
+    return <div className="p-6">Объект не найден</div>;
   }
-  entries.sort((a, b) => (a.sort - b.sort) || a.label.localeCompare(b.label, "ru"));
+  const gallery = await getGallery(rec.external_id);
+  const metas = await fetchFieldOrder();
+  const labelMap: Record<string, string> = {};
+  const orderMap: Record<string, number> = {};
+  metas.forEach(m => {
+    if (m.column_name) {
+      if (m.description) labelMap[m.column_name] = m.description;
+      if (m.sort_order != null) orderMap[m.column_name] = Number(m.sort_order);
+    }
+  });
 
-  // Разбиваем оставшееся на две колонки равномерно
-  const cols = chunkEvenly(entries, 2);
+  // header (back + title + avito address)
+  const title = (rec.address as string) || "Объект";
+  const avitoAddr = (rec.adres_avito as string) || "";
+
+  // Build main block
+  const mainPairs: Array<[string,string]> = [];
+  const labelTip = labelMap["tip_pomescheniya"] || "Тип помещения";
+  mainPairs.push([labelTip, rec.tip_pomescheniya || "—"]);
+  if (rec.etazh) mainPairs.push([labelMap["etazh"] || "Этаж", String(rec.etazh)]);
+  if (rec.dostupnaya_ploschad) mainPairs.push([labelMap["dostupnaya_ploschad"] || "Доступно", `${rec.dostupnaya_ploschad} м²`]);
+
+  // Price rows are shown by PriceTable
+
+  // Build "rest" fields (including section headers as items without values)
+  type Item = { key: string; label: string; value?: string | number | null; isSection?: boolean; order?: number };
+  const items: Item[] = [];
+
+  // Section headers (always show, no value)
+  SECTION_KEYS.forEach(k => {
+    items.push({ key: k, label: prettyLabel(k, labelMap), isSection: true, order: orderMap[k] ?? 999999 });
+  });
+
+  // Regular fields
+  Object.entries(rec).forEach(([k, v]) => {
+    if (mainKeys.includes(k)) return;
+    if (HIDE.has(k)) return;
+    if (SECTION_KEYS.includes(k)) return; // already as headers
+    if (v === null || v === undefined || String(v).trim() === "") return;
+    const label = prettyLabel(k, labelMap);
+    const order = orderMap[k] ?? 999999;
+    items.push({ key: k, label, value: v as any, order });
+  });
+
+  // Sort by sort_order asc, then by label
+  items.sort((a,b) => (a.order! - b.order!) || a.label.localeCompare(b.label, "ru"));
+
+  // Distribute evenly into 3 columns
+  const cols = chunkEvenly(items, 3);
 
   return (
-    <div className="space-y-6">
-      <BackButton />
-      {photos?.length ? <PhotoStrip photos={photos} /> : null}
+    <div className="p-4 space-y-4">
+      <div className="flex items-center gap-4">
+        <BackButton />
+        <div className="text-2xl font-semibold">{title}</div>
+        {avitoAddr && <div className="text-sm text-muted-foreground">Адрес Авито: {avitoAddr}</div>}
+      </div>
 
+      {gallery?.length ? <PhotoStrip photos={gallery} /> : null}
+
+      {/* Основное */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Основной блок */}
-        <div className="card p-5 space-y-3">
-          <div className="text-muted-foreground">Тип помещения</div>
-          <div className="text-2xl font-semibold">{rec.tip_pomescheniya ?? "—"}</div>
-
-          <div className="mt-4 grid grid-cols-2 gap-y-2">
-            <div className="text-muted-foreground">Этаж</div>
-            <div>{rec.etazh ?? "—"}</div>
-
-            <div className="text-muted-foreground">Доступная площадь</div>
-            <div>{rec.dostupnaya_ploschad ? `${rec.dostupnaya_ploschad} м²` : "—"}</div>
+        <div className="border rounded-2xl p-4 space-y-3">
+          <div className="text-lg font-semibold">Основное</div>
+          <div className="grid grid-cols-[1fr_auto] gap-y-2">
+            {mainPairs.map(([k,v]) => (<><div className="font-medium">{k}</div><div className="text-right">{v}</div></>))}
           </div>
-
-          <div className="mt-4">
-            <PriceTable rec={rec} />
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-y-2">
-            <div className="text-muted-foreground">КМ %</div>
-            <div>{rec.km_ ?? "—"}</div>
-          </div>
+          <PriceTable rec={rec} />
         </div>
 
-        {/* Остальные параметры 2 колонки */}
-        {cols.map((list, i) => (
-          <div key={i} className="card p-5 space-y-3">
-            {list.map(row => (
-              /^[1-6]_/.test(row.key)
-                ? <div key={row.key} className="pt-4 text-lg font-semibold">{row.label}</div>
-                : (
-                  <div key={row.key} className="grid grid-cols-2 gap-y-1">
-                    <div className="text-muted-foreground">{row.label}</div>
-                    <div className="whitespace-pre-wrap break-words">{row.value || "—"}</div>
-                  </div>
-                )
+        {cols.map((arr, i) => (
+          <div key={i} className="border rounded-2xl p-4 space-y-2">
+            {arr.map((it) => it.isSection ? (
+              <div key={it.key} className="mt-2 mb-1 text-base font-semibold">{it.label}</div>
+            ) : (
+              <div key={it.key} className="grid grid-cols-[1fr_auto] gap-y-1">
+                <div className="text-gray-500">{it.label}</div>
+                <div className="text-right">{String(it.value)}</div>
+              </div>
             ))}
           </div>
         ))}
       </div>
+
+      {/* Footer: Заголовок + Текст объявления */}
+      {(rec.zagolovok || rec.tekst_obyavleniya) && (
+        <div className="border rounded-2xl p-4 space-y-2">
+          {rec.zagolovok && <div className="text-lg font-semibold">{rec.zagolovok}</div>}
+          {rec.tekst_obyavleniya && <div className="whitespace-pre-wrap leading-relaxed">{rec.tekst_obyavleniya}</div>}
+        </div>
+      )}
     </div>
   );
 }

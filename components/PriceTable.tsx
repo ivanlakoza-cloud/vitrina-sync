@@ -1,36 +1,34 @@
-import React from 'react';
 
-// Reads price-per-m2 fields from record
-const keys = [
-  { k: 'price_per_m2_20', label: 'от 20' },
-  { k: 'price_per_m2_50', label: 'от 50' },
-  { k: 'price_per_m2_100', label: 'от 100' },
-  { k: 'price_per_m2_400', label: 'от 400' },
-  { k: 'price_per_m2_700', label: 'от 700' },
-  { k: 'price_per_m2_1500', label: 'от 1500' },
-] as const;
+export type Prices = {
+  price_per_m2_20?: number | string | null;
+  price_per_m2_50?: number | string | null;
+  price_per_m2_100?: number | string | null;
+  price_per_m2_400?: number | string | null;
+  price_per_m2_700?: number | string | null;
+  price_per_m2_1500?: number | string | null;
+};
 
-export default function PriceTable({ rec }: { rec: any }) {
-  const rows = keys
-    .map(({k,label}) => ({ label, val: rec?.[k] ?? rec?.[k.toUpperCase?.() ?? ''] }))
-    .filter(r => r.val != null && r.val !== '');
+export default function PriceTable({ rec, size }: { rec: Prices; size?: "sm" | "md" }) {
+  const cls = size === "sm" ? "text-sm" : "";
+  const rows: Array<[string, any]> = [
+    ["от 20", rec.price_per_m2_20],
+    ["от 50", rec.price_per_m2_50],
+    ["от 100", rec.price_per_m2_100],
+    ["от 400", rec.price_per_m2_400],
+    ["от 700", rec.price_per_m2_700],
+    ["от 1500", rec.price_per_m2_1500],
+  ].filter(([_, v]) => v !== null && v !== undefined && String(v).trim() !== "");
 
-  if (rows.length === 0) return null;
+  if (!rows.length) return null;
 
   return (
-    <div>
-      <div className="grid grid-cols-[1fr,1fr] gap-x-6">
-        <div className="text-gray-500">Площадь</div>
-        <div className="text-gray-500">Цены, ₽/м²</div>
-      </div>
-      <div className="mt-1 space-y-1">
-        {rows.map((r, i) => (
-          <div key={i} className="grid grid-cols-[1fr,1fr] gap-x-6">
-            <div>{r.label}</div>
-            <div>{String(r.val)}</div>
-          </div>
-        ))}
-      </div>
+    <div className={`grid grid-cols-2 gap-x-4 ${cls}`}>
+      {rows.map(([k, v]) => (
+        <>
+          <div className="text-muted-foreground">{k}</div>
+          <div className="text-right">{v}</div>
+        </>
+      ))}
     </div>
   );
 }

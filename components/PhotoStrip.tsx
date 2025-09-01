@@ -1,61 +1,48 @@
+
 "use client";
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 
-type Props = { photos: string[] };
-
-export default function PhotoStrip({ photos }: Props) {
+export default function PhotoStrip({ photos }: { photos: string[] }) {
   const [open, setOpen] = useState(false);
   const [idx, setIdx] = useState(0);
-  const show = useCallback((i: number) => { setIdx(i); setOpen(true); }, []);
 
-  // клавиатура для лайткса
+  const close = useCallback(() => setOpen(false), []);
+  const next = useCallback(() => setIdx(i => (i + 1) % photos.length), [photos.length]);
+  const prev = useCallback(() => setIdx(i => (i - 1 + photos.length) % photos.length), [photos.length]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-      if (e.key === "ArrowRight") setIdx(i => (i + 1) % photos.length);
-      if (e.key === "ArrowLeft") setIdx(i => (i - 1 + photos.length) % photos.length);
+      if (e.key === "Escape") close();
+      if (e.key === "ArrowRight") next();
+      if (e.key === "ArrowLeft") prev();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, photos.length]);
+  }, [open, close, next, prev]);
 
   if (!photos?.length) return null;
 
   return (
-    <div className="w-full">
-      <div className="grid grid-cols-3 gap-4">
-        {photos.slice(0, 12).map((src, i) => (
-          <button
-            key={src + i}
-            onClick={() => show(i)}
-            className="rounded overflow-hidden focus:outline-none focus:ring"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={src} alt={`Фото ${i + 1}`} className="h-48 w-full object-cover" />
-          </button>
+    <div>
+      <div className="overflow-x-auto whitespace-nowrap space-x-2 pb-1">
+        {photos.map((src, i) => (
+          <img
+            key={src}
+            src={src}
+            alt="Фотография"
+            className="inline-block h-32 w-auto rounded-xl object-cover cursor-pointer"
+            onClick={() => { setIdx(i); setOpen(true); }}
+          />
         ))}
       </div>
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setOpen(false)}
-        >
-          <button
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl"
-            onClick={(e) => { e.stopPropagation(); setIdx(i => (i - 1 + photos.length) % photos.length); }}
-          >
-            ‹
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photos[idx]} alt={`Фото ${idx + 1}`} className="max-h-[90vh] max-w-[90vw] object-contain" />
-          <button
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl"
-            onClick={(e) => { e.stopPropagation(); setIdx(i => (i + 1) % photos.length); }}
-          >
-            ›
-          </button>
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
+          <button className="absolute top-4 right-4 text-white text-2xl" onClick={close}>✕</button>
+          <button className="absolute left-4 text-white text-3xl" onClick={prev}>‹</button>
+          <img src={photos[idx]} alt="" className="max-h-[90vh] max-w-[90vw] object-contain rounded" />
+          <button className="absolute right-4 text-white text-3xl" onClick={next}>›</button>
         </div>
       )}
     </div>

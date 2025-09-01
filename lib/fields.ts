@@ -1,31 +1,33 @@
-export type Prices = {
-  price_per_m2_20?: number | null;
-  price_per_m2_50?: number | null;
-  price_per_m2_100?: number | null;
-  price_per_m2_400?: number | null;
-  price_per_m2_700?: number | null;
-  price_per_m2_1500?: number | null;
-};
 
-export function prettyLabel(key: string, order?: Record<string, any>): string {
-  const fromDb = order?.[key]?.display_name_ru as string | undefined;
-  if (fromDb && fromDb.trim()) return fromDb;
-  return key
+export function titleCase(s: string) {
+  return s.replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/(^|\s|-|\/)\p{L}/gu, (m) => m.toUpperCase());
+}
+
+export function prettyLabel(key: string, labels?: Record<string, string | undefined>): string {
+  const direct = labels?.[key];
+  if (direct) return direct;
+  // fallback from machine -> readable (ru translit friendly)
+  const cleaned = key
+    .replace(/__/g, "_")
     .replace(/_/g, " ")
-    .replace(/\b([a-zа-яё])/gi, (m) => m.toUpperCase());
+    .replace(/\s+/g, " ")
+    .trim();
+  return titleCase(cleaned);
 }
 
-export function shortAddress(rec: any): string {
-  return (
-    (rec?.address as string) ||
-    (rec?.adres_avito as string) ||
-    [rec?.city, rec?.address].filter(Boolean).join(", ") ||
-    "Объект"
-  );
+export function shortAddress(rec: Record<string, any>): string {
+  const addr = (rec.address || rec.adres_avito || "").toString().trim();
+  if (!addr) return "Объект";
+  // короткий вид: без страны, иногда без города если дублируется
+  return addr.replace(/^Россия,\s*/i, "");
 }
 
-export function chunkEvenly<T>(arr: T[], n: number): T[][] {
-  const buckets: T[][] = Array.from({ length: n }, () => []);
-  arr.forEach((item, i) => buckets[i % n].push(item));
-  return buckets;
+// разбиваем элементы равномерно по N колонкам (round-robin)
+export function chunkEvenly<T>(items: T[], cols: number): T[][] {
+  const res = Array.from({ length: cols }, () => [] as T[]);
+  items.forEach((it, i) => res[i % cols].push(it));
+  return res;
 }
