@@ -1,1 +1,1 @@
-Detail: hide by sort_order + strict labels Record<string,string>.
+Detail: single block (Основное → PriceTable → others by sort_order), hide by custom sort_order list; Home untouched.
