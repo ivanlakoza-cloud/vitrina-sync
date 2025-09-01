@@ -1,1 +1,1 @@
-PriceTable: remove formatPrice, show raw DB strings, hide empty rows.
+app/page.tsx: card title now uses shortAddress(rec) => «Город, Адрес». CitySelect retained.
