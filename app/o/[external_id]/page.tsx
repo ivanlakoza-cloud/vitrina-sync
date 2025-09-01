@@ -1,164 +1,109 @@
-// @ts-nocheck
+
 import BackButton from "@/components/BackButton";
-import PhotoStrip from "@/components/PhotoStrip";
-import PriceTable from "@/components/PriceTable";
-import { fetchByExternalId, getGallery, fetchColumnLabels } from "@/app/data";
-import { HIDDEN_KEYS, HEADING_KEYS, labelFor, isEmpty } from "@/lib/fields";
 import type { Metadata } from "next";
+import { fetchByExternalId, getGallery, fetchColumnLabels } from "@/app/data";
+import PriceTable from "@/components/PriceTable";
+import { prettyLabels, labelFor, HIDDEN_KEYS, HEADING_KEYS, isEmpty } from "@/lib/fields";
 
 export const metadata: Metadata = {
   title: "Объект",
 };
 
-type Item =
-  | { type: "section"; key: string; label: string }
-  | { type: "row"; key: string; label: string; value: any };
+function Columns({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{children}</div>;
+}
 
-const PRICE_KEYS = new Set([
-  "price per m2 20","price_per_m2_20",
-  "price per m2 50","price_per_m2_50",
-  "price per m2 100","price_per_m2_100",
-  "price per m2 400","price_per_m2_400",
-  "price per m2 700","price_per_m2_700",
-  "price per m2 1500","price_per_m2_1500",
-]);
-
-const MAIN_KEYS = ["tip_pomescheniya","etazh","dostupnaya_ploschad","address"];
-
-function chunkBySections(items: Item[]): [Item[], Item[], Item[]] {
-  // pack section+rows blocks to the shortest column to keep balance and preserve grouping
-  const cols: [Item[], Item[], Item[]] = [[],[],[]];
-  const sizes = [0,0,0];
-  let buf: Item[] = [];
-
-  const flush = () => {
-    if (!buf.length) return;
-    let best = 0;
-    if (sizes[1] < sizes[best]) best = 1;
-    if (sizes[2] < sizes[best]) best = 2;
-    cols[best].push(...buf);
-    sizes[best] += buf.length;
-    buf = [];
-  };
-
-  for (const it of items) {
-    if (it.type === "section") flush();
-    buf.push(it);
-  }
-  flush();
-  return cols;
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-xl border p-4">{children}</div>;
 }
 
 export default async function Page({ params }: { params: { external_id: string } }) {
   const rec = await fetchByExternalId(params.external_id);
   if (!rec) return <div className="p-6">Объект не найден</div>;
-  const labels = await fetchColumnLabels();
 
-  const gallery = await getGallery(rec);
+  const id = String(rec.external_id || rec.id);
+  const title =
+    (rec.city ? `${rec.city}, ` : "") + (rec.address || rec.adres || rec.adres_avito || rec.zagolovok || "Объект");
 
-  // MAIN block
-  const mainRows: Item[] = [];
-  for (const k of MAIN_KEYS) {
-    if (rec[k] !== undefined && !isEmpty(rec[k])) {
-      mainRows.push({ type: "row", key: k, label: labelFor(k, labels), value: rec[k] });
-    }
-  }
+  const labels = { ...(await fetchColumnLabels()), ...prettyLabels };
+  const photos = await getGallery(String(rec.id));
 
-  // OTHER fields -> list with section headings
-  const items: Item[] = [];
-  // Always show section headers (even if empty)
-  for (const hk of HEADING_KEYS) {
-    items.push({ type: "section", key: hk, label: labelFor(hk, labels) });
-  }
+  const mainRows: Array<[string, any]> = [];
+  const push = (k:string, v:any, name?:string) => {
+    if (isEmpty(v)) return;
+    mainRows.push([name || (labels[k] || labelFor(k)), v]);
+  };
 
-  for (const [k,v] of Object.entries(rec)) {
-    if (HIDDEN_KEYS.has(k)) continue;
-    if (MAIN_KEYS.includes(k)) continue;
-    if (PRICE_KEYS.has(k)) continue;
-    if (HEADING_KEYS.includes(k)) continue;
-    if (isEmpty(v)) continue;
-    items.push({ type: "row", key: k, label: labelFor(k, labels), value: v });
-  }
-
-  // Balance across 3 columns
-  const [colA, colB, colC] = chunkBySections(items);
-
-  // "КМ %" under price table
-  const kmVal = rec["km %"] ?? rec["km_"] ?? rec["km"] ?? null;
+  push("Тип помещения", rec.tip_pomescheniya || rec["tip pomescheniya"], "Тип помещения");
+  push("Этаж", rec.etazh, "Этаж");
+  push("Доступная площадь", rec.dostupnaya_ploschad || rec["dostupno"], "Доступная площадь");
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <BackButton/>
-        <h1 className="text-2xl font-semibold">
-          {rec.address || "Объект"}
-        </h1>
+        <BackButton />
+        <div className="text-2xl font-semibold">{title}</div>
       </div>
 
-      <PhotoStrip images={gallery} />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left column (main) */}
-        <div className="rounded-xl border border-gray-200 p-4">
-          <div className="space-y-3">
-            {mainRows.map((r) => (
-              <div key={r.key} className="grid grid-cols-2 gap-3">
-                <div className="font-semibold">{r.label}</div>
-                <div>{String(r.value)}</div>
-              </div>
-            ))}
-            <PriceTable rec={rec} />
-            {kmVal !== null && (
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div className="font-semibold">КМ %</div>
-                <div>{String(kmVal)}</div>
-              </div>
-            )}
-            {colA.map((it, idx) => (
-              it.type === "section" ? (
-                <div key={`sA${idx}`} className="pt-4 text-gray-500 font-semibold">{it.label}</div>
-              ) : (
-                <div key={`rA${idx}`} className="grid grid-cols-2 gap-3">
-                  <div className="font-semibold">{it.label}</div>
-                  <div>{String(it.value)}</div>
-                </div>
-              )
-            ))}
-          </div>
+      {/* photos */}
+      {photos?.length ? (
+        <div className="flex gap-3 overflow-x-auto snap-x">
+          {photos.map((src, i) => (
+            <img key={i} src={src} className="h-44 rounded-lg object-cover snap-start" alt="" />
+          ))}
         </div>
+      ) : null}
 
-        {/* Middle column */}
-        <div className="rounded-xl border border-gray-200 p-4">
-          <div className="space-y-3">
-            {colB.map((it, idx) => (
-              it.type === "section" ? (
-                <div key={`sB${idx}`} className="pt-4 text-gray-500 font-semibold">{it.label}</div>
-              ) : (
-                <div key={`rB${idx}`} className="grid grid-cols-2 gap-3">
-                  <div className="font-semibold">{it.label}</div>
-                  <div>{String(it.value)}</div>
-                </div>
-              )
+      <Columns>
+        {/* main block */}
+        <Card>
+          <div className="grid grid-cols-[1fr_auto] gap-y-2 gap-x-8 text-sm">
+            {mainRows.map(([k, v]) => (
+              <>
+                <div className="font-medium">{k}</div>
+                <div>{String(v)}</div>
+              </>
             ))}
+            <div className="col-span-2 mt-3">
+              <PriceTable rec={rec} />
+            </div>
+            {/* KM right under prices */}
+            {rec.km || rec["km %"] || rec.km_ ? (
+              <>
+                <div className="font-medium mt-3">КМ %</div>
+                <div className="mt-3">{String(rec.km || rec["km %"] || rec.km_)}</div>
+              </>
+            ) : null}
           </div>
-        </div>
+        </Card>
 
-        {/* Right column */}
-        <div className="rounded-xl border border-gray-200 p-4">
-          <div className="space-y-3">
-            {colC.map((it, idx) => (
-              it.type === "section" ? (
-                <div key={`sC${idx}`} className="pt-4 text-gray-500 font-semibold">{it.label}</div>
-              ) : (
-                <div key={`rC${idx}`} className="grid grid-cols-2 gap-3">
-                  <div className="font-semibold">{it.label}</div>
-                  <div>{String(it.value)}</div>
+        {/* two more columns - we spread the rest equally */}
+        {[0,1].map((col) => (
+          <Card key={col}>
+            <div className="space-y-4">
+              {HEADING_KEYS.map((h, idx) => (
+                <div key={h.key + "_" + col + "_" + idx}>
+                  <div className="text-sm font-semibold mb-2">{h.title}</div>
+                  <div className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-1 text-sm">
+                    {Object.entries(rec)
+                      .filter(([k]) => k.startsWith(h.key) || (!HEADING_KEYS.some(x=>k===x.key) && !HIDDEN_KEYS.has(k)))
+                      .filter(([k]) => !["id","external_id","created_at","updated_at"].includes(k))
+                      .filter(([,v]) => !isEmpty(v))
+                      .filter((_, i, arr) => i % 2 === col) // распределяем равномерно по двум картам
+                      .slice(0, 200)
+                      .map(([k, v]) => (
+                        <>
+                          <div className="text-slate-600">{labels[k] || labelFor(k)}</div>
+                          <div>{String(v)}</div>
+                        </>
+                      ))}
+                  </div>
                 </div>
-              )
-            ))}
-          </div>
-        </div>
-      </div>
+              ))}
+            </div>
+          </Card>
+        ))}
+      </Columns>
     </div>
   );
 }
