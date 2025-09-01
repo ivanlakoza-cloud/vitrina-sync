@@ -1,1 +1,1 @@
-Detail: single block; Home: CitySelect + title City, Address.
+Detail page replaced with a clean single-block version; keeps footer, PhotoStrip, PriceTable; shows (sort_order).
