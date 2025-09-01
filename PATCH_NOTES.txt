@@ -1,1 +1,1 @@
-Add export fetchTypes(); update fetchList(city, type) to filter by tip_pomescheniya; keep FieldOrder shape (no column_name).
+Homepage filters fixed (force-dynamic, revalidate=0, noStore in fetchers); AND filter by type; card shows City, Address (City fallback: city/City/Город). fetchFieldOrder fix to avoid TS; noStore added across fetchers to avoid stale labels.

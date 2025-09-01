@@ -1,9 +1,17 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import Link from "next/link";
 import PriceTable from "@/components/PriceTable";
 import TypeFilter from "@/components/TypeFilter";
 import { fetchCities, fetchList, getFirstPhoto, fetchTypes } from "./data";
 
 export default async function Page({ searchParams }: { searchParams: { [k: string]: string | string[] | undefined } }) {
+  const cityKey = (r: any) => r.city ?? r.City ?? r["Город"] ?? "";
+  const fmtAddr = (r: any) => {
+    const city = String(cityKey(r) ?? "").trim();
+    const addr = String(r.address ?? r.adres_avito ?? "").trim();
+    return city && addr ? `${city}, ${addr}` : (addr || city || "");
+  };
   const selectedCity = (searchParams?.city as string) || "Все города";
   const selectedType = (searchParams?.type as string) || "";
   const [cities, types, items] = await Promise.all([fetchCities(), fetchTypes(), fetchList(selectedCity, selectedType)]);
