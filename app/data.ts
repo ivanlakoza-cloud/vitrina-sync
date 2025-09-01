@@ -80,3 +80,21 @@ export async function getFirstPhoto(external_id: string): Promise<string | null>
   const photos = await getGallery(external_id);
   return photos[0] || null;
 }
+
+
+export async function fetchTypes(): Promise<string[]> {
+  noStore();
+  const client = sb();
+  const { data } = await client
+    .from(TABLE)
+    .select("tip_pomescheniya")
+    .not("tip_pomescheniya", "is", null);
+
+  const set = new Set<string>();
+  (data || []).forEach((r: any) => {
+    const v = String(r.tip_pomescheniya ?? "").trim();
+    if (v) set.add(v);
+  });
+
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+}
