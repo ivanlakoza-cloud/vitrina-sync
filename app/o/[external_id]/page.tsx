@@ -60,7 +60,10 @@ export default async function Page({ params }: { params: { external_id: string }
 
   // convert to display tuples with labels
   const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
-    const label = prettyLabel(key, Object.fromEntries(Object.entries(dict).map(([k,v])=>[k, v.display_name_ru])));
+    const label = prettyLabel(key, Object.entries(dict).reduce((acc, [k, v]) => {
+      if (v && typeof v.display_name_ru === 'string') acc[k] = v.display_name_ru;
+      return acc;
+    }, {} as Record<string, string>));
     const isSection = /^\d+_/.test(key);
     return [label, val, isSection];
   });
