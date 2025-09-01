@@ -1,60 +1,66 @@
 export type DomusRow = Record<string, any>;
 
-export const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
-
-// Keys to hide on the detail page
-export const hiddenKeys = new Set<string>([
-  "srok_dogovora_let",
-  "obespechitelnyy_platezh",
-  "vozmozhnost_remontapereplanirovki",
-  "ssylka_na_obyavlenie",
-  "arendnye_kanikuly",
-  "created_at",
-  "updated_at",
-  "id",
-  "external_id",
-]);
-
-// Section header fields (show as headings even if value is empty)
-export const SECTION_FIELDS: Record<string, string> = {
-  "1_lokatsiya_i_okruzhenie": "Локация и окружение",
-  "2_dostup_i_logistika": "Доступ и логистика",
-  "3_kharakteristiki_pomescheniya": "Характеристики помещения",
-  "4_kommunikatsii_i_tekhnicheskie_parametry": "Коммуникации и технические параметры",
-  "5_marketingovye_vozmozhnosti": "Маркетинговые возможности",
-  "6_usloviya_arendy": "Условия аренды",
-};
-
-// Fallback labels if SQL comments are unavailable
-export const prettyLabels: Record<string, string> = {
-  tip_pomescheniya: "Тип помещения",
-  etazh: "Этаж",
-  dostupnaya_ploschad: "Доступно",
-  km_: "КМ %",
-  address: "Адрес",
-  gde: "Где",
-};
-
-// Order for prices, with human labels
-export const PRICE_KEYS: Array<{key: string; label: string}> = [
-  { key: "price_per_m2_20", label: "от 20" },
-  { key: "price_per_m2_50", label: "от 50" },
-  { key: "price_per_m2_100", label: "от 100" },
-  { key: "price_per_m2_400", label: "от 400" },
-  { key: "price_per_m2_700", label: "от 700" },
-  { key: "price_per_m2_1500", label: "от 1500" },
+export const priceKeys = [
+  "price_per_m2_20",
+  "price_per_m2_50",
+  "price_per_m2_100",
+  "price_per_m2_400",
+  "price_per_m2_700",
+  "price_per_m2_1500",
 ];
 
+export const prettyLabels: Record<string, string> = {
+  city: "Город",
+  address: "Адрес (23/58)",
+  zagolovok: "Заголовок",
+  dostupnaya_ploschad: "Доступная площадь",
+  km: "KM %",
+  km_: "KM %",
+  gde: "Где",
+  parkovka: "Парковка",
+  vysota_potolkov: "Высота потолков (м)",
+  disk_foto_plan: "Диск (фото, план)",
+  avito_id: "Авито ID",
+  etazh_avito: "Этаж Авито",
+  ukazannaya_ploschad: "Указанная площадь",
+  ukazannaya_stoimost_za_m2: "Указанная стоимость за м2",
+  tip_zdaniya: "Тип здания",
+  probki_v_chasy_pik_nizkiesrednievysokie: "Пробки в часы пик",
+  imidzh_rayona: "Имидж района",
+  vozmozhnost_deleniyaobedineniya_pomescheniy: "Возможность деления/объединения помещений",
+  planirovka_otkrytayakabinetnayasmeshannaya: "Планировка (открытая/кабинетная/смешанная)",
+  sostoyanie_gotovo_k_vezduremontshellcore: "Состояние (готово к въезду/ремонт/shell&core)",
+  kakoy_pol: "Какой пол",
+  vitriny_danet: "Витрины (да/нет)",
+  pomeschenie_otaplivaemoe_danet: "Помещение отапливаемое (да/нет)",
+  temperatura_pomescheniya_zimoy: "Температура помещения зимой",
+  sostoyanie_krovli: "Состояние кровли",
+  iz_chego_karkas_zdaniya: "Из чего каркас здания",
+  perekrykryya_mu_etazhami_iz_chego: "Перекрыкрыя м/у этажами (из чего)",
+  vorota_nalichie_kolichestvo_razmery_: "Ворота. Наличие, количество, размеры",
+  okna_kakoe_osveshchenie_prioritet_estestvennoe: "Окна, какое освещение, приоритет естественное",
+  zony_razgruzkipogruzki: "Зоны разгрузки/погрузки",
+  voda_danet_rasstoyanie_do_mokroy_tochki: "Вода (да/нет, расстояние до мокрой точки)",
+  kanalizatsiya_tsentralnayaavtonomnaya: "Канализация (центральная/автономная)",
+  sistema_okhrany_videonablyudeniya: "Система охраны, видеонаблюдения",
+  pozharnaya_signalizatsiya: "Пожарная сигнализация",
+  vidimost_s_dorogipeshekhodnykh_marshrutov: "Видимость с дороги/пешеходных маршрутов",
+  opexkommunalnye_platezhi: "OPEX/коммунальные платежи",
+  razreshennye_vidy_deyatelnosti: "Разрешённые виды деятельности",
+  foto_s_avito: "Фото с Авито",
+};
+
 export function shortAddress(rec: DomusRow): string {
-  return (
-    rec["zagolovok"] ||
-    rec["address"] ||
-    rec["adres_avito"] ||
-    (rec["city"] ? `${rec["city"]}${rec["address"] ? ", " + rec["address"] : ""}` : "") ||
-    "—"
-  );
+  const parts: string[] = [];
+  if (rec.city) parts.push(rec.city);
+  if (rec.address) parts.push(String(rec.address));
+  else if (rec.adres || rec["adres (23/58)"]) parts.push(String(rec.adres || rec["adres (23/58)"]));
+  else if (rec.zagolovok) parts.push(String(rec.zagolovok));
+  return parts.join(", ");
 }
 
-export function isSectionField(key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(SECTION_FIELDS, key);
+export function humanLabel(key: string, labelsFromDb?: Record<string,string>) {
+  if (labelsFromDb && labelsFromDb[key]) return labelsFromDb[key];
+  if (prettyLabels[key]) return prettyLabels[key];
+  return key.replace(/_/g, " ").replace(/\s+/g, " ").trim();
 }

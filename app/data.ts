@@ -1,112 +1,81 @@
-// Server utilities for Vitrina
-import { createClient as createSbClient } from "@supabase/supabase-js";
+
+import { createClient } from "@/lib/supabase";
 import type { DomusRow } from "@/lib/fields";
-import { TABLE } from "@/lib/fields";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-const sb = createSbClient(URL, KEY);
+const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
+const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 
-// City list (distinct), filtered and sorted
 export async function fetchCities(): Promise<string[]> {
-  const { data, error } = await sb.from(TABLE).select("city");
-  if (error) {
-    console.error("fetchCities error", error);
-    return [];
+  const sb = createClient();
+  const { data, error } = await sb
+    .from(TABLE)
+    .select("city")
+    .order("city", { ascending: true });
+  if (error) { console.error(error); return []; }
+  const set = new Set<string>();
+  for (const r of data || []) {
+    if (r.city) set.add(r.city);
   }
-  const all = Array.from(new Set((data ?? []).map((r: any) => r.city).filter(Boolean)));
-  return all.filter((c) => String(c).toLowerCase() !== "все города").sort((a, b) => a.localeCompare(b));
+  return Array.from(set);
 }
 
-// List for main grid
-export async function fetchList(city?: string): Promise<DomusRow[]> {
-  let q = sb
-    .from(TABLE)
-    .select(
-      [
-        "id",
-        "external_id",
-        "city",
-        "address",
-        "zagolovok",
-        "tip_pomescheniya",
-        "etazh",
-        "dostupnaya_ploschad",
-        "km_",
-        "price_per_m2_20",
-        "price_per_m2_50",
-        "price_per_m2_100",
-        "price_per_m2_400",
-        "price_per_m2_700",
-        "price_per_m2_1500",
-      ].join(",")
-    )
-    .order("id", { ascending: true });
-
+export async function fetchList(city?: string) {
+  const sb = createClient();
+  let q = sb.from(TABLE).select("*").order("id", { ascending: true }).limit(1000);
   if (city && city !== "Все города") q = q.eq("city", city);
   const { data, error } = await q;
-  if (error) {
-    console.error("fetchList error", error);
-    return [];
-  }
-  return (data ?? []) as DomusRow[];
+  if (error) { console.error(error); return []; }
+  return data as DomusRow[];
 }
 
-// Detail fetch: param can be numeric id (with or without 'id' prefix) or external_id
-export async function fetchByExternalId(param: string): Promise<DomusRow | null> {
-  const p = decodeURIComponent(param);
-  const m = p.match(/^id?\s*(\d+)$/i);
-  let q = sb.from(TABLE).select("*").limit(1);
-  if (m) {
-    q = q.eq("id", Number(m[1]));
-  } else {
-    q = q.eq("external_id", p);
+export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
+  const sb = createClient();
+  const idNum = slug.startsWith("id") ? Number(slug.slice(2)) : Number(slug);
+  if (!Number.isNaN(idNum)) {
+    const r1 = await sb.from(TABLE).select("*").eq("id", idNum).maybeSingle();
+    if (r1.data) return r1.data as DomusRow;
   }
-  const { data, error } = await q;
-  if (error) {
-    console.error("fetchByExternalId error", error);
-    return null;
-  }
-  return (data && data[0]) || null;
+  const r2 = await sb.from(TABLE).select("*").eq("external_id", slug).maybeSingle();
+  return (r2.data as DomusRow) ?? null;
 }
 
-// Storage helpers
-export async function getFirstPhoto(id: string): Promise<string | null> {
-  const folder = `id${id.replace(/^id/i, "")}`;
-  const { data, error } = await sb.storage.from("photos").list(folder, {
-    limit: 1,
-    sortBy: { column: "name", order: "asc" },
-  });
-  if (error || !data || data.length === 0) return null;
+export async function getFirstPhoto(idLike: string | number): Promise<string | null> {
+  const sb = createClient();
+  const folder = `id${idLike}`;
+  const { data, error } = await sb.storage.from(PHOTOS_BUCKET).list(folder, { limit: 1 });
+  if (error) { return null; }
+  if (!data || data.length === 0) return null;
   const file = data[0].name;
-  const { data: pub } = sb.storage.from("photos").getPublicUrl(`${folder}/${file}`);
+  const { data: pub } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(`${folder}/${file}`);
   return pub?.publicUrl ?? null;
 }
 
-export async function getGallery(id: string): Promise<string[]> {
-  const folder = `id${id.replace(/^id/i, "")}`;
-  const { data, error } = await sb.storage.from("photos").list(folder, {
-    limit: 100,
-    sortBy: { column: "name", order: "asc" },
-  });
+export async function getGallery(idLike: string | number): Promise<string[]> {
+  const sb = createClient();
+  const folder = `id${idLike}`;
+  const { data, error } = await sb.storage.from(PHOTOS_BUCKET).list(folder, { limit: 100 });
   if (error || !data) return [];
-  const urls = data.map((f) => sb.storage.from("photos").getPublicUrl(`${folder}/${f.name}`).data.publicUrl);
-  return urls;
+  const out: string[] = [];
+  for (const f of data) {
+    const { data: pub } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(`${folder}/${f.name}`);
+    if (pub?.publicUrl) out.push(pub.publicUrl);
+  }
+  return out;
 }
 
-// Column labels from Postgres comments (requires the SQL helper)
-export async function loadColumnLabels(): Promise<Record<string, string>> {
-  const { data, error } = await sb.rpc("get_column_labels", {
-    p_schema: "public",
-    p_table: TABLE,
-  });
-  if (error || !data) {
-    console.warn("get_column_labels RPC failed", error);
+export async function fetchColumnLabels(): Promise<Record<string,string>> {
+  const sb = createClient();
+  try {
+    const { data, error } = await (sb.rpc as any)("get_column_labels", { p_schema: "public", p_table: TABLE });
+    if (error || !Array.isArray(data)) return {};
+    const map: Record<string,string> = {};
+    for (const row of data) {
+      const col = row.column || row.column_name;
+      const label = row.comment || row.label || row.description;
+      if (col && label) map[col] = label;
+    }
+    return map;
+  } catch (e) {
     return {};
   }
-  const map: Record<string, string> = {};
-  for (const row of data as Array<{ col_name: string; label: string | null }>) {
-    if (row.col_name && row.label) map[row.col_name] = row.label;
-  }
-  return map;
 }

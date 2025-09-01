@@ -1,7 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
-export const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-export const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
-export const DOMUS_TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
-export function publicUrl(path: string) {
-  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${path}`;
+import { createClient as createSbClient } from "@supabase/supabase-js";
+export function createClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+  if (!url || !key) throw new Error("Supabase env is missing");
+  return createSbClient(url, key);
 }
