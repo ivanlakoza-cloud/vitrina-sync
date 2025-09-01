@@ -1,1 +1,1 @@
-Adaptive row layout (auto,1fr), right-aligned values; very light grey for empty; compact and readable.
+Page: remove block headings; show title from sort_order 20 and in page title with site name; hide order 20 from blocks; grey labels when empty except for orders 36,42,49,66,79,83.
