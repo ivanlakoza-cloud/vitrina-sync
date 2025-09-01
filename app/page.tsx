@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 import Link from "next/link";
 import PriceTable from "@/components/PriceTable";
+import CityFilter from "@/components/CityFilter";
 import TypeFilter from "@/components/TypeFilter";
 import { fetchCities, fetchList, getFirstPhoto, fetchTypes } from "./data";
 
@@ -12,8 +13,8 @@ export default async function Page({ searchParams }: { searchParams: { [k: strin
     const addr = String(r.address ?? r.adres_avito ?? "").trim();
     return city && addr ? `${city}, ${addr}` : (addr || city || "");
   };
-  const selectedCity = (searchParams?.city as string) || "Все города";
-  const selectedType = (searchParams?.type as string) || "";
+const selectedCity = (searchParams?.city as string) || "Все города";
+const selectedType = (searchParams?.type as string) || "Все типы";
   const [cities, types, items] = await Promise.all([fetchCities(), fetchTypes(), fetchList(selectedCity, selectedType)]);
 
   return (
@@ -26,7 +27,9 @@ export default async function Page({ searchParams }: { searchParams: { [k: strin
             {cities.map((c) => <option key={c}>{c}</option>)}
           </select>
         </form>
-          <TypeFilter options={types} />
+<CityFilter cities={cities} selected={selectedCity} />
+<TypeFilter options={types} selected={selectedType} />  // можно и types={types}
+
       </div>
 
       <div className="grid-cards">
