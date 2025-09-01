@@ -1,49 +1,58 @@
+import React from "react";
 
-"use client";
+type AnyRec = Record<string, any>;
+type Size = "sm" | "md";
 
-type Prices = {
-  "price per m2 20"?: string | number | null;
-  "price per m2 50"?: string | number | null;
-  "price per m2 100"?: string | number | null;
-  "price per m2 400"?: string | number | null;
-  "price per m2 700"?: string | number | null;
-  "price per m2 1500"?: string | number | null;
-  price_per_m2_20?: string | number | null;
-  price_per_m2_50?: string | number | null;
-  price_per_m2_100?: string | number | null;
-  price_per_m2_400?: string | number | null;
-  price_per_m2_700?: string | number | null;
-  price_per_m2_1500?: string | number | null;
-};
+// Accept both old snake_case and new "price per m2 X" keys
+const PRICE_KEYS: Array<[string, string[]]> = [
+  ["20", ["price_per_m2_20", "price per m2 20"]],
+  ["50", ["price_per_m2_50", "price per m2 50"]],
+  ["100", ["price_per_m2_100", "price per m2 100"]],
+  ["400", ["price_per_m2_400", "price per m2 400"]],
+  ["700", ["price_per_m2_700", "price per m2 700"]],
+  ["1500", ["price_per_m2_1500", "price per m2 1500"]],
+];
 
-function pick(v:any) {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  return s.length ? s : null;
+function firstValue(rec: AnyRec, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = rec?.[k];
+    if (v !== undefined && v !== null) {
+      const s = String(v).trim();
+      if (s !== "") return s;
+    }
+  }
+  return null;
 }
 
-export default function PriceTable({ rec }: { rec: Prices }) {
-  const rows = [
-    ["от 20", pick(rec["price per m2 20"] ?? rec.price_per_m2_20)],
-    ["от 50", pick(rec["price per m2 50"] ?? rec.price_per_m2_50)],
-    ["от 100", pick(rec["price per m2 100"] ?? rec.price_per_m2_100)],
-    ["от 400", pick(rec["price per m2 400"] ?? rec.price_per_m2_400)],
-    ["от 700", pick(rec["price per m2 700"] ?? rec.price_per_m2_700)],
-    ["от 1500", pick(rec["price per m2 1500"] ?? rec.price_per_m2_1500)],
-  ].filter(([,v]) => v);
+export default function PriceTable({
+  rec,
+  size = "md",
+}: {
+  rec: AnyRec;
+  size?: Size;
+}) {
+  const textCls = size === "sm" ? "text-xs" : "text-sm";
 
-  if (!rows.length) return null;
+  const rows = PRICE_KEYS.map(([label, keys]) => {
+    const val = firstValue(rec, keys);
+    if (!val) return null;
+    return (
+      <div key={label} className="grid grid-cols-2 gap-2">
+        <div className={textCls}>от {label}</div>
+        <div className={textCls}>{val}</div>
+      </div>
+    );
+  }).filter(Boolean);
+
+  if (rows.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-x-8 text-sm">
-      <div className="font-semibold">Площадь</div>
-      <div className="font-semibold">Цены, ₽/м²</div>
-      {rows.map(([label, val]) => (
-        <>
-          <div>{label}</div>
-          <div className="text-left">{String(val)}</div>
-        </>
-      ))}
+    <div className="space-y-2">
+      <div className={`grid grid-cols-2 gap-2 ${textCls}`}>
+        <div className="font-semibold">Площадь</div>
+        <div className="font-semibold">Цены, ₽/м²</div>
+      </div>
+      <div className="space-y-1">{rows}</div>
     </div>
   );
 }
