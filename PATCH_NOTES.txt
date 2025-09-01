@@ -1,8 +1,1 @@
-Types+labels (2025‑09‑01)
--------------------------
-• lib/fields.ts
-  - FieldOrder расширен: { sort_order: number; display_name_ru?: string; visible?: boolean }
-  - shortAddress использует «City» (fallback: city, Город) + адрес
-• app/o/[external_id]/page.tsx
-  - Рядом с названием параметра показываем (sort_order)
-  - Безопасная сборка карты лейблов (без undefined)
+Detail: single block; Home: CitySelect filter restored.

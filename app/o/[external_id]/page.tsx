@@ -58,20 +58,23 @@ export default async function Page({ params }: { params: { external_id: string }
   }
   entries.sort((a,b)=> a[2] - b[2]);
 
-  // convert to display tuples with labels and show sort_order
-const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
-  const labelsDict = Object.entries(dict).reduce((acc, [k, v]) => {
-    if (v && typeof v.display_name_ru === 'string') acc[k] = v.display_name_ru;
-    return acc;
-  }, {} as Record<string, string>);
-  const base = prettyLabel(key, labelsDict);
-  const so = dict[key]?.sort_order;
-  const label = (typeof so === 'number') ? `${base} (${so})` : base;
-  const isSection = /^\d+_/.test(key);
-  return [label, val, isSection];
-});
+  // convert to display tuples: main first, then others by sort_order
+const labelsDict = Object.entries(dict).reduce((acc, [k, v]) => {
+  if (v && typeof v.display_name_ru === 'string') acc[k] = v.display_name_ru;
+  return acc;
+}, {} as Record<string, string>);
 
-  // distribute to 3 columns evenly (keeping section rows as titles in-place)
+const others: Array<[string, any, number]> = entries
+  .filter(([key]) => !/^\d+_/.test(String(key)))
+  .map(([key, val, order]) => {
+    const base = prettyLabel(String(key), labelsDict);
+    const so = dict[String(key)]?.sort_order;
+    const label = (typeof so === 'number') ? `${base} (${so})` : base;
+    return [label, val as any, order as number];
+  })
+  .sort((a, b) => a[2] - b[2]);
+
+const rows: Array<[string, any]> = others.map(([label, val]) => [label, val]);
   const cols: Array<Array<[string, any, boolean]>> = [[],[],[]];
   let ci = 0;
   for (const r of rows) {
@@ -92,31 +95,23 @@ const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
 
       {!!photos.length && <PhotoStrip photos={photos} />}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="section space-y-4">
-          <div className="text-lg font-semibold">Основное</div>
-          {mainBlock.map(([k,v]) => (
-            <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="text-gray-600">{k}</div>
-              <div className="font-medium">{String(v)}</div>
-            </div>
-          ))}
-          <PriceTable rec={rec} />
-        </div>
+      <div className="section space-y-2">
+  <div className="text-lg font-semibold">Характеристики</div>
+  {mainBlock.map(([k,v]) => (
+    <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
+      <div className="text-gray-600">{k}</div>
+      <div className="font-medium">{String(v)}</div>
+    </div>
+  ))}
+  {rows.map(([label, value], i) => (
+    <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
+      <div className="text-gray-600">{label}</div>
+      <div className="font-medium">{String(value)}</div>
+    </div>
+  ))}
+</div>
 
-        {cols.map((col, idx) => (
-          <div key={idx} className="section space-y-2">
-            {col.map(([label, value, isSection], i) => isSection ? (
-              <div key={i} className="pt-2 font-semibold text-gray-700">{label}</div>
-            ) : (
-              <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-                <div className="text-gray-600">{label}</div>
-                <div className="font-medium">{String(value)}</div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
+</div>
 
       {(footerTitle || footerText) && (
         <div className="section space-y-2">
