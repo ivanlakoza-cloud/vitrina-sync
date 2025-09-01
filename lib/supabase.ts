@@ -1,7 +1,10 @@
+
 import { createClient as createSbClient } from "@supabase/supabase-js";
+
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+
 export function createClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-  if (!url || !key) throw new Error("Supabase env is missing");
-  return createSbClient(url, key);
+  if (!URL || !KEY) throw new Error("Supabase env vars missing");
+  return createSbClient(URL, KEY);
 }
