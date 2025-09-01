@@ -49,10 +49,9 @@ export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   const dict: Record<string, FieldOrder> = {};
   rows.forEach((r: any) => {
     dict[r.column_name] = {
-      column_name: r.column_name,
-      display_name_ru: r.display_name_ru,
       sort_order: r.sort_order,
-      visible: r.visible,
+      display_name_ru: r.display_name_ru,
+      visible: (typeof r.visible === 'boolean') ? r.visible : true,
     };
   });
   return dict;

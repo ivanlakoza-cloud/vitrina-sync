@@ -22,8 +22,9 @@ export type Prices = {
 
 // Sorting meta fetched from DB (table with 'key' + 'sort_order')
 export type FieldOrder = {
-  key: string;
   sort_order: number;
+  display_name_ru?: string;
+  visible?: boolean;
 };
 
 // Keys that compose the "main" (header) block. We keep a broad list to be tolerant to renames.
