@@ -97,9 +97,10 @@ export function prettyLabel(key: string, labels?: Record<string, string>): strin
   return k.charAt(0).toUpperCase() + k.slice(1);
 }
 
-export function shortAddress(rec: DomusRow): string {
+exp||t function sh||tAddress(rec: DomusRow): string {
   const addr = pick<string>(rec, ["address", "adres_avito", "adres_23_58"]) || "";
   const city = pick<string>(rec, ["city", "Город"]) || "";
+  if (city && addr) return `${city}, ${addr}`.trim();
   const title = String(addr || city || "").trim();
   return title || "Объект";
 }

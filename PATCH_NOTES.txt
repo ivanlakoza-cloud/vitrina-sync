@@ -1,18 +1,14 @@
-Vitrina Sync — Fix r2 (2025‑09‑01)
-==================================
-Files are placed at repo ROOT (no wrapping folder).
+Главная — фиксы фильтра и карточек (2025‑09‑01)
+===============================================
+• app/page.tsx — заменён <form><select> на клиентский компонент CitySelect (URL ?city=... меняется при выборе)
+• components/CitySelect.tsx — новый файл, 'use client'
+• components/PriceTable.tsx — новая версия:
+    - Заголовки: «Площадь» / «Цена м²»
+    - Лейблы «от 50» и т.п. — жирные
+    - Строки без цены скрываются
+    - Поддержка диапазонов (min–max) и одиночных значений, форматирование через formatPrice
+• lib/fields.ts
+    - FieldOrder расширен (sort_order, display_name_ru?, visible?)
+    - shortAddress теперь «Город, Адрес» (если оба есть)
 
-Changes:
-1) lib/fields.ts
-   - FieldOrder widened to { sort_order: number; display_name_ru?: string; visible?: boolean }
-
-2) app/data.ts
-   - fetchFieldOrder(): set only known keys; default visible to true if missing from VIEW
-
-3) app/o/[external_id]/page.tsx
-   - label overrides now built with reduce() to include only defined strings:
-     Record<string, string>, no undefined → fixes TS error at line 63
-
-Notes:
-- SWC warnings on Vercel are benign. To silence, run `next` locally once (it patches lockfile).
-- After import/commit, CI should pass `npm run build`.
+Применение: распаковать в корень репозитория, закоммитить и запушить.

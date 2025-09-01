@@ -1,5 +1,6 @@
 import Link from "next/link";
 import PriceTable from "@/components/PriceTable";
+import CitySelect from "@/components/CitySelect";
 import { fetchCities, fetchList, getFirstPhoto } from "./data";
 
 export default async function Page({ searchParams }: { searchParams: { [k: string]: string | string[] | undefined } }) {
@@ -10,12 +11,7 @@ export default async function Page({ searchParams }: { searchParams: { [k: strin
     <div className="container py-6 space-y-6">
       <div className="flex items-center gap-3">
         <div className="text-lg">Город:</div>
-        <form>
-          <select name="city" defaultValue={selectedCity} className="border rounded-xl px-3 py-2">
-            <option>Все города</option>
-            {cities.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </form>
+        <CitySelect cities={cities} selected={selectedCity} />
       </div>
 
       <div className="grid-cards">
