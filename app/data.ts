@@ -1,81 +1,40 @@
+// Minimal stubs/wrappers to be merged with your existing data.ts implementation.
+// They expose fetchColumnLabels used by the detail page.
 
-import { createClient } from "@/lib/supabase";
-import type { DomusRow } from "@/lib/fields";
+import { createClient as createSbClient } from "@supabase/supabase-js";
 
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
 const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
-const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 
-export async function fetchCities(): Promise<string[]> {
-  const sb = createClient();
-  const { data, error } = await sb
-    .from(TABLE)
-    .select("city")
-    .order("city", { ascending: true });
-  if (error) { console.error(error); return []; }
-  const set = new Set<string>();
-  for (const r of data || []) {
-    if (r.city) set.add(r.city);
-  }
-  return Array.from(set);
+const sb = createSbClient(URL, KEY);
+
+export async function fetchByExternalId(external_id: string) {
+  const { data, error } = await sb.from(TABLE).select("*").eq("external_id", external_id).limit(1).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
-export async function fetchList(city?: string) {
-  const sb = createClient();
-  let q = sb.from(TABLE).select("*").order("id", { ascending: true }).limit(1000);
-  if (city && city !== "Все города") q = q.eq("city", city);
-  const { data, error } = await q;
-  if (error) { console.error(error); return []; }
-  return data as DomusRow[];
+export async function getGallery(id: string): Promise<string[]> {
+  const { data, error } = await sb.storage.from("photos").list(`id${id}`, { limit: 100 });
+  if (error) return [];
+  // Public bucket expected
+  return (data || []).map(f => `${URL}/storage/v1/object/public/photos/id${id}/${encodeURIComponent(f.name)}`);
 }
 
-export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
-  const sb = createClient();
-  const idNum = slug.startsWith("id") ? Number(slug.slice(2)) : Number(slug);
-  if (!Number.isNaN(idNum)) {
-    const r1 = await sb.from(TABLE).select("*").eq("id", idNum).maybeSingle();
-    if (r1.data) return r1.data as DomusRow;
-  }
-  const r2 = await sb.from(TABLE).select("*").eq("external_id", slug).maybeSingle();
-  return (r2.data as DomusRow) ?? null;
-}
-
-export async function getFirstPhoto(idLike: string | number): Promise<string | null> {
-  const sb = createClient();
-  const folder = `id${idLike}`;
-  const { data, error } = await sb.storage.from(PHOTOS_BUCKET).list(folder, { limit: 1 });
-  if (error) { return null; }
-  if (!data || data.length === 0) return null;
-  const file = data[0].name;
-  const { data: pub } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(`${folder}/${file}`);
-  return pub?.publicUrl ?? null;
-}
-
-export async function getGallery(idLike: string | number): Promise<string[]> {
-  const sb = createClient();
-  const folder = `id${idLike}`;
-  const { data, error } = await sb.storage.from(PHOTOS_BUCKET).list(folder, { limit: 100 });
-  if (error || !data) return [];
-  const out: string[] = [];
-  for (const f of data) {
-    const { data: pub } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(`${folder}/${f.name}`);
-    if (pub?.publicUrl) out.push(pub.publicUrl);
-  }
-  return out;
-}
-
+// Column -> description map via Postgres catalog (fallback: empty map)
 export async function fetchColumnLabels(): Promise<Record<string,string>> {
-  const sb = createClient();
   try {
-    const { data, error } = await (sb.rpc as any)("get_column_labels", { p_schema: "public", p_table: TABLE });
-    if (error || !Array.isArray(data)) return {};
-    const map: Record<string,string> = {};
-    for (const row of data) {
-      const col = row.column || row.column_name;
-      const label = row.comment || row.label || row.description;
-      if (col && label) map[col] = label;
-    }
-    return map;
-  } catch (e) {
+    const sql = `
+      select c.column_name as key, (pgd.description)::text as label
+      from information_schema.columns c
+      left join pg_catalog.pg_statio_all_tables st on st.relname = c.table_name and st.schemaname = c.table_schema
+      left join pg_catalog.pg_description pgd on pgd.objoid = st.relid and pgd.objsubid = c.ordinal_position
+      where c.table_schema = 'public' and c.table_name = '${TABLE}';
+    `;
+    // Supabase SQL over RPC is not accessible from anon; return empty map, backend may replace this with RPC call
+    return {};
+  } catch {
     return {};
   }
 }

@@ -1,34 +1,35 @@
+import React from 'react';
 
-type Props = {
-  rec: Record<string, any>;
-  size?: "sm" | "md";
-};
+// Reads price-per-m2 fields from record
+const keys = [
+  { k: 'price_per_m2_20', label: 'от 20' },
+  { k: 'price_per_m2_50', label: 'от 50' },
+  { k: 'price_per_m2_100', label: 'от 100' },
+  { k: 'price_per_m2_400', label: 'от 400' },
+  { k: 'price_per_m2_700', label: 'от 700' },
+  { k: 'price_per_m2_1500', label: 'от 1500' },
+] as const;
 
-const rows = [
-  { key: "price_per_m2_20", label: "от 20" },
-  { key: "price_per_m2_50", label: "от 50" },
-  { key: "price_per_m2_100", label: "от 100" },
-  { key: "price_per_m2_400", label: "от 400" },
-  { key: "price_per_m2_700", label: "от 700" },
-  { key: "price_per_m2_1500", label: "от 1500" },
-];
+export default function PriceTable({ rec }: { rec: any }) {
+  const rows = keys
+    .map(({k,label}) => ({ label, val: rec?.[k] ?? rec?.[k.toUpperCase?.() ?? ''] }))
+    .filter(r => r.val != null && r.val !== '');
 
-export default function PriceTable({ rec, size = "md" }: Props) {
-  const text = size === "sm" ? "text-sm" : "text-base";
-  const priceRows = rows.filter(r => rec[r.key]);
-  if (priceRows.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
-    <div className={`mt-3 ${text}`}>
-      <div className="grid grid-cols-2 gap-6">
-        <div>
-          <div className="font-semibold">Площадь</div>
-          {priceRows.map(r => <div key={r.key} className="mt-2">{r.label}</div>)}
-        </div>
-        <div>
-          <div className="font-semibold">Цены, ₽/м²</div>
-          {priceRows.map(r => <div key={r.key} className="mt-2">{rec[r.key]}</div>)}
-        </div>
+    <div>
+      <div className="grid grid-cols-[1fr,1fr] gap-x-6">
+        <div className="text-gray-500">Площадь</div>
+        <div className="text-gray-500">Цены, ₽/м²</div>
+      </div>
+      <div className="mt-1 space-y-1">
+        {rows.map((r, i) => (
+          <div key={i} className="grid grid-cols-[1fr,1fr] gap-x-6">
+            <div>{r.label}</div>
+            <div>{String(r.val)}</div>
+          </div>
+        ))}
       </div>
     </div>
   );

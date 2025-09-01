@@ -1,87 +1,111 @@
-
 import BackButton from "@/components/BackButton";
-import PriceTable from "@/components/PriceTable";
+import type { Metadata } from "next";
 import PhotoStrip from "@/components/PhotoStrip";
+import PriceTable from "@/components/PriceTable";
+import { prettyLabels } from "@/lib/fields";
+import { buildColumns } from "@/lib/detail-utils";
 import { fetchByExternalId, getGallery, fetchColumnLabels } from "@/app/data";
-import { buildDetailItems, splitIntoN } from "@/lib/detail-utils";
 
-export default async function DetailPage({ params }: { params: { external_id: string } }) {
-  const raw = params.external_id;
-  const rec = await fetchByExternalId(raw);
+type Props = { params: { external_id: string } };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const rec = await fetchByExternalId(params.external_id);
+  const title = rec?.adres_avito ?? rec?.zagolovok ?? "Объект";
+  return { title };
+}
+
+export default async function Page({ params }: Props) {
+  const rec: any = await fetchByExternalId(params.external_id);
   if (!rec) {
-    return <div className="max-w-6xl mx-auto p-4">Объект не найден</div>;
+    return <div className="p-6">Объект не найден</div>;
   }
-  const idForPhotos = rec.id ?? rec.external_id;
-  const [images, labels] = await Promise.all([getGallery(idForPhotos), fetchColumnLabels()]);
 
-  const details = buildDetailItems(rec, labels);
-  const columns = splitIntoN(details, 3);
+  const id = String(rec.id || rec.external_id || params.external_id);
+  const images: string[] = await getGallery(id);
+  const labels = await fetchColumnLabels(); // column->description mapping if available
+
+  // Header: use Avito address if present, fallback to composed address/title
+  const headerTitle: string = rec.adres_avito || rec.zagolovok || "Объект";
+
+  // Main block fields
+  const tipPom = rec.tip_pomescheniya || rec.tip_pomeshcheniya || rec.tip || rec['Тип помещения'] || "—";
+  const etazh = rec.etazh ?? rec.etazh_avito ?? "—";
+  const dostupno = rec.dostupnaya_ploschad ? `${rec.dostupnaya_ploschad} м²` : "—";
+  const km = (rec.km_ ?? rec.km ?? null);
 
   return (
-    <div className="max-w-7xl mx-auto p-4 space-y-6">
-      <BackButton />
-      <h1 className="text-2xl font-semibold">{String(rec.zagolovok || "")}</h1>
+    <div className="p-4 md:p-6 lg:p-8 space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <BackButton />
+        <h1 className="text-2xl md:text-3xl font-semibold">{headerTitle}</h1>
+      </div>
 
-      <PhotoStrip images={images} />
+      {/* Gallery with lightbox */}
+      <PhotoStrip images={images} alt={headerTitle} className="mt-2" />
 
-      <div className="grid md:grid-cols-3 gap-6">
+      {/* 3 columns */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Left: main info */}
         <div className="card">
-          <div className="p-6 space-y-4">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              <div className="text-gray-600">Тип помещения</div>
-              <div className="font-medium">{rec.tip_pomeshcheniya || "—"}</div>
+          <div className="grid grid-cols-[1fr,1fr] gap-y-3 gap-x-6">
+            <div className="text-gray-500">Тип помещения</div>
+            <div className="font-medium">{tipPom}</div>
 
-              <div className="text-gray-600">Этаж</div>
-              <div className="font-medium">{rec.etazh ?? "—"}</div>
+            <div className="text-gray-500">Этаж</div>
+            <div>{etazh}</div>
 
-              <div className="text-gray-600">Доступная площадь</div>
-              <div className="font-medium">{rec.dostupnaya_ploschad ? `${rec.dostupnaya_ploschad} м²` : "—"}</div>
+            <div className="text-gray-500">Доступная площадь</div>
+            <div>{dostupno}</div>
+
+            <div className="col-span-2">
+              <PriceTable rec={rec} />
             </div>
 
-            <PriceTable rec={rec} />
-
-            {(rec.km_ ?? rec.km) && (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 pt-2">
-                <div className="text-gray-600">KM %</div>
-                <div className="font-medium">{rec.km_ ?? rec.km}</div>
-              </div>
+            {km != null && (
+              <>
+                <div className="text-gray-500">KM %</div>
+                <div>{km}</div>
+              </>
             )}
-
-            <div className="pt-4 space-y-2">
-              {columns[0].map((it, idx) => (
-                it.isSection ?
-                  <div key={idx} className="pt-2 font-semibold">{it.label}</div> :
-                  <div key={idx} className="grid grid-cols-2 gap-x-6">
-                    <div className="text-gray-600">{it.label}</div>
-                    <div className="font-medium break-words">{String(it.value)}</div>
-                  </div>
-              ))}
-            </div>
           </div>
         </div>
 
-        <div className="card p-6 space-y-2">
-          {columns[1].map((it, idx) => (
-            it.isSection ?
-              <div key={idx} className="pt-2 font-semibold">{it.label}</div> :
-              <div key={idx} className="grid grid-cols-2 gap-x-6">
-                <div className="text-gray-600">{it.label}</div>
-                <div className="font-medium break-words">{String(it.value)}</div>
-              </div>
-          ))}
-        </div>
-
-        <div className="card p-6 space-y-2">
-          {columns[2].map((it, idx) => (
-            it.isSection ?
-              <div key={idx} className="pt-2 font-semibold">{it.label}</div> :
-              <div key={idx} className="grid grid-cols-2 gap-x-6">
-                <div className="text-gray-600">{it.label}</div>
-                <div className="font-medium break-words">{String(it.value)}</div>
-              </div>
-          ))}
-        </div>
+        {/* Middle & Right: other attributes (evenly distributed) */}
+        {(() => {
+          const [a, b, c] = buildColumns(rec, labels ?? {});
+          const render = (items: any[]) => (
+            <div className="card space-y-3">
+              {items.map((it, i) => {
+                if (it.kind === 'section') {
+                  return <div key={'s'+i} className="pt-2 text-gray-700 font-semibold">{it.title}</div>;
+                }
+                return (
+                  <div key={it.key} className="grid grid-cols-[1fr,1fr] gap-x-6">
+                    <div className="text-gray-500">{it.label}</div>
+                    <div className="break-words">{String(it.value)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+          return (
+            <>
+              {render(a)}
+              {render(b)}
+              {render(c)}
+            </>
+          );
+        })()}
       </div>
+
+      {/* Footer: title + description */}
+      {(rec.zagolovok || rec.tekst_obyavleniya) && (
+        <div className="card">
+          {rec.zagolovok && <div className="text-xl font-semibold mb-2">{rec.zagolovok}</div>}
+          {rec.tekst_obyavleniya && <div className="whitespace-pre-wrap leading-relaxed">{rec.tekst_obyavleniya}</div>}
+        </div>
+      )}
     </div>
   );
 }
