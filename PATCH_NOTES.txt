@@ -1,1 +1,1 @@
-Hide legacy keys; ensure RU labels; footer values only.
+Prefer domus_field_order (fallback to view); add break-words to labels to prevent layout break; hide legacy keys as before.

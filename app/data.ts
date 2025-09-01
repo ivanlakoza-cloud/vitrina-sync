@@ -43,19 +43,36 @@ export async function fetchByExternalId(external_id: string) {
 
 export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   const client = sb();
-  // allow either a view or the base table
-  const { data: view } = await client.from("domus_field_order_view").select("*").order("sort_order", { ascending: true });
-  const rows = view || [];
+  // Prefer base table (полная истина), с откатом на VIEW если таблица недоступна
+  let rows: any[] | null = null;
+  try {
+    const { data, error } = await client
+      .from("domus_field_order")
+      .select("column_name, display_name_ru, sort_order, visible")
+      .order("sort_order", { ascending: true });
+    if (!error && data) rows = data as any[];
+  } catch (_) { /* ignore */ }
+
+  if (!rows || rows.length === 0) {
+    const { data: view } = await client
+      .from("domus_field_order_view")
+      .select("column_name, display_name_ru, sort_order")
+      .order("sort_order", { ascending: true });
+    rows = (view || []) as any[];
+  }
+
   const dict: Record<string, FieldOrder> = {};
   rows.forEach((r: any) => {
     dict[r.column_name] = {
-      sort_order: r.sort_order,
+      column_name: r.column_name,
       display_name_ru: r.display_name_ru,
-      visible: (typeof r.visible === 'boolean') ? r.visible : true,
+      sort_order: r.sort_order,
+      visible: (typeof r.visible === "boolean") ? r.visible : true,
     };
   });
   return dict;
 }
+
 
 export async function getGallery(external_id: string): Promise<string[]> {
   const client = sb();

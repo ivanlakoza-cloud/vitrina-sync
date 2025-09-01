@@ -109,7 +109,7 @@ export default async function Page({ params }: { params: { external_id: string }
 
           {mainBlock.map(([k,v]) => (
             <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800">{k}</div>
+              <div className="font-semibold text-gray-800 break-words break-all">{k}</div>
               <div>{String(v)}</div>
             </div>
           ))}
@@ -118,7 +118,7 @@ export default async function Page({ params }: { params: { external_id: string }
 
           {block1Tail.map(([label, value], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800">{label}</div>
+              <div className="font-semibold text-gray-800 break-words break-all">{label}</div>
               <div>{String(value)}</div>
             </div>
           ))}
@@ -128,7 +128,7 @@ export default async function Page({ params }: { params: { external_id: string }
           <div className="text-lg font-semibold">Блок 2</div>
           {block2Rows.map(([label, value], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800">{label}</div>
+              <div className="font-semibold text-gray-800 break-words break-all">{label}</div>
               <div>{String(value)}</div>
             </div>
           ))}
@@ -138,7 +138,7 @@ export default async function Page({ params }: { params: { external_id: string }
           <div className="text-lg font-semibold">Блок 3</div>
           {block3Rows.map(([label, value], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800">{label}</div>
+              <div className="font-semibold text-gray-800 break-words break-all">{label}</div>
               <div>{String(value)}</div>
             </div>
           ))}
