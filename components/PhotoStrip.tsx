@@ -1,50 +1,62 @@
-
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import React from "react";
 
 export default function PhotoStrip({ photos }: { photos: string[] }) {
-  const [open, setOpen] = useState(false);
-  const [idx, setIdx] = useState(0);
+  const [open, setOpen] = React.useState(false);
+  const [idx, setIdx] = React.useState(0);
+  const imgRef = React.useRef<HTMLImageElement | null>(null);
 
-  const close = useCallback(() => setOpen(false), []);
-  const next = useCallback(() => setIdx(i => (i + 1) % photos.length), [photos.length]);
-  const prev = useCallback(() => setIdx(i => (i - 1 + photos.length) % photos.length), [photos.length]);
+  function show(i: number) {
+    setIdx(i);
+    setOpen(true);
+  }
+  function next(delta: number) {
+    setIdx((p) => (photos.length ? (p + delta + photos.length) % photos.length : 0));
+  }
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      if (e.key === "ArrowRight") next();
-      if (e.key === "ArrowLeft") prev();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+      if (e.key === "ArrowRight") next(1);
+      if (e.key === "ArrowLeft") next(-1);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, close, next, prev]);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, photos.length]);
 
-  if (!photos?.length) return null;
+  // basic swipe
+  React.useEffect(() => {
+    let startX = 0;
+    const el = imgRef.current;
+    if (!el) return;
+    const down = (e: TouchEvent) => { startX = e.touches[0].clientX; };
+    const up = (e: TouchEvent) => {
+      const dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) > 50) next(dx < 0 ? 1 : -1);
+    };
+    el.addEventListener("touchstart", down);
+    el.addEventListener("touchend", up);
+    return () => {
+      el.removeEventListener("touchstart", down);
+      el.removeEventListener("touchend", up);
+    };
+  }, [open]);
 
   return (
-    <div>
-      <div className="overflow-x-auto whitespace-nowrap space-x-2 pb-1">
+    <>
+      <div className="photo-strip">
         {photos.map((src, i) => (
-          <img
-            key={src}
-            src={src}
-            alt="Фотография"
-            className="inline-block h-32 w-auto rounded-xl object-cover cursor-pointer"
-            onClick={() => { setIdx(i); setOpen(true); }}
-          />
+          <img key={i} src={src} alt={`photo_${i}`} onClick={() => show(i)} />
         ))}
       </div>
 
-      {open && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
-          <button className="absolute top-4 right-4 text-white text-2xl" onClick={close}>✕</button>
-          <button className="absolute left-4 text-white text-3xl" onClick={prev}>‹</button>
-          <img src={photos[idx]} alt="" className="max-h-[90vh] max-w-[90vw] object-contain rounded" />
-          <button className="absolute right-4 text-white text-3xl" onClick={next}>›</button>
-        </div>
-      )}
-    </div>
+      <div className={`lb-backdrop ${open ? "open" : ""}`} onClick={() => setOpen(false)}>
+        <button className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl" onClick={(e) => { e.stopPropagation(); next(-1); }}>‹</button>
+        <img ref={imgRef} className="lb-img" src={photos[idx]} alt="full" onClick={(e) => e.stopPropagation()} />
+        <button className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl" onClick={(e) => { e.stopPropagation(); next(1); }}>›</button>
+        <button className="absolute top-4 right-4 text-white text-2xl" onClick={() => setOpen(false)}>✕</button>
+      </div>
+    </>
   );
 }

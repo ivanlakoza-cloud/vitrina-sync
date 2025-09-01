@@ -2,23 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base tweaks */
-@layer base {
-  html { scroll-behavior: smooth; }
-  a { @apply text-inherit no-underline; }
+/* Layout helpers */
+.container {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+.card {
+  @apply bg-white rounded-2xl shadow-sm border border-gray-200;
+}
+.section {
+  @apply card p-5 md:p-6;
+}
+.grid-cards {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3;
 }
 
-/* Reusable components */
-@layer components {
-  .card { @apply rounded-2xl bg-white shadow-sm ring-1 ring-black/5 p-5; }
-  .section { @apply rounded-2xl bg-white shadow-sm ring-1 ring-black/5 p-6; }
-  .h1 { @apply text-2xl md:text-3xl font-semibold; }
-  .subtle { @apply text-gray-500; }
-  .label { @apply text-gray-500 text-sm; }
-  .value { @apply text-gray-900; }
-  .grid-cards { @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3; }
-
-  /* Horizontal photo strip with swipe */
-  .photos { @apply flex gap-3 overflow-x-auto snap-x snap-mandatory py-2; }
-  .photos img { @apply h-40 w-64 object-cover rounded-xl snap-start shrink-0; }
+/* Photo strip */
+.photo-strip {
+  @apply flex gap-3 overflow-x-auto pb-2;
+  scroll-snap-type: x mandatory;
 }
+.photo-strip img {
+  @apply rounded-xl h-40 w-64 object-cover flex-none;
+  scroll-snap-align: start;
+}
+
+/* Lightbox */
+.lb-backdrop {
+  @apply fixed inset-0 bg-black/80 z-50 hidden items-center justify-center;
+}
+.lb-backdrop.open { display:flex; }
+.lb-img {
+  max-width: 96vw;
+  max-height: 92vh;
+  object-fit: contain;
+}
+/* simple hide class */
+.hidden-soft { display:none; }

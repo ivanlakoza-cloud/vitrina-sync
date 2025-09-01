@@ -1,16 +1,15 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import './globals.css';
+import React from 'react';
 
-export const metadata: Metadata = {
-  title: "Витрина",
-  description: "Объекты на карте и в каталоге",
+export const metadata = {
+  title: 'Витрина',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
-      <body className="min-h-screen bg-neutral-50 text-gray-900 antialiased">
-        <div className="max-w-7xl mx-auto p-5">{children}</div>
+      <body className="bg-gray-50 text-gray-900">
+        {children}
       </body>
     </html>
   );

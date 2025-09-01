@@ -1,133 +1,121 @@
-
 import BackButton from "@/components/BackButton";
+import type { Metadata } from "next";
 import PhotoStrip from "@/components/PhotoStrip";
 import PriceTable from "@/components/PriceTable";
-import { fetchByExternalId, getGallery, fetchFieldOrder, mainKeys } from "@/app/data";
-import { prettyLabel, chunkEvenly } from "@/lib/fields";
-import type { Metadata } from "next";
+import { prettyLabel, chunkEvenly, mainKeys } from "@/lib/fields";
+import { fetchByExternalId, getGallery, fetchFieldOrder } from "@/app/data";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }: { params: { external_id: string } }): Promise<Metadata> {
-  try {
-    const rec: any = await fetchByExternalId(params.external_id);
-    const title = (rec?.address as string) || "Объект";
-    return { title };
-  } catch {
-    return { title: "Объект" };
-  }
-}
-
-const SECTION_KEYS = [
-  "1_lokatsiya_i_okruzhenie",
-  "2_dostup_i_logistika",
-  "3_kharakteristiki_pomescheniya",
-  "4_kommunikatsii_i_tekhnicheskie_parametry",
-  "5_marketingovye_vozmozhnosti",
-  "6_usloviya_arendy",
-];
-
 const HIDE = new Set([
-  "external_id","id_obekta","avito","planirovka","unnamed_94","unnamed_95","id","nedostatki",
-  "srok_dogovora_let","arendnye_kanikuly","unnamed_93","vozmozhnost_remontapereplanirovki",
-  "zapreschennye_vidy_deyatelnosti_zhmykh_semena","rasstoyanie_ot_tsentra_goroda_km__min",
-  "created_at","updated_at","foto_s_avito","city","adres_avito","zagolovok","tekst_obyavleniya"
+  "external_id","id_obekta","avito","planirovka","planirovka_otkrytayakabinetnayasmeshannaya",
+  "unnamed_93","unnamed_94","unnamed_95","id","nedostatki",
+  "srok_dogovora_let","arendnye_kanikuly",
+  "vozmozhnost_remontapereplanirovki",
+  "zapreschennye_vidy_deyatelnosti_zhmykh_semena",
+  "rasstoyanie_ot_tsentra_goroda_km__min",
+  "created_at","updated_at"
 ]);
 
-export default async function Page({ params }: { params: { external_id: string }}) {
+export async function generateMetadata({ params }: { params: { external_id: string } }): Promise<Metadata> {
+  const rec = await fetchByExternalId(params.external_id);
+  const title = (rec?.address as string) || "Объект";
+  return { title };
+}
+
+export default async function Page({ params }: { params: { external_id: string } }) {
   const rec: any = await fetchByExternalId(params.external_id);
-  if (!rec) {
-    return <div className="p-6">Объект не найден</div>;
-  }
-  const gallery = await getGallery(rec.external_id);
-  const metas = await fetchFieldOrder();
-  const labelMap: Record<string, string> = {};
-  const orderMap: Record<string, number> = {};
-  metas.forEach(m => {
-    if (m.column_name) {
-      if (m.description) labelMap[m.column_name] = m.description;
-      if (m.sort_order != null) orderMap[m.column_name] = Number(m.sort_order);
+  if (!rec) return <div className="container py-6">Объект не найден</div>;
+
+  const [photos, dict] = await Promise.all([getGallery(params.external_id), fetchFieldOrder()]);
+  const avitoAddr = rec.adres_avito || rec.address;
+
+  // Main block keys & data
+  const mainBlock: Array<[string, any]> = [];
+  const push = (k: string, label?: string) => {
+    if (rec[k] !== null && rec[k] !== undefined && rec[k] !== "") {
+      mainBlock.push([label || k, rec[k]]);
     }
+  };
+  push("tip_pomescheniya", "Тип помещения");
+  push("etazh", "Этаж");
+  if (rec.dostupnaya_ploschad) mainBlock.push(["Доступно", `${rec.dostupnaya_ploschad} м²`]);
+  const kmKey = Object.keys(rec).find(k => k.toLowerCase() === 'km_' || k.toLowerCase() === 'km');
+  if (kmKey) mainBlock.push(["КМ %", rec[kmKey]]);
+
+  // gather other fields (respect order table & visibility)
+  const entries: Array<[string, any, number]> = [];
+  for (const [key, val] of Object.entries(rec)) {
+    if (HIDE.has(key)) continue;
+    if (mainKeys.includes(key)) continue;
+    const order = dict[key]?.sort_order ?? 9999;
+    const visible = dict[key]?.visible ?? true;
+    const isSection = /^\d+_/.test(key);
+    const hasValue = !(val === null || val === "" || typeof val === "undefined");
+    if (isSection || (visible && hasValue)) {
+      entries.push([key, val as any, order]);
+    }
+  }
+  entries.sort((a,b)=> a[2] - b[2]);
+
+  // convert to display tuples with labels
+  const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
+    const label = prettyLabel(key, Object.fromEntries(Object.entries(dict).map(([k,v])=>[k, v.display_name_ru])));
+    const isSection = /^\d+_/.test(key);
+    return [label, val, isSection];
   });
 
-  // header (back + title + avito address)
-  const title = (rec.address as string) || "Объект";
-  const avitoAddr = (rec.adres_avito as string) || "";
+  // distribute to 3 columns evenly (keeping section rows as titles in-place)
+  const cols: Array<Array<[string, any, boolean]>> = [[],[],[]];
+  let ci = 0;
+  for (const r of rows) {
+    cols[ci].push(r);
+    ci = (ci + 1) % 3;
+  }
 
-  // Build main block
-  const mainPairs: Array<[string,string]> = [];
-  const labelTip = labelMap["tip_pomescheniya"] || "Тип помещения";
-  mainPairs.push([labelTip, rec.tip_pomescheniya || "—"]);
-  if (rec.etazh) mainPairs.push([labelMap["etazh"] || "Этаж", String(rec.etazh)]);
-  if (rec.dostupnaya_ploschad) mainPairs.push([labelMap["dostupnaya_ploschad"] || "Доступно", `${rec.dostupnaya_ploschad} м²`]);
-
-  // Price rows are shown by PriceTable
-
-  // Build "rest" fields (including section headers as items without values)
-  type Item = { key: string; label: string; value?: string | number | null; isSection?: boolean; order?: number };
-  const items: Item[] = [];
-
-  // Section headers (always show, no value)
-  SECTION_KEYS.forEach(k => {
-    items.push({ key: k, label: prettyLabel(k, labelMap), isSection: true, order: orderMap[k] ?? 999999 });
-  });
-
-  // Regular fields
-  Object.entries(rec).forEach(([k, v]) => {
-    if (mainKeys.includes(k)) return;
-    if (HIDE.has(k)) return;
-    if (SECTION_KEYS.includes(k)) return; // already as headers
-    if (v === null || v === undefined || String(v).trim() === "") return;
-    const label = prettyLabel(k, labelMap);
-    const order = orderMap[k] ?? 999999;
-    items.push({ key: k, label, value: v as any, order });
-  });
-
-  // Sort by sort_order asc, then by label
-  items.sort((a,b) => (a.order! - b.order!) || a.label.localeCompare(b.label, "ru"));
-
-  // Distribute evenly into 3 columns
-  const cols = chunkEvenly(items, 3);
+  // footer: show hidden title & description if present
+  const footerTitle = rec.zagolovok || rec.zagolovok_ru || null;
+  const footerText = rec.tekst_obyavleniya || rec.tekst || null;
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center gap-4">
+    <div className="container py-6 space-y-6">
+      <div className="flex items-center gap-4 text-sm text-gray-600">
         <BackButton />
-        <div className="text-2xl font-semibold">{title}</div>
-        {avitoAddr && <div className="text-sm text-muted-foreground">Адрес Авито: {avitoAddr}</div>}
+        {avitoAddr && <div>Адрес Авито: {avitoAddr}</div>}
       </div>
 
-      {gallery?.length ? <PhotoStrip photos={gallery} /> : null}
+      {!!photos.length && <PhotoStrip photos={photos} />}
 
-      {/* Основное */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="border rounded-2xl p-4 space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="section space-y-4">
           <div className="text-lg font-semibold">Основное</div>
-          <div className="grid grid-cols-[1fr_auto] gap-y-2">
-            {mainPairs.map(([k,v]) => (<><div className="font-medium">{k}</div><div className="text-right">{v}</div></>))}
-          </div>
+          {mainBlock.map(([k,v]) => (
+            <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
+              <div className="text-gray-600">{k}</div>
+              <div className="font-medium">{String(v)}</div>
+            </div>
+          ))}
           <PriceTable rec={rec} />
         </div>
 
-        {cols.map((arr, i) => (
-          <div key={i} className="border rounded-2xl p-4 space-y-2">
-            {arr.map((it) => it.isSection ? (
-              <div key={it.key} className="mt-2 mb-1 text-base font-semibold">{it.label}</div>
+        {cols.map((col, idx) => (
+          <div key={idx} className="section space-y-2">
+            {col.map(([label, value, isSection], i) => isSection ? (
+              <div key={i} className="pt-2 font-semibold text-gray-700">{label}</div>
             ) : (
-              <div key={it.key} className="grid grid-cols-[1fr_auto] gap-y-1">
-                <div className="text-gray-500">{it.label}</div>
-                <div className="text-right">{String(it.value)}</div>
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
+                <div className="text-gray-600">{label}</div>
+                <div className="font-medium">{String(value)}</div>
               </div>
             ))}
           </div>
         ))}
       </div>
 
-      {/* Footer: Заголовок + Текст объявления */}
-      {(rec.zagolovok || rec.tekst_obyavleniya) && (
-        <div className="border rounded-2xl p-4 space-y-2">
-          {rec.zagolovok && <div className="text-lg font-semibold">{rec.zagolovok}</div>}
-          {rec.tekst_obyavleniya && <div className="whitespace-pre-wrap leading-relaxed">{rec.tekst_obyavleniya}</div>}
+      {(footerTitle || footerText) && (
+        <div className="section space-y-2">
+          {footerTitle && <div className="text-lg font-semibold">{footerTitle}</div>}
+          {footerText && <div className="whitespace-pre-wrap">{footerText}</div>}
         </div>
       )}
     </div>

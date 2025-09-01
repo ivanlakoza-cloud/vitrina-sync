@@ -1,33 +1,32 @@
+export type FieldOrder = {
+  column_name: string;
+  display_name_ru: string | null;
+  sort_order: number | null;
+  visible: boolean | null;
+};
 
-export function titleCase(s: string) {
-  return s.replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase()
-    .replace(/(^|\s|-|\/)\p{L}/gu, (m) => m.toUpperCase());
-}
-
-export function prettyLabel(key: string, labels?: Record<string, string | undefined>): string {
-  const direct = labels?.[key];
-  if (direct) return direct;
-  // fallback from machine -> readable (ru translit friendly)
-  const cleaned = key
-    .replace(/__/g, "_")
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ")
+export function prettyLabel(key: string, dict?: Record<string, string | null>): string {
+  if (dict && dict[key]) return String(dict[key]);
+  // fallbacks
+  const normalized = key
+    .replace(/^\d+_/, '') // drop numeric prefixes
+    .replace(/_/g, ' ')
     .trim();
-  return titleCase(cleaned);
+  // Uppercase first letter
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-export function shortAddress(rec: Record<string, any>): string {
-  const addr = (rec.address || rec.adres_avito || "").toString().trim();
-  if (!addr) return "Объект";
-  // короткий вид: без страны, иногда без города если дублируется
-  return addr.replace(/^Россия,\s*/i, "");
+// split array in N nearly-equal chunks
+export function chunkEvenly<T>(arr: T[], n: number): T[][] {
+  const out: T[][] = Array.from({ length: n }, () => []);
+  arr.forEach((item, i) => out[i % n].push(item));
+  return out;
 }
 
-// разбиваем элементы равномерно по N колонкам (round-robin)
-export function chunkEvenly<T>(items: T[], cols: number): T[][] {
-  const res = Array.from({ length: cols }, () => [] as T[]);
-  items.forEach((it, i) => res[i % cols].push(it));
-  return res;
-}
+// keys for the main (left) block
+export const mainKeys = [
+  'tip_pomescheniya',
+  'etazh',
+  'dostupnaya_ploschad',
+  'km_',
+];
