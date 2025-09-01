@@ -1,11 +1,7 @@
-City column fix + title (2025‑09‑01)
-====================================
-• app/data.ts
-  - fetchCities(): SELECT "City", NOT NULL по "City"; используется r.City
-  - fetchList(): фильтр q.eq("City", city)
-• app/page.tsx
-  - Заголовок карточки включает город: `${City}, ${Адрес}` (с фолбэками)
-• lib/fields.ts
-  - shortAddress() теперь ищет город по ключам ["City", "city", "Город"]
-
-Применение: импортировать в корень репозитория, закоммитить и запушить.
+Fix FieldOrder mapping (2025‑09‑01)
+===================================
+app/data.ts:
+• В fetchFieldOrder() удалено свойство `column_name` из литерала объекта,
+  теперь записываем только:
+     { sort_order, display_name_ru, visible (по умолчанию true) }.
+• Это соответствует типу FieldOrder и снимает ошибку TS в Vercel.

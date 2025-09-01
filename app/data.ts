@@ -15,12 +15,12 @@ export async function fetchCities(): Promise<string[]> {
   const client = sb();
   const { data, error } = await client
     .from(TABLE)
-    .select("City")
-    .not("City", "is", null);
+    .select("city")
+    .not("city", "is", null);
   if (error) return [];
   const set = new Set<string>();
   data.forEach((r: any) => {
-    if (r.City && r.City !== 'Все города') set.add(r.City);
+    if (r.city && r.city !== 'Все города') set.add(r.city);
   });
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
 }
@@ -29,7 +29,7 @@ export async function fetchList(city?: string) {
   const client = sb();
   let q = client.from(TABLE).select("*").order("id", { ascending: true }).limit(120);
   if (city && city !== "Все города") {
-    q = q.eq("City", city);
+    q = q.eq("city", city);
   }
   const { data } = await q;
   return (data || []) as any[];
@@ -49,10 +49,9 @@ export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   const dict: Record<string, FieldOrder> = {};
   rows.forEach((r: any) => {
     dict[r.column_name] = {
-      column_name: r.column_name,
-      display_name_ru: r.display_name_ru,
       sort_order: r.sort_order,
-      visible: r.visible,
+      display_name_ru: r.display_name_ru,
+      visible: (typeof r.visible === 'boolean') ? r.visible : true,
     };
   });
   return dict;
