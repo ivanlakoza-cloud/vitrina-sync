@@ -1,1 +1,1 @@
-app/data.ts: city filter now uses OR across columns city/City/"Город"; fetchCities unions columns; includes fetchTypes and other helpers; noStore() added.
+fetchCities(): union City/city/"Город" via separate selects; fetchList(): server-side filter by type + in-memory filter by city using cityKey();
