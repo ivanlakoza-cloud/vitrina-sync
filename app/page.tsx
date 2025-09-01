@@ -22,7 +22,7 @@ const selectedType = (searchParams?.type as string) || "Все типы";
       <div className="flex items-center gap-3">
 
 <CityFilter cities={cities} selected={selectedCity} />
-<TypeFilter options={types} selected={selectedType} />  // можно и types={types}
+<TypeFilter options={types} selected={selectedType} />
 
       </div>
 
