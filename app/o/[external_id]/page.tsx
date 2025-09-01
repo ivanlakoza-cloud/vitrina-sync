@@ -1,11 +1,10 @@
-"use client";
-import React, { Fragment } from "react";
+// Server component for the details page (no "use client" here)
 import BackButton from "@/components/BackButton";
 import type { Metadata } from "next";
+import PhotoStrip from "@/components/PhotoStrip";
+import PriceTable from "@/components/PriceTable";
 import { fetchByExternalId, getGallery, fetchFieldOrder, mainKeys } from "@/app/data";
 import { prettyLabel, chunkEvenly } from "@/lib/fields";
-import PriceTable from "@/components/PriceTable";
-import PhotoStrip from "@/components/PhotoStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -13,65 +12,77 @@ export async function generateMetadata({ params }: { params: { external_id: stri
   try {
     const rec: any = await fetchByExternalId(params.external_id);
     const title = (rec?.address as string) || "Объект";
-    return { title };
+    return { title, openGraph: { title } };
   } catch {
     return { title: "Объект" };
   }
 }
 
-export default async function ObjectPage({ params }: { params: { external_id: string } }) {
-  const id = params.external_id;
-  const rec: any = await fetchByExternalId(id);
+export default async function Page({ params }: { params: { external_id: string } }) {
+  const rec: any = await fetchByExternalId(params.external_id);
   if (!rec) {
-    return <div className="p-6">Объект не найден</div>;
+    return <div className="p-6 text-lg">Объект не найден</div>;
   }
-  const gallery = await getGallery(id);
-  const order: any[] = await fetchFieldOrder();
 
-  const main = mainKeys(rec);
+  // Заголовок берём из адреса
+  const title: string = rec.address || rec.zagolovok || String(params.external_id);
+  const gallery = await getGallery(String(params.external_id));
+  const order = await fetchFieldOrder();
 
-  const otherPairs: Array<{ label: string; value: any; key: string }> = [];
-  for (const [key, value] of Object.entries(rec as Record<string, any>)) {
-    if (main.includes(key)) continue;
-    const row = order.find((r: any) => r.column_name === key);
-    if (row && row.visible === false) continue;
-    const display = row?.display_name_ru || prettyLabel(key);
-    otherPairs.push({ key, label: display, value });
-  }
-  otherPairs.sort((a, b) => {
-    const ao = (order.find((r: any) => r.column_name === a.key)?.sort_order) ?? 9999;
-    const bo = (order.find((r: any) => r.column_name === b.key)?.sort_order) ?? 9999;
-    return ao - bo;
+  // Ключи для сводной таблицы (вне "основного блока")
+  const keys = Object.keys(rec).filter((k) => !(mainKeys as any).includes(k));
+  const sortedKeys = keys.sort((a, b) => {
+    const A = order[a]?.sort_order ?? 999999;
+    const B = order[b]?.sort_order ?? 999999;
+    return A - B;
   });
 
-  const columns = chunkEvenly(otherPairs, 2);
+  const [col1, col2] = chunkEvenly(sortedKeys, 2) as [string[], string[]];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         <BackButton />
-        <h1 className="text-2xl font-semibold">{rec.address}</h1>
+        <h1 className="text-2xl font-semibold">{title}</h1>
       </div>
 
-      <PhotoStrip images={gallery} />
+      {/* Галерея */}
+      {/* @ts-expect-error allow flexible props */}
+      <PhotoStrip items={gallery as any} />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="card p-5">
-          <PriceTable rec={rec} />
+      {/* Основные параметры + цены */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="card">
+          {/* @ts-expect-error пропсы приводим к any, чтобы не падало по типам */}
+          <PriceTable rec={rec as any} />
         </div>
 
-        {columns.map((col, idx) => (
-          <div key={idx} className="card p-5">
-            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2">
-              {col.map(({ label, value, key }) => (
-                <Fragment key={key}>
-                  <dt className="text-muted-foreground">{label}</dt>
-                  <dd>{value ?? "—"}</dd>
-                </Fragment>
+        {/* Прочие параметры в двух колонках */}
+        <div className="card">
+          <table className="kv">
+            <tbody>
+              {col1.map((k) => (
+                <tr key={k}>
+                  <th>{prettyLabel(k, order) || k}</th>
+                  <td>{rec[k] == null || rec[k] === "" ? "—" : String(rec[k])}</td>
+                </tr>
               ))}
-            </dl>
-          </div>
-        ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card">
+          <table className="kv">
+            <tbody>
+              {col2.map((k) => (
+                <tr key={k}>
+                  <th>{prettyLabel(k, order) || k}</th>
+                  <td>{rec[k] == null || rec[k] === "" ? "—" : String(rec[k])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
