@@ -1,27 +1,26 @@
-
-'use client';
+"use client";
 import { useRouter, useSearchParams } from "next/navigation";
 
-type Props = { cities: string[]; value?: string };
-
-export default function CityFilter({ cities, value }: Props) {
+export default function CityFilter({ cities, value }: { cities: string[]; value?: string }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const selected = value ?? params.get("city") ?? "Все города";
+  const sp = useSearchParams();
+  const current = value || sp.get("city") || "Все города";
 
-  const uniq = Array.from(new Set(["Все города", ...cities.filter(Boolean).filter(c => c !== "Все города")]));
+  const opts = ["Все города", ...cities.filter(c => c !== "Все города")];
+
   return (
     <select
-      value={selected}
+      value={current}
       onChange={(e) => {
         const v = e.target.value;
-        const qs = new URLSearchParams(Array.from(params.entries()));
-        if (v && v !== "Все города") qs.set("city", v); else qs.delete("city");
-        router.push(`/?${qs.toString()}`);
+        if (v === "Все города") router.push("/");
+        else router.push(`/?city=${encodeURIComponent(v)}`);
       }}
-      className="select select-bordered"
+      className="border rounded px-3 py-2"
     >
-      {uniq.map(c => <option key={c} value={c}>{c}</option>)}
+      {opts.map((c) => (
+        <option key={c} value={c}>{c}</option>
+      ))}
     </select>
   );
 }
