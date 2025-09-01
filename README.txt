@@ -1,13 +1,8 @@
-Drop-in r3 (без "@/lib/supabase")
+Drop-in r4 (убрал тип DomusRow)
 -------------------------------
-Что внутри:
-- app/data.ts — серверные функции, теперь напрямую используют @supabase/supabase-js.
-- public/placeholder.svg — заглушка, если нет фото.
+Заменяет только `app/data.ts` (и при желании `public/placeholder.svg`), чтобы не было импорта `DomusRow` из `@/lib/fields`.
+Подходит к текущей структуре кода: функции возвращают `any`, сборка не падает.
 
-Как применить:
-1) Распаковать в корень репозитория с заменой `app/data.ts` и `public/placeholder.svg` (если хотите заглушку).
-2) Коммит + деплой.
-
-Зачем правка:
-- В логах Vercel: "Attempted import error: 'createClient' is not exported from '@/lib/supabase'".
-  Этот drop-in устраняет зависимость от '@/lib/supabase' и использует официальный SDK напрямую.
+Применение:
+1) Распаковать в корень репозитория с заменой файлов.
+2) Коммит и деплой.

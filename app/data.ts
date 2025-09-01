@@ -1,10 +1,9 @@
-// Server utilities for Vitrina (drop-in, r3)
-// Использует прямой импорт из "@supabase/supabase-js", без "@/lib/supabase"
+// Server utilities for Vitrina (drop-in, r4)
+// — без зависимости от "@/lib/fields" и "@/lib/supabase"
 import { createClient as createSbClient } from "@supabase/supabase-js";
-import type { DomusRow } from "@/lib/fields";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const KEY  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
 const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
 const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 
@@ -13,7 +12,7 @@ function client() {
   return createSbClient(URL, KEY);
 }
 
-/** Уникальные города по алфавиту, без null и без служебного "Все города" */
+/** Уникальные города по алфавиту, без null и без служебного 'Все города' */
 export async function fetchCities(): Promise<string[]> {
   const supabase = client();
   const { data, error } = await supabase
@@ -37,12 +36,8 @@ export async function fetchCities(): Promise<string[]> {
   return Array.from(uniq).sort((a, b) => a.localeCompare(b));
 }
 
-/**
- * Список объектов для главной.
- * Возвращаем ПЛОСКИЕ записи из таблицы (DomusRow[]),
- * чтобы существующий рендер в app/page.tsx не ломался (используются rec.id_obekta / rec.external_id / rec.id).
- */
-export async function fetchList(city?: string): Promise<DomusRow[]> {
+/** Список объектов для главной (плоские записи) */
+export async function fetchList(city?: string): Promise<any[]> {
   const supabase = client();
   let query = supabase.from(TABLE).select("*");
 
@@ -55,11 +50,11 @@ export async function fetchList(city?: string): Promise<DomusRow[]> {
     console.error("fetchList error:", error);
     return [];
   }
-  return (data || []) as unknown as DomusRow[];
+  return (data || []) as any[];
 }
 
 /** Подробно: поиск по id_obekta | external_id | id */
-export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
+export async function fetchByExternalId(slug: string): Promise<any | null> {
   const supabase = client();
   const s = String(slug);
 
@@ -72,7 +67,7 @@ export async function fetchByExternalId(slug: string): Promise<DomusRow | null> 
       .maybeSingle();
 
     if (!error && data) {
-      return data as unknown as DomusRow;
+      return data as any;
     }
   }
   return null;
