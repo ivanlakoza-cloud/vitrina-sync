@@ -20,13 +20,7 @@ const selectedType = (searchParams?.type as string) || "Все типы";
   return (
     <div className="container py-6 space-y-6">
       <div className="flex items-center gap-3">
-        <div className="text-lg">Город:</div>
-        <form>
-          <select name="city" defaultValue={selectedCity} className="border rounded-xl px-3 py-2">
-            <option>Все города</option>
-            {cities.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </form>
+
 <CityFilter cities={cities} selected={selectedCity} />
 <TypeFilter options={types} selected={selectedType} />  // можно и types={types}
 
