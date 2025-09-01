@@ -14,11 +14,11 @@ export function normalize(rec: AnyRec): AnyRec {
   r.city = rec.city ?? rec.otobrazit_vse ?? null;
   r.address = rec.address ?? rec.adres_23_58 ?? rec.adres_avito ?? null;
 
-  // Keep legacy keys too (so UI that still reads старые поля не ломается)
+  // Keep legacy keys too
   if (r.city && !r.otobrazit_vse) r.otobrazit_vse = r.city;
   if (r.address && !r.adres_avito) r.adres_avito = r.address;
 
-  // Route ID (external_id used in URLs) — fallback to id_obekta or id
+  // Route ID for URLs
   r.external_id = rec.external_id ?? rec.id_obekta ?? rec.id ?? null;
   if (r.external_id != null) r.external_id = String(r.external_id);
 
@@ -74,7 +74,7 @@ export async function fetchByExternalId(extId: string) {
   return normalize(data as AnyRec);
 }
 
-// Cities list for filter (robust to schema changes)
+// Cities list for filter
 export async function getCities(): Promise<string[]> {
   const { data, error } = await supabase.from(TABLE).select("city");
   if (error) throw error;
@@ -93,16 +93,14 @@ function publicUrl(path: string): string {
   return data.publicUrl;
 }
 
-// First photo for card
-export async function getFirstPhoto(externalId: string): Promise<string | null> {
-  if (!externalId) return null;
+// First photo for card — return undefined if нет фото (чтобы TS не ругался на null)
+export async function getFirstPhoto(externalId: string): Promise<string | undefined> {
+  if (!externalId) return undefined;
   const prefix = `${externalId}`;
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
-  if (error) return null;
-  if (!data || data.length === 0) return null;
-  // pick first file-like object (skip nested folders if any)
+  if (error || !data || data.length === 0) return undefined;
   const file = data.find((x: any) => x && x.name && !x.id) ?? data[0];
   return publicUrl(`${prefix}/${file.name}`);
 }
@@ -120,11 +118,9 @@ export async function getGallery(externalId: string): Promise<string[]> {
     .map((x: any) => publicUrl(`${prefix}/${x.name}`));
 }
 
-// --------- Backward-compatible export names (used in pages) ----------
+// --------- Backward-compatible export names ----------
 export const fetchList = fetchCatalog;
 export const fetchCities = getCities;
-
-// some pages import from "@/app/data" with these aliases too
 export const getAll = fetchCatalog;
 export const fetchData = fetchCatalog;
 export const fetchRecord = fetchByExternalId;
