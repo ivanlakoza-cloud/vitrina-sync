@@ -1,1 +1,3 @@
-City filter normalized and applied server-side; address now comes as `address = "Город, Адрес"` (fallback to adres_avito).
+Both filters write to URL via router.replace and preserve each other's params.
+CityFilter now sets ?city=, TypeFilter sets ?type=.
+Ensure app/page.tsx passes selected from searchParams.

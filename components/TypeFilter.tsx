@@ -1,38 +1,47 @@
 "use client";
 
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
-/** Селект фильтра по типу помещения (AND с city). Пишет ?type= в URL. */
-export default function TypeFilter({ options }: { options: string[] }) {
-  const router = useRouter();
+type Props = {
+  types: string[];
+  selected?: string;
+};
+
+export default function TypeFilter({ types, selected }: Props) {
+  const searchParams = useSearchParams();
   const pathname = usePathname();
-  const search = useSearchParams();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const value = search.get("type") ?? "";
+  const value = selected && selected.length ? selected : "Все типы";
 
-  function update(next: string) {
-    const params = new URLSearchParams(search.toString());
-    if (next) params.set("type", next);
-    else params.delete("type");
+  function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value;
+    const sp = new URLSearchParams(searchParams.toString());
+    if (!next || next === "Все типы") sp.delete("type");
+    else sp.set("type", next);
+    // не ломаем выбранный город
+    const url = `${pathname}${sp.toString() ? "?" + sp.toString() : ""}`;
     startTransition(() => {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      router.replace(url, { scroll: false });
     });
   }
 
+  const options = ["Все типы", ...types];
+
   return (
     <select
-      className="border rounded-xl px-3 py-2"
+      className="border rounded-2xl px-4 py-3 text-lg outline-none"
       value={value}
-      onChange={(e) => update(e.target.value)}
+      onChange={onChange}
+      aria-label="Фильтр по типу"
       disabled={isPending}
-      aria-label="Тип помещения"
-      title="Тип помещения"
     >
-      <option value="">Все типы</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>{opt}</option>
+      {options.map((t) => (
+        <option key={t} value={t}>
+          {t}
+        </option>
       ))}
     </select>
   );
