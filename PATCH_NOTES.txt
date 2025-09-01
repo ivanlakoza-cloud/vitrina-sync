@@ -1,1 +1,1 @@
-Title & header use domus_export.adres_avito, hide order 20; icons set to /icon.svg for favicon.
+Homepage: add Type filter (AND). Files replaced: app/page.tsx, app/data.ts; new: components/TypeFilter.tsx

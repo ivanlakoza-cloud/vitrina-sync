@@ -25,15 +25,19 @@ export async function fetchCities(): Promise<string[]> {
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
 }
 
-export async function fetchList(city?: string) {
+export async function fetchList(city?: string, type?: string) {
   const client = sb();
   let q = client.from(TABLE).select("*").order("id", { ascending: true }).limit(120);
   if (city && city !== "Все города") {
     q = q.eq("city", city);
   }
+  if (type) {
+    q = q.eq("tip_pomescheniya", type);
+  }
   const { data } = await q;
   return (data || []) as any[];
 }
+
 
 export async function fetchByExternalId(external_id: string) {
   const client = sb();
@@ -43,32 +47,16 @@ export async function fetchByExternalId(external_id: string) {
 
 export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   const client = sb();
-
-  // Try base table first (источник истины)
-  let rows: any[] = [];
-  try {
-    const { data: tbl, error: e1 } = await client
-      .from("domus_field_order")
-      .select("column_name, display_name_ru, sort_order, visible")
-      .order("sort_order", { ascending: true });
-    if (!e1 && tbl) rows = tbl;
-  } catch {}
-
-  // Fallback на view, если таблица недоступна
-  if (!rows || rows.length === 0) {
-    const { data: view } = await client
-      .from("domus_field_order_view")
-      .select("column_name, display_name_ru, sort_order, visible")
-      .order("sort_order", { ascending: true });
-    rows = view || [];
-  }
-
+  // allow either a view or the base table
+  const { data: view } = await client.from("domus_field_order_view").select("*").order("sort_order", { ascending: true });
+  const rows = view || [];
   const dict: Record<string, FieldOrder> = {};
   rows.forEach((r: any) => {
     dict[r.column_name] = {
-      display_name_ru: r.display_name_ru ?? undefined,
-      sort_order: typeof r.sort_order === "number" ? r.sort_order : undefined,
-      visible: typeof r.visible === "boolean" ? r.visible : true,
+      column_name: r.column_name,
+      display_name_ru: r.display_name_ru,
+      sort_order: r.sort_order,
+      visible: r.visible,
     };
   });
   return dict;
@@ -92,4 +80,20 @@ export async function getGallery(external_id: string): Promise<string[]> {
 export async function getFirstPhoto(external_id: string): Promise<string | null> {
   const photos = await getGallery(external_id);
   return photos[0] || null;
+}
+
+
+export async function fetchTypes(): Promise<string[]> {
+  const client = sb();
+  const { data } = await client
+    .from(TABLE)
+    .select("tip_pomescheniya")
+    .not("tip_pomescheniya", "is", null);
+
+  const set = new Set<string>();
+  (data || []).forEach((r: any) => {
+    const v = String(r.tip_pomescheniya ?? "").trim();
+    if (v) set.add(v);
+  });
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
 }
