@@ -1,1 +1,1 @@
-Fix FieldOrder typing; prefer base table; show empty params in grey; manual 3-block layout; keep hide lists.
+Layout: wrap values without pushing labels; labels no break-all; empty values text-gray-300; footer grey for empty.
