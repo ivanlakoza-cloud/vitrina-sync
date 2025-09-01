@@ -6,6 +6,7 @@ import { fetchByExternalId, getGallery, fetchFieldOrder } from "@/app/data";
 
 export const dynamic = "force-dynamic";
 
+// Никогда не показываем как параметры
 const HIDE_KEYS = new Set<string>([
   "external_id","id_obekta","avito","planirovka","planirovka_otkrytayakabinetnayasmeshannaya",
   "unnamed_93","unnamed_94","unnamed_95","id","nedostatki",
@@ -13,7 +14,11 @@ const HIDE_KEYS = new Set<string>([
   "vozmozhnost_remontapereplanirovki",
   "zapreschennye_vidy_deyatelnosti_zhmykh_semena",
   "rasstoyanie_ot_tsentra_goroda_km__min",
-  "created_at","updated_at"
+  "created_at","updated_at",
+  // legacy/удалённые по словам заказчика
+  "probki_v_chasy_pik_nizkiesrednievysokie",
+  "infrastruktura_poblizosti_magaziny_banki_kafe_bts_gosuchrezhden",
+  "imidzh_rayona"
 ]);
 
 const BLOCK1 = [85,84,21,22,23,24,25,26,27];
@@ -50,7 +55,6 @@ export default async function Page({ params }: { params: { external_id: string }
     byOrder.set(meta.sort_order, list);
   }
 
-  // Build rows by sort_order list, optionally excluding specific orders
   function rowsFor(orders: number[], excludeOrders: number[] = []): Array<[string, any]> {
     const rows: Array<[string, any]> = [];
     const used = new Set<string>();
@@ -60,6 +64,7 @@ export default async function Page({ params }: { params: { external_id: string }
       const keys = byOrder.get(so) || [];
       for (const k of keys) {
         if (used.has(k)) continue;
+        if (HIDE_KEYS.has(k)) continue;
         const v = (rec as any)[k];
         if (!hasValue(v)) continue;
         const ru = d[k]?.display_name_ru;
@@ -71,7 +76,6 @@ export default async function Page({ params }: { params: { external_id: string }
     return rows;
   }
 
-  // MAIN ("Основное")
   const mainBlock: Array<[string, any]> = [];
   const push = (k: string, fallback: string) => {
     const v = (rec as any)[k];
@@ -87,8 +91,8 @@ export default async function Page({ params }: { params: { external_id: string }
   if (kmKey && hasValue((rec as any)[kmKey])) mainBlock.push([d[kmKey!]?.display_name_ru || "КМ %", (rec as any)[kmKey!]]);
 
   const block1Tail = rowsFor(BLOCK1);
-  const block2Rows = rowsFor(BLOCK2, [48]); // hide 48 here
-  const block3Rows = rowsFor(BLOCK3, [85]); // hide 85 here
+  const block2Rows = rowsFor(BLOCK2, [48]);
+  const block3Rows = rowsFor(BLOCK3, [85]);
   const footerRows = rowsFor(FOOTER);
 
   return (

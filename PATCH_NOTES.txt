@@ -1,1 +1,1 @@
-3-block layout; RU labels; values not bold; footer shows only values; hide order 48 in block2 and 85 in block3.
+Hide legacy keys; ensure RU labels; footer values only.
