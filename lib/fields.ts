@@ -1,72 +1,60 @@
-
-// Labels & helpers used across pages
-
 export type DomusRow = Record<string, any>;
-export type DomusRecord = DomusRow;
 
-export const prettyLabels: Record<string,string> = {
-  tip_pomescheniya: "Тип помещения",
-  "tip pomescheniya": "Тип помещения",
-  etazh: "Этаж",
-  dostupnaya_ploschad: "Доступная площадь",
-  address: "Адрес",
-  gde: "Где",
-  km: "КМ %",
-  "km %": "КМ %",
-  "km_": "КМ %",
-  planirovka: "Планировка",
-  "vysota potolkov": "Высота потолков",
-  vysota_potolkov: "Высота потолков",
-  parkovka: "Парковка",
-  // цены
-  "price per m2 20": "от 20",
-  "price per m2 50": "от 50",
-  "price per m2 100": "от 100",
-  "price per m2 400": "от 400",
-  "price per m2 700": "от 700",
-  "price per m2 1500": "от 1500",
-  price_per_m2_20: "от 20",
-  price_per_m2_50: "от 50",
-  price_per_m2_100: "от 100",
-  price_per_m2_400: "от 400",
-  price_per_m2_700: "от 700",
-  price_per_m2_1500: "от 1500",
-};
+export const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
 
-export function labelFor(key: string): string {
-  return prettyLabels[key] || key.replace(/[._]+/g, " ");
-}
-
-export function shortAddress(rec: DomusRow): string {
-  const parts = [];
-  if (rec.city) parts.push(String(rec.city));
-  const addr = rec.address || rec.adres || rec.adres_avito || rec.adres_23_58;
-  if (addr) parts.push(String(addr));
-  const out = parts.join(", ");
-  return out || (rec.zagolovok ? String(rec.zagolovok) : "Объект");
-}
-
-// keys to hide in details
-export const HIDDEN_KEYS = new Set<string>([
+// Keys to hide on the detail page
+export const hiddenKeys = new Set<string>([
   "srok_dogovora_let",
   "obespechitelnyy_platezh",
   "vozmozhnost_remontapereplanirovki",
   "ssylka_na_obyavlenie",
   "arendnye_kanikuly",
+  "created_at",
+  "updated_at",
+  "id",
+  "external_id",
 ]);
 
-// section heading keys
-export const HEADING_KEYS: Array<{key:string; title:string}> = [
-  { key: "1_lokatsiya_i_okruzhenie", title: "Локация и окружение" },
-  { key: "2_dostup_i_logistika", title: "Доступ и логистика" },
-  { key: "3_kharakteristiki_pomescheniya", title: "Характеристики помещения" },
-  { key: "4_kommunikatsii_i_tekhnicheskie_parametry", title: "Коммуникации и технические параметры" },
-  { key: "5_marketingovye_vozmozhnosti", title: "Маркетинговые возможности" },
-  { key: "6_usloviya_arendy", title: "Условия аренды" },
+// Section header fields (show as headings even if value is empty)
+export const SECTION_FIELDS: Record<string, string> = {
+  "1_lokatsiya_i_okruzhenie": "Локация и окружение",
+  "2_dostup_i_logistika": "Доступ и логистика",
+  "3_kharakteristiki_pomescheniya": "Характеристики помещения",
+  "4_kommunikatsii_i_tekhnicheskie_parametry": "Коммуникации и технические параметры",
+  "5_marketingovye_vozmozhnosti": "Маркетинговые возможности",
+  "6_usloviya_arendy": "Условия аренды",
+};
+
+// Fallback labels if SQL comments are unavailable
+export const prettyLabels: Record<string, string> = {
+  tip_pomescheniya: "Тип помещения",
+  etazh: "Этаж",
+  dostupnaya_ploschad: "Доступно",
+  km_: "КМ %",
+  address: "Адрес",
+  gde: "Где",
+};
+
+// Order for prices, with human labels
+export const PRICE_KEYS: Array<{key: string; label: string}> = [
+  { key: "price_per_m2_20", label: "от 20" },
+  { key: "price_per_m2_50", label: "от 50" },
+  { key: "price_per_m2_100", label: "от 100" },
+  { key: "price_per_m2_400", label: "от 400" },
+  { key: "price_per_m2_700", label: "от 700" },
+  { key: "price_per_m2_1500", label: "от 1500" },
 ];
 
-export function isEmpty(v: any): boolean {
-  if (v == null) return true;
-  if (typeof v === "string") return v.trim() === "";
-  return false;
+export function shortAddress(rec: DomusRow): string {
+  return (
+    rec["zagolovok"] ||
+    rec["address"] ||
+    rec["adres_avito"] ||
+    (rec["city"] ? `${rec["city"]}${rec["address"] ? ", " + rec["address"] : ""}` : "") ||
+    "—"
+  );
+}
+
+export function isSectionField(key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SECTION_FIELDS, key);
 }

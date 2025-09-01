@@ -1,96 +1,112 @@
-
-// Server data helpers for Vitrina (Supabase)
-// This file purposely exports the names used by the app entrypoints.
-
+// Server utilities for Vitrina
 import { createClient as createSbClient } from "@supabase/supabase-js";
+import type { DomusRow } from "@/lib/fields";
+import { TABLE } from "@/lib/fields";
 
-const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL  as string;
-const KEY  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-const TABLE = (process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export") as string;
-const BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
-
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
 const sb = createSbClient(URL, KEY);
 
-// Transparent 1x1 GIF (works as always-valid string src)
-const BLANK_IMG = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-
-// ---- Labels (from column descriptions via optional RPC) ----
-export async function fetchColumnLabels(): Promise<Record<string,string>> {
-  try {
-    const { data, error } = await sb.rpc("get_column_labels", { schema: "public", table: TABLE });
-    if (error || !data) return {};
-    // expect [{column:'name', comment:'label'}]
-    const map: Record<string,string> = {};
-    (data as any[]).forEach((r:any) => { if (r?.column && r?.comment) map[r.column] = r.comment; });
-    return map;
-  } catch (_) {
-    return {};
-  }
-}
-
-// ---- Cities ----
+// City list (distinct), filtered and sorted
 export async function fetchCities(): Promise<string[]> {
-  const { data, error } = await sb
-    .from(TABLE)
-    .select("city", { count: "exact" })
-    .not("city", "is", null);
-  if (error || !data) return ["Все города"];
-  const set = new Set<string>();
-  data.forEach((r:any) => { if (r.city) set.add(String(r.city)); });
-  const list = Array.from(set).sort((a,b)=>a.localeCompare(b, "ru"));
-  // убрать потенциальное "Все города" из данных
-  const filtered = list.filter(c => c.trim().toLowerCase() !== "все города");
-  return ["Все города", ...filtered];
+  const { data, error } = await sb.from(TABLE).select("city");
+  if (error) {
+    console.error("fetchCities error", error);
+    return [];
+  }
+  const all = Array.from(new Set((data ?? []).map((r: any) => r.city).filter(Boolean)));
+  return all.filter((c) => String(c).toLowerCase() !== "все города").sort((a, b) => a.localeCompare(b));
 }
 
-// ---- List ----
-export async function fetchList(city?: string): Promise<any[]> {
-  let q = sb.from(TABLE).select("*").order("id", { ascending: true }).limit(1000);
+// List for main grid
+export async function fetchList(city?: string): Promise<DomusRow[]> {
+  let q = sb
+    .from(TABLE)
+    .select(
+      [
+        "id",
+        "external_id",
+        "city",
+        "address",
+        "zagolovok",
+        "tip_pomescheniya",
+        "etazh",
+        "dostupnaya_ploschad",
+        "km_",
+        "price_per_m2_20",
+        "price_per_m2_50",
+        "price_per_m2_100",
+        "price_per_m2_400",
+        "price_per_m2_700",
+        "price_per_m2_1500",
+      ].join(",")
+    )
+    .order("id", { ascending: true });
+
   if (city && city !== "Все города") q = q.eq("city", city);
   const { data, error } = await q;
-  if (error || !data) return [];
-  return data as any[];
-}
-
-// ---- Single by id/external_id ----
-export async function fetchByExternalId(idOrExternal: string): Promise<any|null> {
-  // try as external_id then as id
-  let { data, error } = await sb.from(TABLE).select("*").eq("external_id", idOrExternal).single();
   if (error) {
-    const { data: d2 } = await sb.from(TABLE).select("*").eq("id", idOrExternal).single();
-    return d2 ?? null;
+    console.error("fetchList error", error);
+    return [];
   }
-  return data ?? null;
+  return (data ?? []) as DomusRow[];
 }
 
-// ---- Photos ----
-export async function getFirstPhoto(id: string): Promise<string> {
-  const gal = await getGallery(id);
-  if (gal.length) return gal[0];
-  // fallback: attempt to read disk_foto_plan column (comma/space separated urls)
-  try {
-    const { data } = await sb.from(TABLE).select("disk_foto_plan").eq("id", id).single();
-    const raw = (data as any)?.disk_foto_plan as string | null;
-    if (raw) {
-      const guess = raw.split(/[\s,;\n]+/).find(Boolean);
-      if (guess) return guess;
-    }
-  } catch {}
-  return BLANK_IMG;
+// Detail fetch: param can be numeric id (with or without 'id' prefix) or external_id
+export async function fetchByExternalId(param: string): Promise<DomusRow | null> {
+  const p = decodeURIComponent(param);
+  const m = p.match(/^id?\s*(\d+)$/i);
+  let q = sb.from(TABLE).select("*").limit(1);
+  if (m) {
+    q = q.eq("id", Number(m[1]));
+  } else {
+    q = q.eq("external_id", p);
+  }
+  const { data, error } = await q;
+  if (error) {
+    console.error("fetchByExternalId error", error);
+    return null;
+  }
+  return (data && data[0]) || null;
+}
+
+// Storage helpers
+export async function getFirstPhoto(id: string): Promise<string | null> {
+  const folder = `id${id.replace(/^id/i, "")}`;
+  const { data, error } = await sb.storage.from("photos").list(folder, {
+    limit: 1,
+    sortBy: { column: "name", order: "asc" },
+  });
+  if (error || !data || data.length === 0) return null;
+  const file = data[0].name;
+  const { data: pub } = sb.storage.from("photos").getPublicUrl(`${folder}/${file}`);
+  return pub?.publicUrl ?? null;
 }
 
 export async function getGallery(id: string): Promise<string[]> {
-  try {
-    const folder = `id${id}`;
-    const { data, error } = await sb.storage.from(BUCKET).list(folder);
-    if (error || !data) return [];
-    // public URLs
-    const urls = data
-      .filter((f:any) => !f.name.startsWith(".") )
-      .map((f:any) => sb.storage.from(BUCKET).getPublicUrl(`${folder}/${f.name}`).data.publicUrl)
-      .filter(Boolean);
-    return urls;
-  } catch {
-    return [];
+  const folder = `id${id.replace(/^id/i, "")}`;
+  const { data, error } = await sb.storage.from("photos").list(folder, {
+    limit: 100,
+    sortBy: { column: "name", order: "asc" },
+  });
+  if (error || !data) return [];
+  const urls = data.map((f) => sb.storage.from("photos").getPublicUrl(`${folder}/${f.name}`).data.publicUrl);
+  return urls;
+}
+
+// Column labels from Postgres comments (requires the SQL helper)
+export async function loadColumnLabels(): Promise<Record<string, string>> {
+  const { data, error } = await sb.rpc("get_column_labels", {
+    p_schema: "public",
+    p_table: TABLE,
+  });
+  if (error || !data) {
+    console.warn("get_column_labels RPC failed", error);
+    return {};
   }
+  const map: Record<string, string> = {};
+  for (const row of data as Array<{ col_name: string; label: string | null }>) {
+    if (row.col_name && row.label) map[row.col_name] = row.label;
+  }
+  return map;
 }

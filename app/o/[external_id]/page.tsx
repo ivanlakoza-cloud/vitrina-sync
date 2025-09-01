@@ -1,109 +1,128 @@
-
 import BackButton from "@/components/BackButton";
 import type { Metadata } from "next";
-import { fetchByExternalId, getGallery, fetchColumnLabels } from "@/app/data";
+import { fetchByExternalId, getGallery, loadColumnLabels } from "@/app/data";
 import PriceTable from "@/components/PriceTable";
-import { prettyLabels, labelFor, HIDDEN_KEYS, HEADING_KEYS, isEmpty } from "@/lib/fields";
+import { prettyLabels, SECTION_FIELDS, hiddenKeys, isSectionField, shortAddress } from "@/lib/fields";
 
-export const metadata: Metadata = {
-  title: "Объект",
-};
+type Props = { params: { external_id: string } };
 
-function Columns({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{children}</div>;
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const rec = await fetchByExternalId(params.external_id);
+  const title = rec ? shortAddress(rec) : "Объект";
+  return { title };
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border p-4">{children}</div>;
+function asPairs(obj: Record<string, any>): Array<[string, any]> {
+  return Object.entries(obj).filter(([k, v]) => v !== null && v !== undefined && String(v).trim() !== "");
 }
 
-export default async function Page({ params }: { params: { external_id: string } }) {
+export default async function Page({ params }: Props) {
   const rec = await fetchByExternalId(params.external_id);
   if (!rec) return <div className="p-6">Объект не найден</div>;
 
-  const id = String(rec.external_id || rec.id);
-  const title =
-    (rec.city ? `${rec.city}, ` : "") + (rec.address || rec.adres || rec.adres_avito || rec.zagolovok || "Объект");
+  const id = String(rec.id ?? rec.external_id ?? "");
+  const gallery = await getGallery(id);
 
-  const labels = { ...(await fetchColumnLabels()), ...prettyLabels };
-  const photos = await getGallery(String(rec.id));
+  // load labels from DB comments; merge with fallbacks
+  const fromDb = await loadColumnLabels();
+  const labels: Record<string, string> = { ...prettyLabels, ...fromDb };
 
-  const mainRows: Array<[string, any]> = [];
-  const push = (k:string, v:any, name?:string) => {
-    if (isEmpty(v)) return;
-    mainRows.push([name || (labels[k] || labelFor(k)), v]);
-  };
+  // Main block keys
+  const mainKeys: Array<[string, string]> = [
+    ["tip_pomescheniya", labels["tip_pomescheniya"] || "Тип помещения"],
+    ["etazh", labels["etazh"] || "Этаж"],
+    ["dostupnaya_ploschad", labels["dostupnaya_ploschad"] || "Доступно"],
+  ];
 
-  push("Тип помещения", rec.tip_pomescheniya || rec["tip pomescheniya"], "Тип помещения");
-  push("Этаж", rec.etazh, "Этаж");
-  push("Доступная площадь", rec.dostupnaya_ploschad || rec["dostupno"], "Доступная площадь");
+  // Prepare other fields, grouped by sections and filtered
+  const pairs = Object.keys(rec)
+    .filter((k) => !mainKeys.map(([key]) => key).includes(k))
+    .filter((k) => !hiddenKeys.has(k))
+    .map((k) => [k, rec[k]] as [string, any]);
+
+  // Build rows with section headers
+  const rows: Array<{ type: "section" | "row"; key: string; label: string; value?: string }> = [];
+  for (const [k, v] of pairs) {
+    if (isSectionField(k)) {
+      rows.push({ type: "section", key: k, label: SECTION_FIELDS[k] });
+      continue;
+    }
+    const label = labels[k] || k.replace(/_/g, " ");
+    rows.push({ type: "row", key: k, label, value: String(v) });
+  }
+
+  // Evenly distribute rows across two right columns
+  const mid = Math.ceil(rows.length / 2);
+  const colA = rows.slice(0, mid);
+  const colB = rows.slice(mid);
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div className="flex items-center gap-3">
-        <BackButton />
-        <div className="text-2xl font-semibold">{title}</div>
+        <BackButton /> <div className="text-2xl font-semibold">{shortAddress(rec)}</div>
       </div>
 
-      {/* photos */}
-      {photos?.length ? (
-        <div className="flex gap-3 overflow-x-auto snap-x">
-          {photos.map((src, i) => (
-            <img key={i} src={src} className="h-44 rounded-lg object-cover snap-start" alt="" />
+      {/* gallery */}
+      {gallery && gallery.length > 0 ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {gallery.map((src) => (
+            <img key={src} src={src} alt="Фото" className="w-full aspect-[4/3] object-cover rounded" />
           ))}
         </div>
       ) : null}
 
-      <Columns>
-        {/* main block */}
-        <Card>
-          <div className="grid grid-cols-[1fr_auto] gap-y-2 gap-x-8 text-sm">
-            {mainRows.map(([k, v]) => (
-              <>
-                <div className="font-medium">{k}</div>
-                <div>{String(v)}</div>
-              </>
-            ))}
-            <div className="col-span-2 mt-3">
-              <PriceTable rec={rec} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* left: main block */}
+        <div className="card p-5 space-y-3">
+          {mainKeys.map(([k, l]) => (
+            <div key={k} className="grid grid-cols-[220px,1fr] gap-3">
+              <div className="text-gray-600">{l}</div>
+              <div className="font-medium">
+                {k === "dostupnaya_ploschad" && rec[k] ? `${rec[k]} м²` : rec[k] ?? "—"}
+              </div>
             </div>
-            {/* KM right under prices */}
-            {rec.km || rec["km %"] || rec.km_ ? (
-              <>
-                <div className="font-medium mt-3">КМ %</div>
-                <div className="mt-3">{String(rec.km || rec["km %"] || rec.km_)}</div>
-              </>
-            ) : null}
-          </div>
-        </Card>
+          ))}
+          <PriceTable rec={rec} />
+          {"km_" in rec ? (
+            <div className="grid grid-cols-[220px,1fr] gap-3">
+              <div className="text-gray-600">{labels["km_"] || "КМ %"}</div>
+              <div className="font-medium">{rec["km_"] ?? "—"}</div>
+            </div>
+          ) : null}
+        </div>
 
-        {/* two more columns - we spread the rest equally */}
-        {[0,1].map((col) => (
-          <Card key={col}>
-            <div className="space-y-4">
-              {HEADING_KEYS.map((h, idx) => (
-                <div key={h.key + "_" + col + "_" + idx}>
-                  <div className="text-sm font-semibold mb-2">{h.title}</div>
-                  <div className="grid grid-cols-[1fr_auto] gap-x-8 gap-y-1 text-sm">
-                    {Object.entries(rec)
-                      .filter(([k]) => k.startsWith(h.key) || (!HEADING_KEYS.some(x=>k===x.key) && !HIDDEN_KEYS.has(k)))
-                      .filter(([k]) => !["id","external_id","created_at","updated_at"].includes(k))
-                      .filter(([,v]) => !isEmpty(v))
-                      .filter((_, i, arr) => i % 2 === col) // распределяем равномерно по двум картам
-                      .slice(0, 200)
-                      .map(([k, v]) => (
-                        <>
-                          <div className="text-slate-600">{labels[k] || labelFor(k)}</div>
-                          <div>{String(v)}</div>
-                        </>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        ))}
-      </Columns>
+        {/* middle column */}
+        <div className="card p-5 space-y-2">
+          {colA.map((it) =>
+            it.type === "section" ? (
+              <div key={it.key} className="pt-2 font-semibold text-gray-800">
+                {it.label}
+              </div>
+            ) : (
+              <div key={it.key} className="grid grid-cols-[220px,1fr] gap-3">
+                <div className="text-gray-600">{it.label}</div>
+                <div className="font-medium">{it.value}</div>
+              </div>
+            )
+          )}
+        </div>
+
+        {/* right column */}
+        <div className="card p-5 space-y-2">
+          {colB.map((it) =>
+            it.type === "section" ? (
+              <div key={it.key} className="pt-2 font-semibold text-gray-800">
+                {it.label}
+              </div>
+            ) : (
+              <div key={it.key} className="grid grid-cols-[220px,1fr] gap-3">
+                <div className="text-gray-600">{it.label}</div>
+                <div className="font-medium">{it.value}</div>
+              </div>
+            )
+          )}
+        </div>
+      </div>
     </div>
   );
 }
