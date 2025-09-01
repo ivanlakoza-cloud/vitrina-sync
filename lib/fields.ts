@@ -1,20 +1,35 @@
-export type DomusRecord = Record<string, any>;
-export const prettyLabels: Record<string,string> = {"external_id": "Внешний ID", "id_obekta": "ID объекта", "otobrazit_vse": "Город", "adres_23_58": "Адрес (23/58)", "zagolovok": "Заголовок", "tip_pomescheniya": "Тип помещения", "dostupnaya_ploschad": "Доступная площадь", "etazh": "Этаж", "ot_20": "от 20", "ot_50": "от 50", "ot_100": "от 100", "ot_400": "от 400", "ot_700": "от 700", "ot_1500": "от 1500", "km": "КМ %", "parkovka": "Парковка", "vysota_potolkov": "Высота потолков", "blizost_obschestvennogo_transporta": "Близость общественного транспорта", "infrastruktura_poblizosti_magaziny_banki_kafe_bc_gosuchrezhdeni": "Инфраструктура поблизости (магазины, банки, кафе, БЦ, госучреждения)", "tip_zdaniya": "Тип здания", "planirovka": "Планировка", "transportnaya_dostupnost_magistrali_razvyazki": "Транспортная доступность (магистрали, развязки)", "probki_v_chasy_pik_nizkie_srednie_vysokie": "Пробки в часы пик (низкие/средние/высокие)", "imidzh_raiona": "Имидж района", "otdelka": "Отделка"};
+// @ts-nocheck
+export const HIDDEN_KEYS = new Set([
+  "srok_dogovora_let",
+  "obespechitelnyy_platezh",
+  "vozmozhnost_remontapereplanirovki",
+  "ssylka_na_obyavlenie",
+  "arendnye_kanikuly",
+  "created_at","updated_at","id","external_id"
+]);
 
-export function pricePairs(rec: any): Array<{ label: string; value: string }> {
-  const keys: Array<[string,string]> = [
-    ["ot_20","от 20"],["ot_50","от 50"],["ot_100","от 100"],
-    ["ot_400","от 400"],["ot_700","от 700"],["ot_1500","от 1500"],
-  ];
-  const out: Array<{label: string; value: string}> = [];
-  for (const [k, label] of keys) {
-    const v = rec?.[k];
-    if (v !== null && v !== undefined && String(v).trim() !== "") out.push({ label, value: String(v) });
-  }
-  return out;
+export const HEADING_KEYS: string[] = [
+  "1_lokatsiya_i_okruzhenie",
+  "2_dostup_i_logistika",
+  "3_kharakteristiki_pomescheniya",
+  "4_kommunikatsii_i_tekhnicheskie_parametry",
+  "5_marketingovye_vozmozhnosti",
+  "6_usloviya_arendy",
+];
+
+export function humanizeKey(k: string) {
+  return k.replace(/_/g," ").replace(/\s+/g," ").trim();
 }
-export function shortAddress(rec: any): string {
-  const city = rec?.otobrazit_vse || rec?.city || "";
-  const addr = (rec?.adres_23_58) || ((rec?.adres_avito || "").replace(/^([^,]+),\s*/, ""));
-  return [city, addr].filter(Boolean).join(", ");
+
+export function labelFor(key: string, labels: Record<string,string>) {
+  if (labels && labels[key]) return labels[key];
+  return humanizeKey(key);
+}
+
+export function isEmpty(v: any) {
+  if (v === null || v === undefined) return true;
+  const s = String(v).trim();
+  if (s === "") return true;
+  if (s.toLowerCase() === "null") return true;
+  return false;
 }
