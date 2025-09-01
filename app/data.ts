@@ -1,4 +1,4 @@
-// Server data helpers (no client imports)
+// Server data helpers
 import { unstable_noStore as noStore } from "next/cache";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import type { FieldOrder } from "@/lib/fields";
@@ -9,33 +9,40 @@ const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
 const BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 
 function sb() { return createSbClient(URL, KEY); }
+
 function cityKey(r: any): string {
   return String(r?.city ?? r?.City ?? r?.["Город"] ?? "").trim();
+}
+function normCity(s: string): string {
+  return String(s || "").trim().toLowerCase();
+}
+function formatAddress(r: any): string {
+  const city = cityKey(r);
+  const addr = String(r?.address ?? r?.adres_avito ?? "").trim();
+  if (city && addr) return `${city}, ${addr}`;
+  return addr || city || "";
 }
 
 // ---------- Home page helpers ----------
 
-/** Список городов (уникальные) из колонок City и city. Безопасно для prod (игнорирует ошибки). */
+/** Уникальные города из City/city/"Город" (безопасно, без падений). */
 export async function fetchCities(): Promise<string[]> {
   noStore();
   const client = sb();
   const set = new Set<string>();
 
-  try {
-    const { data } = await client.from(TABLE).select("City").not("City", "is", null).limit(5000);
-    (data || []).forEach((r: any) => { const v = String(r?.City ?? "").trim(); if (v) set.add(v); });
-  } catch {}
-
-  try {
-    const { data } = await client.from(TABLE).select("city").not("city", "is", null).limit(5000);
-    (data || []).forEach((r: any) => { const v = String(r?.city ?? "").trim(); if (v) set.add(v); });
-  } catch {}
-
-  // Если в таблице есть локализованная "Город" — попытаемся, но молча игнорируем ошибку
-  try {
-    const { data } = await client.from(TABLE).select('"Город"').not('"Город"', "is", null).limit(5000);
-    (data || []).forEach((r: any) => { const v = String(r?.["Город"] ?? "").trim(); if (v) set.add(v); });
-  } catch {}
+  const trySel = async (sel: string, field: string) => {
+    try {
+      const { data } = await client.from(TABLE).select(sel).limit(5000);
+      (data || []).forEach((r: any) => {
+        const v = String(r?.[field] ?? "").trim();
+        if (v) set.add(v);
+      });
+    } catch {}
+  };
+  await trySel("City", "City");
+  await trySel("city", "city");
+  await trySel('"Город"', "Город");
 
   return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 }
@@ -44,34 +51,49 @@ export async function fetchCities(): Promise<string[]> {
 export async function fetchTypes(): Promise<string[]> {
   noStore();
   const client = sb();
-  const { data } = await client.from(TABLE).select("tip_pomescheniya").not("tip_pomescheniya", "is", null).limit(5000);
+  const { data } = await client
+    .from(TABLE)
+    .select("tip_pomescheniya")
+    .not("tip_pomescheniya", "is", null)
+    .limit(5000);
   const set = new Set<string>();
-  (data || []).forEach((r: any) => { const v = String(r?.tip_pomescheniya ?? "").trim(); if (v) set.add(v); });
+  (data || []).forEach((r: any) => {
+    const v = String(r?.tip_pomescheniya ?? "").trim();
+    if (v) set.add(v);
+  });
   return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-/** Список карточек. Фильтр по type — на БД, по city — на сервере по полям city/City/Город. */
+/** Карточки для главной. Фильтр по type — на БД. Фильтр по city — на сервере, без кейса/пробелов. */
 export async function fetchList(city?: string, type?: string): Promise<any[]> {
   noStore();
   const client = sb();
-  let q = client.from(TABLE).select("*").order("id", { ascending: true }).limit(120);
+  let q = client.from(TABLE).select("*").order("id", { ascending: true }).limit(200);
   if ((type ?? "").trim()) q = q.eq("tip_pomescheniya", type);
   const { data } = await q;
-  const rows = (data || []) as any[];
+  let rows = (data || []) as any[];
 
-  const selected = String(city ?? "").trim();
-  if (!selected || selected === "Все города") return rows;
+  const wanted = normCity(city ?? "");
+  if (wanted && wanted !== normCity("Все города")) {
+    rows = rows.filter((r) => normCity(cityKey(r)) === wanted);
+  }
 
-  return rows.filter((r) => cityKey(r) === selected);
+  // Приводим address к формату "Город, Адрес" (или только одно из них)
+  rows = rows.map((r) => ({ ...r, address: formatAddress(r) }));
+
+  return rows;
 }
 
 // ---------- Detail page helpers ----------
 
-/** Порядок/названия полей. */
+/** Порядок и русские названия полей. */
 export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   noStore();
   const client = sb();
-  const { data } = await client.from("domus_field_order_view").select("*").order("sort_order", { ascending: true });
+  const { data } = await client
+    .from("domus_field_order_view")
+    .select("*")
+    .order("sort_order", { ascending: true });
   const dict: Record<string, FieldOrder> = {};
   (data || []).forEach((r: any) => {
     dict[r.column_name] = {

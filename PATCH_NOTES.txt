@@ -1,1 +1,1 @@
-fetchCities(): union City/city/"Город" via separate selects; fetchList(): server-side filter by type + in-memory filter by city using cityKey();
+City filter normalized and applied server-side; address now comes as `address = "Город, Адрес"` (fallback to adres_avito).
