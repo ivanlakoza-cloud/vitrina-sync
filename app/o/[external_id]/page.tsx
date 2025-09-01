@@ -28,7 +28,7 @@ const BLOCK3 = [60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,8
 const FOOTER = [3,29];
 
 // Глобально скрываем строки по sort_order
-const HIDE_ORDERS = new Set<number>([20]); // не показываем в блоках, но используем в заголовке
+const HIDE_ORDERS = new Set<number>([20]); // заголовок берём из adres_avito, сам 20-й не показываем
 
 // Для каких sort_order лейблы НЕ серые даже при пустом значении
 const EMPH_ORDERS = new Set<number>([36,42,49,66,79,83]);
@@ -41,29 +41,22 @@ function hasValue(v: any): boolean {
 
 async function getTitleParts(external_id: string) {
   const [rec, dict] = await Promise.all([fetchByExternalId(external_id), fetchFieldOrder()]);
-  let titleValue: string | undefined = undefined;
-  // найдём ключ по sort_order = 20
-  const d: Record<string, { sort_order?: number }> = dict as any;
-  let k20: string | undefined;
-  for (const [k, meta] of Object.entries(d)) {
-    if (meta?.sort_order === 20) { k20 = k; break; }
+  // Полный адрес из domus_export.adres_avito
+  let header = (rec?.adres_avito as string) || "";
+  if (!hasValue(header)) {
+    header = (rec?.address as string) || (rec?.zagolovok as string) || "Объект";
   }
-  if (k20) {
-    const v = (rec as any)[k20];
-    if (hasValue(v)) titleValue = String(v);
-  }
-  const fallback = (rec?.address as string) || (rec?.zagolovok as string) || "Объект";
-  const finalTitle = `${titleValue || fallback} — Витрина Глобал`;
-  return { rec, dict, titleValue: titleValue || fallback, finalTitle };
+  const finalTitle = `${header} — Витрина Глобал`;
+  return { rec, dict, header, finalTitle };
 }
 
 export async function generateMetadata({ params }: { params: { external_id: string } }): Promise<Metadata> {
   const { finalTitle } = await getTitleParts(params.external_id);
-  return { title: finalTitle };
+  return { title: finalTitle, icons: { icon: "/icon.svg" } };
 }
 
 export default async function Page({ params }: { params: { external_id: string } }) {
-  const { rec, dict, titleValue } = await getTitleParts(params.external_id);
+  const { rec, dict, header } = await getTitleParts(params.external_id);
   if (!rec) return <div className="container py-6">Объект не найден</div>;
 
   const photos = await getGallery(params.external_id);
@@ -156,7 +149,7 @@ export default async function Page({ params }: { params: { external_id: string }
         <div className="flex items-center gap-4 text-sm text-gray-600">
           <BackButton />
         </div>
-        <div className="text-2xl font-bold">{titleValue}</div>
+        <div className="text-2xl font-bold text-right">{header}</div>
       </div>
 
       {!!photos.length && <PhotoStrip photos={photos} />}
