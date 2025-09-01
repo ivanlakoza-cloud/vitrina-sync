@@ -1,0 +1,22 @@
+*** a/app/page.tsx
+--- b/app/page.tsx
+***************
+*** 10,22 ****
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 xl:grid-cols-5">
+-    {await Promise.all(items.map(async (rec) => {
+-     const id = String(rec.id_obekta || rec.external_id || rec.id);
+-     const photo = await getFirstPhoto(id);
+-     const addrTitle = shortAddress(rec);
+-     return (<Link key={id} href={`/o/${encodeURIComponent(id)}`} className="card overflow-hidden">
++    {await Promise.all(items.map(async (item) => {
++     // fetchList() теперь возвращает элементы: { id, rec, photo }
++     const id = String(item.id);
++     const rec = item.rec;
++     const photo = item.photo ?? await getFirstPhoto(id);
++     const addrTitle = shortAddress(rec);
++     return (<Link key={id} href={`/o/${encodeURIComponent(id)}`} className="card overflow-hidden">
+        <img src={photo} alt={addrTitle} className="h-48 w-full object-cover" />
+        <div className="p-5 space-y-3">
+          <div className="text-lg font-semibold">{addrTitle}</div>
+          <div className="text-sm">
+---
