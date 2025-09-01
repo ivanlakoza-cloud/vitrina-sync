@@ -48,8 +48,8 @@ export default async function Page({ params }: { params: { external_id: string }
   for (const [key, val] of Object.entries(rec)) {
     if (HIDE.has(key)) continue;
     if (mainKeys.includes(key)) continue;
-    const order = (dict as any)[key]?.sort_order ?? 9999;
-    const visible = (dict as any)[key]?.visible ?? true;
+    const order = dict[key]?.sort_order ?? 9999;
+    const visible = dict[key]?.visible ?? true;
     const isSection = /^\d+_/.test(key);
     const hasValue = !(val === null || val === "" || typeof val === "undefined");
     if (isSection || (visible && hasValue)) {
@@ -58,23 +58,23 @@ export default async function Page({ params }: { params: { external_id: string }
   }
   entries.sort((a,b)=> a[2] - b[2]);
 
-  // build labels dict and unified rows (exclude section keys)
-  const labelsDict = Object.entries(dict).reduce((acc, [k, v]) => {
-    if (v && typeof (v as any).display_name_ru === 'string') (acc as any)[k] = (v as any).display_name_ru as string;
-    return acc;
-  }, {} as Record<string, string>);
+  // convert to display tuples with labels
+  const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
+    const label = prettyLabel(key, Object.fromEntries(Object.entries(dict).map(([k,v])=>[k, v.display_name_ru])));
+    const isSection = /^\d+_/.test(key);
+    return [label, val, isSection];
+  });
 
-  const rows: Array<[string, any]> = entries
-    .filter(([key]) => !/^\d+_/.test(String(key)))
-    .map(([key, val]) => {
-      const base = prettyLabel(String(key), labelsDict);
-      const so = (dict as any)[String(key)]?.sort_order;
-      const label = (typeof so === 'number') ? `${base} (${so})` : base;
-      return [label, val];
-    });
+  // distribute to 3 columns evenly (keeping section rows as titles in-place)
+  const cols: Array<Array<[string, any, boolean]>> = [[],[],[]];
+  let ci = 0;
+  for (const r of rows) {
+    cols[ci].push(r);
+    ci = (ci + 1) % 3;
+  }
 
   // footer: show hidden title & description if present
-  const footerTitle = rec.nazvanie_obyavleniya || rec.zagolovok_obyavleniya || null;
+  const footerTitle = rec.zagolovok || rec.zagolovok_ru || null;
   const footerText = rec.tekst_obyavleniya || rec.tekst || null;
 
   return (
@@ -86,19 +86,28 @@ export default async function Page({ params }: { params: { external_id: string }
 
       {!!photos.length && <PhotoStrip photos={photos} />}
 
-      <div className="section space-y-4">
-        <div className="text-lg font-semibold">Характеристики</div>
-        {mainBlock.map(([k,v]) => (
-          <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
-            <div className="text-gray-600">{k}</div>
-            <div className="font-medium">{String(v)}</div>
-          </div>
-        ))}
-        <PriceTable rec={rec} />
-        {rows.map(([label, value], i) => (
-          <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-            <div className="text-gray-600">{label}</div>
-            <div className="font-medium">{String(value)}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="section space-y-4">
+          <div className="text-lg font-semibold">Основное</div>
+          {mainBlock.map(([k,v]) => (
+            <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
+              <div className="text-gray-600">{k}</div>
+              <div className="font-medium">{String(v)}</div>
+            </div>
+          ))}
+          <PriceTable rec={rec} />
+        </div>
+
+        {cols.map((col, idx) => (
+          <div key={idx} className="section space-y-2">
+            {col.map(([label, value, isSection], i) => isSection ? (
+              <div key={i} className="pt-2 font-semibold text-gray-700">{label}</div>
+            ) : (
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
+                <div className="text-gray-600">{label}</div>
+                <div className="font-medium">{String(value)}</div>
+              </div>
+            ))}
           </div>
         ))}
       </div>

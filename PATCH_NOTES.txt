@@ -1,1 +1,1 @@
-Detail page replaced with a clean single-block version; keeps footer, PhotoStrip, PriceTable; shows (sort_order).
+Detail: prefer display_name_ru from domus_field_order_view for every key; Home untouched.
