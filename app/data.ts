@@ -1,136 +1,103 @@
-// app/data.ts
-import { supabase } from "@/lib/supabase";
+// Server utilities for Vitrina (drop-in)
+import { createClient } from "@/lib/supabase";
+import type { DomusRow } from "@/lib/fields";
 
-/**
- * Centralized configuration with safe defaults.
- * You can override via env vars on Vercel:
- *  - NEXT_PUBLIC_DOMUS_TABLE
- *  - NEXT_PUBLIC_PHOTOS_BUCKET
- */
-const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE ?? "domus_export";
-const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET ?? "photos";
+const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
+const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 
-/** Narrow row type only for fields we actually use in UI */
-export type DomusRow = {
-  id: number;
-  id_obekta: string | null;
-  city: string | null;
-  address: string | null;
-  // keep remainder loose to avoid compile breaks on schema changes
-  [k: string]: any;
-};
-
-/** Convert anything like "12" or "id12" to normalized folder key "id12" */
-function normalizeFolderKey(idOrSlug: string | number | null | undefined): string | null {
-  if (idOrSlug === null || idOrSlug === undefined) return null;
-  const raw = String(idOrSlug).trim();
-  if (!raw) return null;
-  if (/^id\d+$/i.test(raw)) return raw.toLowerCase();
-  const num = Number(String(raw).replace(/[^\d]/g, ""));
-  if (Number.isFinite(num)) return `id${num}`;
-  return null;
-}
-
-/** Public URL helper for storage object path */
-function publicUrl(path: string): string {
-  const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
-
-/**
- * List cities (deduped, sorted), intentionally ignoring
- * the service option "Все города" if it appears in the data.
- */
+/** Уникальные города по алфавиту, без null и без служебного "Все города" */
 export async function fetchCities(): Promise<string[]> {
+  const supabase = createClient();
   const { data, error } = await supabase
     .from(TABLE)
     .select("city")
-    .not("city", "is", null)     // drop NULLs
-    .neq("city", "Все города");  // drop service value if present
-  if (error) throw error;
-
-  const set = new Set<string>(
-    (data ?? [])
-      .map((r: any) => (r.city ?? "").toString().trim())
-      .filter(Boolean)
-  );
-  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
-}
-
-/**
- * Main listing for index page. Optional city filter.
- * Returns normalized id (folder key) and first photo URL (never null).
- */
-export async function fetchList(city?: string): Promise<Array<{ id: string; rec: DomusRow; photo: string }>> {
-  let q = supabase.from(TABLE).select("*").order("id", { ascending: false }).limit(5000);
-  if (city && city !== "Все города") q = q.eq("city", city);
-
-  const { data, error } = await q;
-  if (error) throw error;
-
-  const rows: DomusRow[] = (data as any[]) as DomusRow[];
-
-  const mapped = await Promise.all(rows.map(async (rec) => {
-    const idKey = normalizeFolderKey(rec.id_obekta ?? rec.id) || `id${rec.id}`;
-    const photo = await getFirstPhoto(idKey);
-    return { id: idKey, rec, photo };
-  }));
-
-  return mapped;
-}
-
-/**
- * Fetch single record by external slug.
- * Never throws for "not found" — returns null instead.
- */
-export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
-  // 1) Try exact external id
-  let resp = await supabase.from(TABLE).select("*").eq("id_obekta", slug).maybeSingle();
-  if (resp.error && resp.error.code !== "PGRST116") {
-    // unexpected error
-    console.error("[fetchByExternalId] error(id_obekta)", { slug, error: resp.error });
-  }
-  if (resp.data) return resp.data as DomusRow;
-
-  // 2) Fallback: take any digits from slug and match by numeric id
-  const num = Number(String(slug).replace(/[^\d]/g, ""));
-  if (Number.isFinite(num)) {
-    const alt = await supabase.from(TABLE).select("*").eq("id", num).maybeSingle();
-    if (alt.error && alt.error.code !== "PGRST116") {
-      console.error("[fetchByExternalId] error(id)", { slug, error: alt.error });
-    }
-    if (alt.data) return alt.data as DomusRow;
-  }
-
-  return null;
-}
-
-/**
- * Load gallery (array of public URLs) from storage/photos/<idKey>.
- * id can be "id12" or just 12 or a row containing id/id_obekta.
- */
-export async function getGallery(id: string | number | DomusRow): Promise<string[]> {
-  const idKey = typeof id === "object"
-    ? normalizeFolderKey((id as DomusRow).id_obekta ?? (id as DomusRow).id)
-    : normalizeFolderKey(id as any);
-
-  if (!idKey) return [];
-
-  const { data, error } = await supabase.storage.from(PHOTOS_BUCKET)
-    .list(idKey, { limit: 100, sortBy: { column: "name", order: "asc" } });
+    .order("city", { ascending: true });
 
   if (error) {
-    console.warn("[getGallery] storage.list error", error);
+    console.error("fetchCities error:", error);
     return [];
   }
 
-  return (data ?? [])
-    .filter(f => !f.name.startsWith(".")) // skip hidden/system
-    .map(f => publicUrl(`${idKey}/${f.name}`));
+  const uniq = new Set<string>();
+  for (const row of (data || []) as any[]) {
+    const v = row?.city;
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (s && s !== "Все города") uniq.add(s);
+    }
+  }
+  return Array.from(uniq).sort((a, b) => a.localeCompare(b));
 }
 
-/** First photo or a placeholder; always returns string */
-export async function getFirstPhoto(id: string | number | DomusRow): Promise<string> {
-  const gallery = await getGallery(id);
-  return gallery[0] ?? "/placeholder.svg";
+/**
+ * Список объектов для главной.
+ * Возвращаем ПЛОСКИЕ записи из таблицы (DomusRow[]),
+ * чтобы существующий рендер в app/page.tsx не ломался (используются rec.id_obekta / rec.external_id / rec.id).
+ */
+export async function fetchList(city?: string): Promise<DomusRow[]> {
+  const supabase = createClient();
+  let query = supabase.from(TABLE).select("*");
+
+  if (city && city.trim()) {
+    query = query.eq("city", city.trim());
+  }
+
+  const { data, error } = await query.order("id", { ascending: true });
+  if (error) {
+    console.error("fetchList error:", error);
+    return [];
+  }
+  return (data || []) as unknown as DomusRow[];
+}
+
+/** Подробно: поиск по id_obekta | external_id | id */
+export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
+  const supabase = createClient();
+  const s = String(slug);
+
+  for (const col of ["id_obekta", "external_id", "id"]) {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .eq(col, s)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      return data as unknown as DomusRow;
+    }
+  }
+  return null;
+}
+
+/** Все публичные ссылки на фото объекта (из бакета Supabase Storage). */
+export async function getGallery(id: string): Promise<string[]> {
+  const supabase = createClient();
+  const prefix = `${id}`; // photos/<id>/*
+
+  const { data, error } = await supabase.storage.from(PHOTOS_BUCKET).list(prefix, {
+    limit: 200,
+    sortBy: { column: "name", order: "asc" },
+  });
+
+  if (error) {
+    console.error("getGallery error:", error);
+    return [];
+  }
+
+  const files = (data || []).filter((f) => f && !f.name.startsWith("."));
+  const urls = files.map((f) => {
+    const { data: pub } = supabase.storage
+      .from(PHOTOS_BUCKET)
+      .getPublicUrl(`${prefix}/${f.name}`);
+    return pub.publicUrl;
+  });
+  return urls;
+}
+
+/** Первое фото или заглушка. */
+export async function getFirstPhoto(id: string): Promise<string> {
+  const pics = await getGallery(id);
+  if (pics.length > 0) return pics[0];
+  return "/placeholder.svg";
 }
