@@ -6,7 +6,6 @@ import { fetchByExternalId, getGallery, fetchFieldOrder } from "@/app/data";
 
 export const dynamic = "force-dynamic";
 
-// Никогда не показываем как параметры
 const HIDE_KEYS = new Set<string>([
   "external_id","id_obekta","avito","planirovka","planirovka_otkrytayakabinetnayasmeshannaya",
   "unnamed_93","unnamed_94","unnamed_95","id","nedostatki",
@@ -15,13 +14,11 @@ const HIDE_KEYS = new Set<string>([
   "zapreschennye_vidy_deyatelnosti_zhmykh_semena",
   "rasstoyanie_ot_tsentra_goroda_km__min",
   "created_at","updated_at",
-  // legacy/удалённые
   "probki_v_chasy_pik_nizkiesrednievysokie",
   "infrastruktura_poblizosti_magaziny_banki_kafe_bts_gosuchrezhden",
   "imidzh_rayona"
 ]);
 
-// Порядок блоков остаётся как в предыдущем патче
 const BLOCK1 = [85,84,21,22,23,24,25,26,27];
 const BLOCK2 = [36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59];
 const BLOCK3 = [60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,82,85,86];
@@ -106,14 +103,18 @@ export default async function Page({ params }: { params: { external_id: string }
   const block3Rows = rowsFor(BLOCK3, [85]);
   const footerRows = rowsFor(FOOTER);
 
-  // Вёрстка: лейбл переносится по словам; значение переносится и не раздвигает колонку
-  const Label = ({text}: {text: string}) => <div className="font-semibold text-gray-800 break-words">{text}</div>;
+  const Label = ({text}: {text: string}) => (
+    <div className="font-semibold text-gray-800 leading-snug break-words">{text}</div>
+  );
   const Value = ({text, ok}: {text: any, ok: boolean}) => (
-    <div className={(ok ? "" : "text-gray-300 ") + "whitespace-pre-wrap break-words"}>{String(text)}</div>
+    <div className={(ok ? "text-right " : "text-right text-gray-300 opacity-60 ") + "whitespace-pre-wrap break-words"}>
+      {String(text)}
+    </div>
   );
 
+  // Адаптивная строка: узкий авто-лейбл + гибкое значение
   const Row = ({label, v, ok, keyId}:{label:string; v:any; ok:boolean; keyId:string|number}) => (
-    <div key={String(keyId)} className="grid grid-cols-[1fr_minmax(0,1fr)] gap-x-8">
+    <div key={String(keyId)} className="grid grid-cols-[auto,1fr] gap-x-8 items-start">
       <Label text={label} />
       <Value text={v} ok={ok} />
     </div>
@@ -160,7 +161,7 @@ export default async function Page({ params }: { params: { external_id: string }
       {footerRows.length > 0 && (
         <div className="section space-y-2">
           {footerRows.map(([_, v, ok], i) => (
-            <div key={i} className={(ok ? "" : "text-gray-300 ") + "whitespace-pre-wrap"}>{String(v)}</div>
+            <div key={i} className={(ok ? "" : "text-gray-300 opacity-60 ") + "whitespace-pre-wrap"}>{String(v)}</div>
           ))}
         </div>
       )}

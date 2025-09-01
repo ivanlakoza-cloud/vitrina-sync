@@ -1,1 +1,1 @@
-Layout: wrap values without pushing labels; labels no break-all; empty values text-gray-300; footer grey for empty.
+Adaptive row layout (auto,1fr), right-aligned values; very light grey for empty; compact and readable.
