@@ -1,1 +1,1 @@
-Fix: remove `column_name` from FieldOrder value in fetchFieldOrder; set defaults for visible/sort_order.
+Add export fetchTypes(); update fetchList(city, type) to filter by tip_pomescheniya; keep FieldOrder shape (no column_name).

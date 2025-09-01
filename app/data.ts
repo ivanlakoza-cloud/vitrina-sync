@@ -25,9 +25,11 @@ export async function fetchCities(): Promise<string[]> {
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
 }
 
-export async function fetchList(city?: string) {
+export async function fetchList(city?: string, type?: string) {
+
   const client = sb();
-  let q = client.from(TABLE).select("*").order("id", { ascending: true }).limit(120);
+  let q = client.from(TABLE).select("*").order("id", { ascending: true 
+}).limit(120);
   if (city && city !== "Все города") {
     q = q.eq("city", city);
   }
@@ -49,10 +51,10 @@ export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   const dict: Record<string, FieldOrder> = {};
   rows.forEach((r: any) => {
     dict[r.column_name] = {
-      display_name_ru: r.display_name_ru ?? undefined,
-      sort_order: typeof r.sort_order === "number" ? r.sort_order : undefined,
-      visible: typeof r.visible === "boolean" ? r.visible : true,
-    };
+  display_name_ru: r.display_name_ru ?? undefined,
+  sort_order: typeof r.sort_order === "number" ? r.sort_order : undefined,
+  visible: typeof r.visible === "boolean" ? r.visible : true,
+};
   });
   return dict;
 }
@@ -75,4 +77,21 @@ export async function getGallery(external_id: string): Promise<string[]> {
 export async function getFirstPhoto(external_id: string): Promise<string | null> {
   const photos = await getGallery(external_id);
   return photos[0] || null;
+}
+
+
+export async function fetchTypes(): Promise<string[]> {
+  const client = sb();
+  const { data } = await client
+    .from(TABLE)
+    .select("tip_pomescheniya")
+    .not("tip_pomescheniya", "is", null);
+
+  const set = new Set<string>();
+  (data || []).forEach((r: any) => {
+    const v = String(r.tip_pomescheniya ?? "").trim();
+    if (v) set.add(v);
+  });
+
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 }
