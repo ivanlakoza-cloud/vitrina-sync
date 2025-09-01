@@ -1,64 +1,95 @@
+'use client';
 
-\"use client\";
-import React from \"react\";
+import React, { useEffect, useState, useCallback } from 'react';
 
 type Props = { photos: string[] };
 
 export default function PhotoStrip({ photos }: Props) {
-  const [open, setOpen] = React.useState(false);
-  const [index, setIndex] = React.useState(0);
-  const has = (photos || []).length > 0;
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
 
-  const show = (i: number) => {
-    setIndex(i);
-    setOpen(true);
-  };
+  const close = useCallback(() => setOpenIdx(null), []);
+  const prev = useCallback(() => setOpenIdx((i) => (i === null ? null : (i + photos.length - 1) % photos.length)), [photos.length]);
+  const next = useCallback(() => setOpenIdx((i) => (i === null ? null : (i + 1) % photos.length)), [photos.length]);
 
-  // swipe
-  const startX = React.useRef<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { startX.current = e.touches[0].clientX; };
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (startX.current == null) return;
-    const dx = e.changedTouches[0].clientX - startX.current;
-    if (dx > 40) prev(); else if (dx < -40) next();
-    startX.current = null;
-  };
-  const next = () => setIndex(i => (i + 1) % photos.length);
-  const prev = () => setIndex(i => (i - 1 + photos.length) % photos.length);
+  useEffect(() => {
+    if (openIdx === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+      if (e.key === 'ArrowLeft') prev();
+      if (e.key === 'ArrowRight') next();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openIdx, close, prev, next]);
 
-  if (!has) return null;
+  if (!photos || photos.length === 0) return null;
 
   return (
-    <div className=\"space-y-2\">
-      <div className=\"grid grid-cols-3 gap-3\">
-        {photos.slice(0, 9).map((src, i) => (
-          <button key={i} onClick={() => show(i)} className=\"block focus:outline-none\">
-            <img src={src} alt={\`Фото \${i+1}\`} className=\"h-56 w-full object-cover rounded-xl\" />
-          </button>
-        ))}
+    <div className="w-full">
+      {/* Horizontal, swipeable strip */}
+      <div className="relative">
+        <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory">
+          {photos.map((src, i) => (
+            <button
+              key={i}
+              type="button"
+              className="snap-start shrink-0 focus:outline-none"
+              onClick={() => setOpenIdx(i)}
+              aria-label={`Открыть фото ${i + 1}`}
+            >
+              <img
+                src={src}
+                alt={`Фото ${i + 1}`}
+                className="h-56 md:h-64 rounded-xl object-cover w-[360px] md:w-[420px]"
+                loading={i > 2 ? 'lazy' : 'eager'}
+                decoding="async"
+              />
+            </button>
+          ))}
+        </div>
       </div>
 
-      {open && (
+      {/* Minimal lightbox with keyboard & swipe-like controls */}
+      {openIdx !== null && (
         <div
-          className=\"fixed inset-0 z-50 bg-black/80 flex items-center justify-center\"
-          onClick={() => setOpen(false)}
-          onTouchStart={onTouchStart}
-          onTouchEnd={onTouchEnd}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={close}
+          role="dialog"
+          aria-modal="true"
         >
           <button
-            className=\"absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl\"
+            type="button"
             onClick={(e) => { e.stopPropagation(); prev(); }}
-            aria-label=\"Назад\"
-          >‹</button>
-          <img src={photos[index]} alt={\`Фото \${index+1}\`} className=\"max-h-[90vh] max-w-[90vw] object-contain rounded-xl\" />
+            className="absolute left-4 md:left-6 top-1/2 -translate-y-1/2 rounded-full bg-white/20 hover:bg-white/30 p-3 backdrop-blur"
+            aria-label="Предыдущее фото"
+          >
+            ‹
+          </button>
+
+          <img
+            src={photos[openIdx]}
+            alt={`Фото ${openIdx + 1}`}
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+
           <button
-            className=\"absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl\"
+            type="button"
             onClick={(e) => { e.stopPropagation(); next(); }}
-            aria-label=\"Вперёд\"
-          >›</button>
-          <div className=\"absolute bottom-4 left-0 right-0 text-center text-white text-sm\">
-            {index+1} / {photos.length}
-          </div>
+            className="absolute right-4 md:right-6 top-1/2 -translate-y-1/2 rounded-full bg-white/20 hover:bg-white/30 p-3 backdrop-blur"
+            aria-label="Следующее фото"
+          >
+            ›
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); close(); }}
+            className="absolute top-4 right-4 md:top-6 md:right-6 rounded-full bg-white/20 hover:bg-white/30 p-2 backdrop-blur"
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>
