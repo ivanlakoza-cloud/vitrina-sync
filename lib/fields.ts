@@ -100,6 +100,6 @@ export function prettyLabel(key: string, labels?: Record<string, string>): strin
 export function shortAddress(rec: DomusRow): string {
   const addr = (pick<string>(rec, ["address", "adres_avito", "adres_23_58"]) || "").toString().trim();
   const city = (pick<string>(rec, ["city", "Город"]) || "").toString().trim();
-  const title = (city && addr) ? `${city}, ${addr}` : (addr || city);
-  return title || "Объект";
+  if (city && addr) return `${city}, ${addr}`;
+  return city || addr || "Объект";
 }
