@@ -15,7 +15,7 @@ const HIDE_KEYS = new Set<string>([
   "zapreschennye_vidy_deyatelnosti_zhmykh_semena",
   "rasstoyanie_ot_tsentra_goroda_km__min",
   "created_at","updated_at",
-  // legacy/удалённые по словам заказчика
+  // legacy/удалённые
   "probki_v_chasy_pik_nizkiesrednievysokie",
   "infrastruktura_poblizosti_magaziny_banki_kafe_bts_gosuchrezhden",
   "imidzh_rayona"
@@ -55,8 +55,8 @@ export default async function Page({ params }: { params: { external_id: string }
     byOrder.set(meta.sort_order, list);
   }
 
-  function rowsFor(orders: number[], excludeOrders: number[] = []): Array<[string, any]> {
-    const rows: Array<[string, any]> = [];
+  function rowsFor(orders: number[], excludeOrders: number[] = []): Array<[string, any, boolean]> {
+    const rows: Array<[string, any, boolean]> = [];
     const used = new Set<string>();
     const exclude = new Set<number>(excludeOrders);
     for (const so of orders) {
@@ -66,34 +66,47 @@ export default async function Page({ params }: { params: { external_id: string }
         if (used.has(k)) continue;
         if (HIDE_KEYS.has(k)) continue;
         const v = (rec as any)[k];
-        if (!hasValue(v)) continue;
         const ru = d[k]?.display_name_ru;
         const label = (typeof ru === "string" && ru.trim()) ? ru : k;
-        rows.push([label, v]);
+        const hv = hasValue(v);
+        rows.push([label, hv ? v : "—", hv]);
         used.add(k);
       }
     }
     return rows;
   }
 
-  const mainBlock: Array<[string, any]> = [];
+  // Основное
+  const mainBlock: Array<[string, any, boolean]> = [];
   const push = (k: string, fallback: string) => {
     const v = (rec as any)[k];
-    if (hasValue(v)) {
-      const ru = d[k]?.display_name_ru;
-      mainBlock.push([(typeof ru === "string" && ru.trim()) ? ru : fallback, v]);
-    }
+    const ru = d[k]?.display_name_ru;
+    const label = (typeof ru === "string" && ru.trim()) ? ru : fallback;
+    const hv = hasValue(v);
+    mainBlock.push([label, hv ? v : "—", hv]);
   };
   push("tip_pomescheniya", "Тип помещения");
   push("etazh", "Этаж");
-  if (hasValue(rec.dostupnaya_ploschad)) mainBlock.push([d["dostupnaya_ploschad"]?.display_name_ru || "Доступная площадь", `${rec.dostupnaya_ploschad} м²`]);
+  if (d["dostupnaya_ploschad"]) {
+    const v = rec.dostupnaya_ploschad;
+    const hv = hasValue(v);
+    mainBlock.push([d["dostupnaya_ploschad"]?.display_name_ru || "Доступная площадь", hv ? `${v} м²` : "—", hv]);
+  }
   const kmKey = Object.keys(rec).find(k => k.toLowerCase() === "km_" || k.toLowerCase() === "km");
-  if (kmKey && hasValue((rec as any)[kmKey])) mainBlock.push([d[kmKey!]?.display_name_ru || "КМ %", (rec as any)[kmKey!]]);
+  if (kmKey) {
+    const v = (rec as any)[kmKey];
+    const hv = hasValue(v);
+    // @ts-ignore
+    mainBlock.push([d[kmKey]?.display_name_ru || "КМ %", hv ? v : "—", hv]);
+  }
 
   const block1Tail = rowsFor(BLOCK1);
   const block2Rows = rowsFor(BLOCK2, [48]);
   const block3Rows = rowsFor(BLOCK3, [85]);
   const footerRows = rowsFor(FOOTER);
+
+  const Label = ({text}: {text: string}) => <div className="font-semibold text-gray-800 break-words break-all">{text}</div>;
+  const Value = ({text, ok}: {text: any, ok: boolean}) => <div className={ok ? "font-normal" : "text-gray-400"}>{String(text)}</div>;
 
   return (
     <div className="container py-6 space-y-6">
@@ -107,39 +120,39 @@ export default async function Page({ params }: { params: { external_id: string }
         <div className="section space-y-4">
           <div className="text-lg font-semibold">Основное</div>
 
-          {mainBlock.map(([k,v]) => (
-            <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800 break-words break-all">{k}</div>
-              <div>{String(v)}</div>
+          {mainBlock.map(([label,v,ok], i) => (
+            <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
+              <Label text={label} />
+              <Value text={v} ok={ok} />
             </div>
           ))}
 
           <PriceTable rec={rec} />
 
-          {block1Tail.map(([label, value], i) => (
+          {block1Tail.map(([label,v,ok], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800 break-words break-all">{label}</div>
-              <div>{String(value)}</div>
+              <Label text={label} />
+              <Value text={v} ok={ok} />
             </div>
           ))}
         </div>
 
         <div className="section space-y-2">
           <div className="text-lg font-semibold">Блок 2</div>
-          {block2Rows.map(([label, value], i) => (
+          {block2Rows.map(([label,v,ok], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800 break-words break-all">{label}</div>
-              <div>{String(value)}</div>
+              <Label text={label} />
+              <Value text={v} ok={ok} />
             </div>
           ))}
         </div>
 
         <div className="section space-y-2">
           <div className="text-lg font-semibold">Блок 3</div>
-          {block3Rows.map(([label, value], i) => (
+          {block3Rows.map(([label,v,ok], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800 break-words break-all">{label}</div>
-              <div>{String(value)}</div>
+              <Label text={label} />
+              <Value text={v} ok={ok} />
             </div>
           ))}
         </div>
@@ -147,8 +160,8 @@ export default async function Page({ params }: { params: { external_id: string }
 
       {footerRows.length > 0 && (
         <div className="section space-y-2">
-          {footerRows.map(([_, value], i) => (
-            <div key={i} className="whitespace-pre-wrap">{String(value)}</div>
+          {footerRows.map(([_, v, ok], i) => (
+            <div key={i} className={ok ? "whitespace-pre-wrap" : "whitespace-pre-wrap text-gray-400"}>{String(v)}</div>
           ))}
         </div>
       )}

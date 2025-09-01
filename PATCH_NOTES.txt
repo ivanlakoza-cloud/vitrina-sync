@@ -1,1 +1,1 @@
-Prefer domus_field_order (fallback to view); add break-words to labels to prevent layout break; hide legacy keys as before.
+Fix FieldOrder typing; prefer base table; show empty params in grey; manual 3-block layout; keep hide lists.

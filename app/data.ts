@@ -43,36 +43,36 @@ export async function fetchByExternalId(external_id: string) {
 
 export async function fetchFieldOrder(): Promise<Record<string, FieldOrder>> {
   const client = sb();
-  // Prefer base table (полная истина), с откатом на VIEW если таблица недоступна
-  let rows: any[] | null = null;
+
+  // Try base table first (источник истины)
+  let rows: any[] = [];
   try {
-    const { data, error } = await client
+    const { data: tbl, error: e1 } = await client
       .from("domus_field_order")
       .select("column_name, display_name_ru, sort_order, visible")
       .order("sort_order", { ascending: true });
-    if (!error && data) rows = data as any[];
-  } catch (_) { /* ignore */ }
+    if (!e1 && tbl) rows = tbl;
+  } catch {}
 
+  // Fallback на view, если таблица недоступна
   if (!rows || rows.length === 0) {
     const { data: view } = await client
       .from("domus_field_order_view")
-      .select("column_name, display_name_ru, sort_order")
+      .select("column_name, display_name_ru, sort_order, visible")
       .order("sort_order", { ascending: true });
-    rows = (view || []) as any[];
+    rows = view || [];
   }
 
   const dict: Record<string, FieldOrder> = {};
   rows.forEach((r: any) => {
     dict[r.column_name] = {
-      column_name: r.column_name,
-      display_name_ru: r.display_name_ru,
-      sort_order: r.sort_order,
-      visible: (typeof r.visible === "boolean") ? r.visible : true,
+      display_name_ru: r.display_name_ru ?? undefined,
+      sort_order: typeof r.sort_order === "number" ? r.sort_order : undefined,
+      visible: typeof r.visible === "boolean" ? r.visible : true,
     };
   });
   return dict;
 }
-
 
 export async function getGallery(external_id: string): Promise<string[]> {
   const client = sb();
