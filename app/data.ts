@@ -3,21 +3,29 @@ import { supabase } from "@/lib/supabase";
 
 type AnyRec = Record<string, any>;
 
-// Map new DB column names -> legacy keys used in UI
-function normalize(rec: AnyRec): AnyRec {
+const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE as string;
+
+// -------- Normalization layer (new/old columns compatibility) ----------
+export function normalize(rec: AnyRec): AnyRec {
   const r: AnyRec = { ...rec };
 
-  // City/address
+  // City & address
   r.city = rec.city ?? rec.otobrazit_vse ?? null;
   r.address = rec.address ?? rec.adres_23_58 ?? rec.adres_avito ?? null;
 
-  // Keep legacy keys alive so существующие компоненты не ломались
+  // Keep legacy keys too (so UI that still reads старые поля не ломается)
   if (r.city && !r.otobrazit_vse) r.otobrazit_vse = r.city;
   if (r.address && !r.adres_avito) r.adres_avito = r.address;
 
-  // KM %, вход
-  r.km = rec.km_ ?? rec.km ?? null;
-  r.vhod = rec.vkhod ?? rec.vhod ?? null;
+  // Route ID (external_id used in URLs) — fallback to id_obekta or id
+  r.external_id = rec.external_id ?? rec.id_obekta ?? rec.id ?? null;
+  if (r.external_id != null) r.external_id = String(r.external_id);
+
+  // KM % and entry
+  r.km_ = rec.km_ ?? rec.km ?? null;
+  r.vkhod = rec.vkhod ?? rec.vhod ?? null;
+  // also keep old aliases:
+  r.km = r.km_;
 
   // Prices: fill both new and old keys
   const pairs: [string, string][] = [
@@ -37,42 +45,48 @@ function normalize(rec: AnyRec): AnyRec {
   return r;
 }
 
-const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE as string;
+// ----------------- Queries -----------------
 
-// ----- Catalog (list) -----
-
+// List (catalog)
 export async function fetchCatalog(city?: string) {
   let q = supabase.from(TABLE).select("*");
   if (city && city !== "Все города") {
-    // New column
-    q = q.eq("city", city);
+    const c = city.trim();
+    q = q.eq("city", c);
   }
   const { data, error } = await q.order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []).map(normalize);
 }
 
-// aliases for backward compatibility with older imports
-export const fetchData = fetchCatalog;
-export const getAll = fetchCatalog;
+// Single record by external_id (or id_obekta / id fallback)
+export async function fetchByExternalId(extId: string) {
+  const id = String(extId);
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("*")
+    .or(`external_id.eq.${id},id_obekta.eq.${id},id.eq.${id}`)
+    .limit(1)
+    .maybeSingle();
 
-// ----- Single record -----
-export async function fetchByExternalId(external_id: string) {
-  const { data, error } = await supabase.from(TABLE).select("*").eq("external_id", external_id).limit(1).single();
   if (error) throw error;
+  if (!data) return null;
   return normalize(data as AnyRec);
 }
-export const fetchRecord = fetchByExternalId;
 
-// ----- Cities list -----
+// Cities list for filter (robust to schema changes)
 export async function getCities(): Promise<string[]> {
-  // Read both columns to be safe
-  const { data, error } = await supabase.from(TABLE).select("city, otobrazit_vse");
+  const { data, error } = await supabase.from(TABLE).select("city");
   if (error) throw error;
   const set = new Set<string>();
   for (const row of data ?? []) {
-    if (row.city) set.add(row.city);
-    else if (row.otobrazit_vse) set.add(row.otobrazit_vse);
+    const c = (row as AnyRec).city;
+    if (typeof c === "string" && c.trim().length) set.add(c.trim());
   }
-  return ["Все города", ...Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'))];
+  return ["Все города", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ru"))];
 }
+
+// Aliases (backward compatibility)
+export const fetchData = fetchCatalog;
+export const getAll = fetchCatalog;
+export const fetchRecord = fetchByExternalId;
