@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 type AnyRec = Record<string, any>;
 
 const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE as string;
+const BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET as string;
 
 // -------- Normalization layer (new/old columns compatibility) ----------
 export function normalize(rec: AnyRec): AnyRec {
@@ -21,10 +22,9 @@ export function normalize(rec: AnyRec): AnyRec {
   r.external_id = rec.external_id ?? rec.id_obekta ?? rec.id ?? null;
   if (r.external_id != null) r.external_id = String(r.external_id);
 
-  // KM % and entry
+  // KM % and entry, keep aliases
   r.km_ = rec.km_ ?? rec.km ?? null;
   r.vkhod = rec.vkhod ?? rec.vhod ?? null;
-  // also keep old aliases:
   r.km = r.km_;
 
   // Prices: fill both new and old keys
@@ -86,7 +86,45 @@ export async function getCities(): Promise<string[]> {
   return ["Все города", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ru"))];
 }
 
-// Aliases (backward compatibility)
-export const fetchData = fetchCatalog;
+// ---------- Photos (Supabase Storage) ----------
+
+function publicUrl(path: string): string {
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// First photo for card
+export async function getFirstPhoto(externalId: string): Promise<string | null> {
+  if (!externalId) return null;
+  const prefix = `${externalId}`;
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
+  if (error) return null;
+  if (!data || data.length === 0) return null;
+  // pick first file-like object (skip nested folders if any)
+  const file = data.find((x: any) => x && x.name && !x.id) ?? data[0];
+  return publicUrl(`${prefix}/${file.name}`);
+}
+
+// Full gallery for detail page
+export async function getGallery(externalId: string): Promise<string[]> {
+  if (!externalId) return [];
+  const prefix = `${externalId}`;
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
+  if (error || !data) return [];
+  return data
+    .filter((x: any) => x && x.name)
+    .map((x: any) => publicUrl(`${prefix}/${x.name}`));
+}
+
+// --------- Backward-compatible export names (used in pages) ----------
+export const fetchList = fetchCatalog;
+export const fetchCities = getCities;
+
+// some pages import from "@/app/data" with these aliases too
 export const getAll = fetchCatalog;
+export const fetchData = fetchCatalog;
 export const fetchRecord = fetchByExternalId;
