@@ -1,1 +1,1 @@
-Homepage: add Type filter (AND). Files replaced: app/page.tsx, app/data.ts; new: components/TypeFilter.tsx
+Add Yandex.Metrika to all pages via next/script in RootLayout; set favicon icons.icon to /icon.svg.
