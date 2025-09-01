@@ -1,1 +1,1 @@
-Full fix: ensure fetchTypes export; AND filter; dynamic & noStore; City, Address on cards.
+app/data.ts: city filter now uses OR across columns city/City/"Город"; fetchCities unions columns; includes fetchTypes and other helpers; noStore() added.
