@@ -6,7 +6,6 @@ import { fetchByExternalId, getGallery, fetchFieldOrder } from "@/app/data";
 
 export const dynamic = "force-dynamic";
 
-// Колонки, которые никогда не показываем как параметры
 const HIDE_KEYS = new Set<string>([
   "external_id","id_obekta","avito","planirovka","planirovka_otkrytayakabinetnayasmeshannaya",
   "unnamed_93","unnamed_94","unnamed_95","id","nedostatki",
@@ -17,16 +16,15 @@ const HIDE_KEYS = new Set<string>([
   "created_at","updated_at"
 ]);
 
-// Жёсткая расстановка по sort_order (по просьбе заказчика)
-const BLOCK1 = new Set<number>([85,84,21,22,23,24,25,26,27]);
-const BLOCK2 = new Set<number>([36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59]);
-const BLOCK3 = new Set<number>([60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,82,85,86]);
-const FOOTER = new Set<number>([3,29]);
+const BLOCK1 = [85,84,21,22,23,24,25,26,27];
+const BLOCK2 = [36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59];
+const BLOCK3 = [60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,82,85,86];
+const FOOTER = [3,29];
 
 function hasValue(v: any): boolean {
   if (v === null || v === undefined) return false;
   if (typeof v === "string") return v.trim() !== "";
-  return true; // число/boolean/и т.д. считаем значением
+  return true;
 }
 
 export async function generateMetadata({ params }: { params: { external_id: string } }): Promise<Metadata> {
@@ -42,22 +40,23 @@ export default async function Page({ params }: { params: { external_id: string }
   const [photos, dict] = await Promise.all([getGallery(params.external_id), fetchFieldOrder()]);
   const d: Record<string, { sort_order?: number; display_name_ru?: string; visible?: boolean }> = dict as any;
 
-  // Инвертируем: sort_order -> список ключей
   const byOrder = new Map<number, string[]>();
   for (const [key, meta] of Object.entries(d)) {
     if (!meta || typeof meta.sort_order !== "number") continue;
     if (HIDE_KEYS.has(key)) continue;
-    if (!meta.visible && meta.visible !== undefined) continue;
-    const arr = byOrder.get(meta.sort_order) || [];
-    arr.push(key);
-    byOrder.set(meta.sort_order, arr);
+    if (meta.visible === false) continue;
+    const list = byOrder.get(meta.sort_order) || [];
+    list.push(key);
+    byOrder.set(meta.sort_order, list);
   }
 
-  // Хелпер: пройтись по нужным sort_order в указанном порядке, собрать пары [label, value]
-  function rowsFor(orders: number[]): Array<[string, any]> {
+  // Build rows by sort_order list, optionally excluding specific orders
+  function rowsFor(orders: number[], excludeOrders: number[] = []): Array<[string, any]> {
     const rows: Array<[string, any]> = [];
     const used = new Set<string>();
+    const exclude = new Set<number>(excludeOrders);
     for (const so of orders) {
+      if (exclude.has(so)) continue;
       const keys = byOrder.get(so) || [];
       for (const k of keys) {
         if (used.has(k)) continue;
@@ -72,23 +71,25 @@ export default async function Page({ params }: { params: { external_id: string }
     return rows;
   }
 
-  // "Основное": поля до таблицы цен
+  // MAIN ("Основное")
   const mainBlock: Array<[string, any]> = [];
-  const push = (k: string, label?: string) => {
+  const push = (k: string, fallback: string) => {
     const v = (rec as any)[k];
-    if (hasValue(v)) mainBlock.push([label || (d[k]?.display_name_ru || k), v]);
+    if (hasValue(v)) {
+      const ru = d[k]?.display_name_ru;
+      mainBlock.push([(typeof ru === "string" && ru.trim()) ? ru : fallback, v]);
+    }
   };
-  push("tip_pomescheniya", d["tip_pomescheniya"]?.display_name_ru || "Тип помещения");
-  push("etazh", d["etazh"]?.display_name_ru || "Этаж");
-  if (hasValue(rec.dostupnaya_ploschad)) mainBlock.push([d["dostupnaya_ploschad"]?.display_name_ru || "Доступно", `${rec.dostupnaya_ploschad} м²`]);
+  push("tip_pomescheniya", "Тип помещения");
+  push("etazh", "Этаж");
+  if (hasValue(rec.dostupnaya_ploschad)) mainBlock.push([d["dostupnaya_ploschad"]?.display_name_ru || "Доступная площадь", `${rec.dostupnaya_ploschad} м²`]);
   const kmKey = Object.keys(rec).find(k => k.toLowerCase() === "km_" || k.toLowerCase() === "km");
-  if (kmKey && hasValue((rec as any)[kmKey])) mainBlock.push([d[kmKey]?.display_name_ru || "КМ %", (rec as any)[kmKey]]);
+  if (kmKey && hasValue((rec as any)[kmKey])) mainBlock.push([d[kmKey!]?.display_name_ru || "КМ %", (rec as any)[kmKey!]]);
 
-  // Блоки по спискам sort_order
-  const block1Tail = rowsFor(Array.from(BLOCK1));
-  const block2Rows = rowsFor(Array.from(BLOCK2));
-  const block3Rows = rowsFor(Array.from(BLOCK3));
-  const footerRows = rowsFor(Array.from(FOOTER));
+  const block1Tail = rowsFor(BLOCK1);
+  const block2Rows = rowsFor(BLOCK2, [48]); // hide 48 here
+  const block3Rows = rowsFor(BLOCK3, [85]); // hide 85 here
+  const footerRows = rowsFor(FOOTER);
 
   return (
     <div className="container py-6 space-y-6">
@@ -105,7 +106,7 @@ export default async function Page({ params }: { params: { external_id: string }
           {mainBlock.map(([k,v]) => (
             <div key={String(k)} className="grid grid-cols-[1fr_auto] gap-x-8">
               <div className="font-semibold text-gray-800">{k}</div>
-              <div className="font-medium">{String(v)}</div>
+              <div>{String(v)}</div>
             </div>
           ))}
 
@@ -114,7 +115,7 @@ export default async function Page({ params }: { params: { external_id: string }
           {block1Tail.map(([label, value], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
               <div className="font-semibold text-gray-800">{label}</div>
-              <div className="font-medium">{String(value)}</div>
+              <div>{String(value)}</div>
             </div>
           ))}
         </div>
@@ -124,7 +125,7 @@ export default async function Page({ params }: { params: { external_id: string }
           {block2Rows.map(([label, value], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
               <div className="font-semibold text-gray-800">{label}</div>
-              <div className="font-medium">{String(value)}</div>
+              <div>{String(value)}</div>
             </div>
           ))}
         </div>
@@ -134,7 +135,7 @@ export default async function Page({ params }: { params: { external_id: string }
           {block3Rows.map(([label, value], i) => (
             <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
               <div className="font-semibold text-gray-800">{label}</div>
-              <div className="font-medium">{String(value)}</div>
+              <div>{String(value)}</div>
             </div>
           ))}
         </div>
@@ -142,11 +143,8 @@ export default async function Page({ params }: { params: { external_id: string }
 
       {footerRows.length > 0 && (
         <div className="section space-y-2">
-          {footerRows.map(([label, value], i) => (
-            <div key={i} className="grid grid-cols-[1fr_auto] gap-x-8">
-              <div className="font-semibold text-gray-800">{label}</div>
-              <div className="font-medium whitespace-pre-wrap">{String(value)}</div>
-            </div>
+          {footerRows.map(([_, value], i) => (
+            <div key={i} className="whitespace-pre-wrap">{String(value)}</div>
           ))}
         </div>
       )}
