@@ -1,7 +1,8 @@
-Fix FieldOrder mapping (2025‑09‑01)
-===================================
-app/data.ts:
-• В fetchFieldOrder() удалено свойство `column_name` из литерала объекта,
-  теперь записываем только:
-     { sort_order, display_name_ru, visible (по умолчанию true) }.
-• Это соответствует типу FieldOrder и снимает ошибку TS в Vercel.
+Types+labels (2025‑09‑01)
+-------------------------
+• lib/fields.ts
+  - FieldOrder расширен: { sort_order: number; display_name_ru?: string; visible?: boolean }
+  - shortAddress использует «City» (fallback: city, Город) + адрес
+• app/o/[external_id]/page.tsx
+  - Рядом с названием параметра показываем (sort_order)
+  - Безопасная сборка карты лейблов (без undefined)

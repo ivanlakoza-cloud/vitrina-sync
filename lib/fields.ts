@@ -22,8 +22,9 @@ export type Prices = {
 
 // Sorting meta fetched from DB (table with 'key' + 'sort_order')
 export type FieldOrder = {
-  key: string;
   sort_order: number;
+  display_name_ru?: string;
+  visible?: boolean;
 };
 
 // Keys that compose the "main" (header) block. We keep a broad list to be tolerant to renames.
@@ -97,8 +98,9 @@ export function prettyLabel(key: string, labels?: Record<string, string>): strin
 }
 
 export function shortAddress(rec: DomusRow): string {
-  const addr = (pick<string>(rec, ["address", "adres_avito", "adres_23_58"]) || "").toString().trim();
-  const city = (pick<string>(rec, ["City", "city", "Город"]) || "").toString().trim();
-  if (city && addr) return `${city}, ${addr}`;
-  return city || addr || "Объект";
+  const addr = pick<string>(rec, ["address", "adres_avito", "adres_23_58"]) || "";
+  const city = pick<string>(rec, ["City", "city", "Город"]) || "";
+  if (city && addr) return `${city}, ${addr}`.trim();
+  const title = String(addr || city || "").trim();
+  return title || "Объект";
 }

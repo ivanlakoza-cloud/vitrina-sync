@@ -58,15 +58,18 @@ export default async function Page({ params }: { params: { external_id: string }
   }
   entries.sort((a,b)=> a[2] - b[2]);
 
-  // convert to display tuples with labels
-  const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
-    const label = prettyLabel(key, Object.entries(dict).reduce((acc, [k, v]) => {
-      if (v && typeof v.display_name_ru === 'string') acc[k] = v.display_name_ru;
-      return acc;
-    }, {} as Record<string, string>));
-    const isSection = /^\d+_/.test(key);
-    return [label, val, isSection];
-  });
+  // convert to display tuples with labels and show sort_order
+const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
+  const labelsDict = Object.entries(dict).reduce((acc, [k, v]) => {
+    if (v && typeof v.display_name_ru === 'string') acc[k] = v.display_name_ru;
+    return acc;
+  }, {} as Record<string, string>);
+  const base = prettyLabel(key, labelsDict);
+  const so = dict[key]?.sort_order;
+  const label = (typeof so === 'number') ? `${base} (${so})` : base;
+  const isSection = /^\d+_/.test(key);
+  return [label, val, isSection];
+});
 
   // distribute to 3 columns evenly (keeping section rows as titles in-place)
   const cols: Array<Array<[string, any, boolean]>> = [[],[],[]];
