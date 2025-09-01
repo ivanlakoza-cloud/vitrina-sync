@@ -1,13 +1,21 @@
-// Server utilities for Vitrina (drop-in)
-import { createClient } from "@/lib/supabase";
+// Server utilities for Vitrina (drop-in, r3)
+// Использует прямой импорт из "@supabase/supabase-js", без "@/lib/supabase"
+import { createClient as createSbClient } from "@supabase/supabase-js";
 import type { DomusRow } from "@/lib/fields";
 
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
 const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE || "domus_export";
 const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET || "photos";
 
+function client() {
+  if (!URL || !KEY) throw new Error("Supabase env is missing");
+  return createSbClient(URL, KEY);
+}
+
 /** Уникальные города по алфавиту, без null и без служебного "Все города" */
 export async function fetchCities(): Promise<string[]> {
-  const supabase = createClient();
+  const supabase = client();
   const { data, error } = await supabase
     .from(TABLE)
     .select("city")
@@ -35,7 +43,7 @@ export async function fetchCities(): Promise<string[]> {
  * чтобы существующий рендер в app/page.tsx не ломался (используются rec.id_obekta / rec.external_id / rec.id).
  */
 export async function fetchList(city?: string): Promise<DomusRow[]> {
-  const supabase = createClient();
+  const supabase = client();
   let query = supabase.from(TABLE).select("*");
 
   if (city && city.trim()) {
@@ -52,7 +60,7 @@ export async function fetchList(city?: string): Promise<DomusRow[]> {
 
 /** Подробно: поиск по id_obekta | external_id | id */
 export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
-  const supabase = createClient();
+  const supabase = client();
   const s = String(slug);
 
   for (const col of ["id_obekta", "external_id", "id"]) {
@@ -72,7 +80,7 @@ export async function fetchByExternalId(slug: string): Promise<DomusRow | null> 
 
 /** Все публичные ссылки на фото объекта (из бакета Supabase Storage). */
 export async function getGallery(id: string): Promise<string[]> {
-  const supabase = createClient();
+  const supabase = client();
   const prefix = `${id}`; // photos/<id>/*
 
   const { data, error } = await supabase.storage.from(PHOTOS_BUCKET).list(prefix, {

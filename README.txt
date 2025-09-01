@@ -1,9 +1,13 @@
-Drop-in files for Vitrina (server data utilities)
+Drop-in r3 (без "@/lib/supabase")
+-------------------------------
+Что внутри:
+- app/data.ts — серверные функции, теперь напрямую используют @supabase/supabase-js.
+- public/placeholder.svg — заглушка, если нет фото.
 
-Files included:
-- app/data.ts — серверные функции (fetchCities, fetchList, fetchByExternalId, getGallery, getFirstPhoto)
-- public/placeholder.svg — заглушка на случай отсутствия фото
+Как применить:
+1) Распаковать в корень репозитория с заменой `app/data.ts` и `public/placeholder.svg` (если хотите заглушку).
+2) Коммит + деплой.
 
-How to use:
-1) Распакуйте архив В КОРЕНЬ вашего репозитория, согласившись на замену `app/data.ts`.
-2) Закоммитьте изменения и задеплойте.
+Зачем правка:
+- В логах Vercel: "Attempted import error: 'createClient' is not exported from '@/lib/supabase'".
+  Этот drop-in устраняет зависимость от '@/lib/supabase' и использует официальный SDK напрямую.
