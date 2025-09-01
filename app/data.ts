@@ -1,134 +1,136 @@
-
+// app/data.ts
 import { supabase } from "@/lib/supabase";
 
-type AnyRec = Record<string, any>;
+/**
+ * Centralized configuration with safe defaults.
+ * You can override via env vars on Vercel:
+ *  - NEXT_PUBLIC_DOMUS_TABLE
+ *  - NEXT_PUBLIC_PHOTOS_BUCKET
+ */
+const TABLE = process.env.NEXT_PUBLIC_DOMUS_TABLE ?? "domus_export";
+const PHOTOS_BUCKET = process.env.NEXT_PUBLIC_PHOTOS_BUCKET ?? "photos";
 
-// Safe fallbacks so PostgREST never sees public.undefined
-const TABLE = (process.env.NEXT_PUBLIC_DOMUS_TABLE ?? "domus_export") as string;
-const BUCKET = (process.env.NEXT_PUBLIC_PHOTOS_BUCKET ?? "photos") as string;
+/** Narrow row type only for fields we actually use in UI */
+export type DomusRow = {
+  id: number;
+  id_obekta: string | null;
+  city: string | null;
+  address: string | null;
+  // keep remainder loose to avoid compile breaks on schema changes
+  [k: string]: any;
+};
 
-if (!process.env.NEXT_PUBLIC_DOMUS_TABLE) {
-  console.warn("[Domus] NEXT_PUBLIC_DOMUS_TABLE is not set; falling back to 'domus_export'.");
-}
-if (!process.env.NEXT_PUBLIC_PHOTOS_BUCKET) {
-  console.warn("[Domus] NEXT_PUBLIC_PHOTOS_BUCKET is not set; falling back to 'photos'.");
-}
-
-// -------- Normalization layer (new/old columns compatibility) ----------
-export function normalize(rec: AnyRec): AnyRec {
-  const r: AnyRec = { ...rec };
-
-  // City & address
-  r.city = rec.city ?? rec.otobrazit_vse ?? null;
-  r.address = rec.address ?? rec.adres_23_58 ?? rec.adres_avito ?? null;
-
-  // Keep legacy keys too
-  if (r.city && !r.otobrazit_vse) r.otobrazit_vse = r.city;
-  if (r.address && !r.adres_avito) r.adres_avito = r.address;
-
-  // Route ID for URLs
-  r.external_id = rec.external_id ?? rec.id_obekta ?? rec.id ?? null;
-  if (r.external_id != null) r.external_id = String(r.external_id);
-
-  // KM % and entry, keep aliases
-  r.km_ = rec.km_ ?? rec.km ?? null;
-  r.vkhod = rec.vkhod ?? rec.vhod ?? null;
-  r.km = r.km_;
-
-  // Prices: fill both new and old keys
-  const pairs: [string, string][] = [
-    ["price_per_m2_20", "ot_20"],
-    ["price_per_m2_50", "ot_50"],
-    ["price_per_m2_100", "ot_100"],
-    ["price_per_m2_400", "ot_400"],
-    ["price_per_m2_700", "ot_700"],
-    ["price_per_m2_1500", "ot_1500"],
-  ];
-  for (const [n, o] of pairs) {
-    const val = rec[n] ?? rec[o] ?? null;
-    r[n] = val;
-    r[o] = val;
-  }
-
-  return r;
+/** Convert anything like "12" or "id12" to normalized folder key "id12" */
+function normalizeFolderKey(idOrSlug: string | number | null | undefined): string | null {
+  if (idOrSlug === null || idOrSlug === undefined) return null;
+  const raw = String(idOrSlug).trim();
+  if (!raw) return null;
+  if (/^id\d+$/i.test(raw)) return raw.toLowerCase();
+  const num = Number(String(raw).replace(/[^\d]/g, ""));
+  if (Number.isFinite(num)) return `id${num}`;
+  return null;
 }
 
-// ----------------- Queries -----------------
-
-// List (catalog)
-export async function fetchCatalog(city?: string) {
-  let q = supabase.from(TABLE).select("*");
-  if (city && city !== "Все города") {
-    const c = city.trim();
-    q = q.eq("city", c);
-  }
-  const { data, error } = await q.order("id", { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map(normalize);
-}
-
-// Single record by external_id (or id_obekta / id fallback)
-export async function fetchByExternalId(extId: string) {
-  const id = String(extId);
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .or(`external_id.eq.${id},id_obekta.eq.${id},id.eq.${id}`)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) return null;
-  return normalize(data as AnyRec);
-}
-
-// Cities list for filter
-export async function getCities(): Promise<string[]> {
-  const { data, error } = await supabase.from(TABLE).select("city");
-  if (error) throw error;
-  const set = new Set<string>();
-  for (const row of data ?? []) {
-    const c = (row as AnyRec).city;
-    if (typeof c === "string" && c.trim().length) set.add(c.trim());
-  }
-  return ["Все города", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ru"))];
-}
-
-// ---------- Photos (Supabase Storage) ----------
-
+/** Public URL helper for storage object path */
 function publicUrl(path: string): string {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 
-// First photo for card — return undefined if нет фото (чтобы TS не ругался на null)
-export async function getFirstPhoto(externalId: string): Promise<string | undefined> {
-  if (!externalId) return undefined;
-  const prefix = `${externalId}`;
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
-  if (error || !data || data.length === 0) return undefined;
-  const file = data.find((x: any) => x && x.name && !x.id) ?? data[0];
-  return publicUrl(`${prefix}/${file.name}`);
+/**
+ * List cities (deduped, sorted), intentionally ignoring
+ * the service option "Все города" if it appears in the data.
+ */
+export async function fetchCities(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("city")
+    .not("city", "is", null)     // drop NULLs
+    .neq("city", "Все города");  // drop service value if present
+  if (error) throw error;
+
+  const set = new Set<string>(
+    (data ?? [])
+      .map((r: any) => (r.city ?? "").toString().trim())
+      .filter(Boolean)
+  );
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-// Full gallery for detail page
-export async function getGallery(externalId: string): Promise<string[]> {
-  if (!externalId) return [];
-  const prefix = `${externalId}`;
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
-  if (error || !data) return [];
-  return data
-    .filter((x: any) => x && x.name)
-    .map((x: any) => publicUrl(`${prefix}/${x.name}`));
+/**
+ * Main listing for index page. Optional city filter.
+ * Returns normalized id (folder key) and first photo URL (never null).
+ */
+export async function fetchList(city?: string): Promise<Array<{ id: string; rec: DomusRow; photo: string }>> {
+  let q = supabase.from(TABLE).select("*").order("id", { ascending: false }).limit(5000);
+  if (city && city !== "Все города") q = q.eq("city", city);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const rows: DomusRow[] = (data as any[]) as DomusRow[];
+
+  const mapped = await Promise.all(rows.map(async (rec) => {
+    const idKey = normalizeFolderKey(rec.id_obekta ?? rec.id) || `id${rec.id}`;
+    const photo = await getFirstPhoto(idKey);
+    return { id: idKey, rec, photo };
+  }));
+
+  return mapped;
 }
 
-// --------- Backward-compatible export names ----------
-export const fetchList = fetchCatalog;
-export const fetchCities = getCities;
-export const getAll = fetchCatalog;
-export const fetchData = fetchCatalog;
-export const fetchRecord = fetchByExternalId;
+/**
+ * Fetch single record by external slug.
+ * Never throws for "not found" — returns null instead.
+ */
+export async function fetchByExternalId(slug: string): Promise<DomusRow | null> {
+  // 1) Try exact external id
+  let resp = await supabase.from(TABLE).select("*").eq("id_obekta", slug).maybeSingle();
+  if (resp.error && resp.error.code !== "PGRST116") {
+    // unexpected error
+    console.error("[fetchByExternalId] error(id_obekta)", { slug, error: resp.error });
+  }
+  if (resp.data) return resp.data as DomusRow;
+
+  // 2) Fallback: take any digits from slug and match by numeric id
+  const num = Number(String(slug).replace(/[^\d]/g, ""));
+  if (Number.isFinite(num)) {
+    const alt = await supabase.from(TABLE).select("*").eq("id", num).maybeSingle();
+    if (alt.error && alt.error.code !== "PGRST116") {
+      console.error("[fetchByExternalId] error(id)", { slug, error: alt.error });
+    }
+    if (alt.data) return alt.data as DomusRow;
+  }
+
+  return null;
+}
+
+/**
+ * Load gallery (array of public URLs) from storage/photos/<idKey>.
+ * id can be "id12" or just 12 or a row containing id/id_obekta.
+ */
+export async function getGallery(id: string | number | DomusRow): Promise<string[]> {
+  const idKey = typeof id === "object"
+    ? normalizeFolderKey((id as DomusRow).id_obekta ?? (id as DomusRow).id)
+    : normalizeFolderKey(id as any);
+
+  if (!idKey) return [];
+
+  const { data, error } = await supabase.storage.from(PHOTOS_BUCKET)
+    .list(idKey, { limit: 100, sortBy: { column: "name", order: "asc" } });
+
+  if (error) {
+    console.warn("[getGallery] storage.list error", error);
+    return [];
+  }
+
+  return (data ?? [])
+    .filter(f => !f.name.startsWith(".")) // skip hidden/system
+    .map(f => publicUrl(`${idKey}/${f.name}`));
+}
+
+/** First photo or a placeholder; always returns string */
+export async function getFirstPhoto(id: string | number | DomusRow): Promise<string> {
+  const gallery = await getGallery(id);
+  return gallery[0] ?? "/placeholder.svg";
+}
