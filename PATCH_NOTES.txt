@@ -1,1 +1,1 @@
-Add Yandex.Metrika to all pages via next/script in RootLayout; set favicon icons.icon to /icon.svg.
+Fix: remove `column_name` from FieldOrder value in fetchFieldOrder; set defaults for visible/sort_order.
