@@ -1,1 +1,1 @@
-Detail: single block (Основное → PriceTable → others by sort_order), hide by custom sort_order list; Home untouched.
+Manual 3-block layout; bold labels; only non-empty values; footer orders 3 & 29; Home untouched.
