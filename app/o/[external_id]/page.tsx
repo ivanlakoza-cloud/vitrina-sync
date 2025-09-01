@@ -59,9 +59,26 @@ export default async function Page({ params }: { params: { external_id: string }
   entries.sort((a,b)=> a[2] - b[2]);
 
   // convert to display tuples with labels
-  const rows: Array<[string, any, boolean]> = entries.map(([key, val]) => {
-    const label = prettyLabel(key, Object.fromEntries(Object.entries(dict).map(([k,v])=>[k, v.display_name_ru])));
-    const isSection = /^\d+_/.test(key);
+// 1) Make a strict labels dict from domus_field_order_view (no undefined values)
+const labelsDict: Record<string, string> = Object.entries(dict).reduce((acc, [k, v]) => {
+  const ru = (v as any)?.display_name_ru;
+  if (typeof ru === "string" && ru.trim()) acc[k] = ru;
+  return acc;
+}, {} as Record<string, string>);
+
+// 2) Hide entries whose sort_order is in the blacklist (only for the "other" part)
+const HIDE_ORDER = new Set<number>([3, 6, 13, 14, 15, 17, 18, 19, 20, 32, 33, 38, 39, 40, 41, 49, 51, 57, 79, 87, 89, 98, 100]);
+
+const rows: Array<[string, any, boolean]> = entries
+  .filter(([key]) => {
+    const so = (dict as any)[String(key)]?.sort_order as number | undefined;
+    return !(typeof so === "number" && HIDE_ORDER.has(so));
+  })
+  .map(([key, val]) => {
+    const base = prettyLabel(String(key), labelsDict);
+    const so = (dict as any)[String(key)]?.sort_order as number | undefined;
+    const label = typeof so === "number" ? `${base} (${so})` : base;
+    const isSection = /^\d+_/.test(String(key));
     return [label, val, isSection];
   });
 
