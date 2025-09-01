@@ -1,3 +1,19 @@
-Both filters write to URL via router.replace and preserve each other's params.
-CityFilter now sets ?city=, TypeFilter sets ?type=.
-Ensure app/page.tsx passes selected from searchParams.
+Что внутри:
+- app/data.ts — адрес теперь "Город, Адрес"; фильтр по типу на БД; по городу — на сервере (без регистра/пробелов).
+- components/CityFilter.tsx — записывает ?city= в URL и сохраняет ?type=.
+- components/TypeFilter.tsx — записывает ?type= в URL и сохраняет ?city=. Совместим со старым пропом options.
+
+Что поменять в app/page.tsx:
+1) Импорты:
+   import CityFilter from "@/components/CityFilter";
+   import TypeFilter from "@/components/TypeFilter";
+2) Значения:
+   const selectedCity = (searchParams?.city as string) || "Все города";
+   const selectedType = (searchParams?.type as string) || "Все типы";
+3) Рендер фильтров:
+   <CityFilter cities={cities} selected={selectedCity} />
+   <TypeFilter types={types} selected={selectedType} />
+   // Если не хотите править логику типов, можно оставить старую строку:
+   // <TypeFilter options={types} selected={selectedType} />
+
+После замены файлы можно просто положить в корень репозитория поверх существующих.

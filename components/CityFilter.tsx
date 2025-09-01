@@ -21,7 +21,6 @@ export default function CityFilter({ cities, selected }: Props) {
     const sp = new URLSearchParams(searchParams.toString());
     if (!next || next === "Все города") sp.delete("city");
     else sp.set("city", next);
-    // оставляем выбранный тип
     const url = `${pathname}${sp.toString() ? "?" + sp.toString() : ""}`;
     startTransition(() => {
       router.replace(url, { scroll: false });

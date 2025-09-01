@@ -4,11 +4,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
 type Props = {
-  types: string[];
+  /** Новый проп */
+  types?: string[];
+  /** Обратная совместимость со старой разметкой: <TypeFilter options={types} /> */
+  options?: string[];
   selected?: string;
 };
 
-export default function TypeFilter({ types, selected }: Props) {
+export default function TypeFilter({ types, options, selected }: Props) {
+  const list = types ?? options ?? [];
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -21,14 +25,13 @@ export default function TypeFilter({ types, selected }: Props) {
     const sp = new URLSearchParams(searchParams.toString());
     if (!next || next === "Все типы") sp.delete("type");
     else sp.set("type", next);
-    // не ломаем выбранный город
     const url = `${pathname}${sp.toString() ? "?" + sp.toString() : ""}`;
     startTransition(() => {
       router.replace(url, { scroll: false });
     });
   }
 
-  const options = ["Все типы", ...types];
+  const optionsList = ["Все типы", ...list];
 
   return (
     <select
@@ -38,7 +41,7 @@ export default function TypeFilter({ types, selected }: Props) {
       aria-label="Фильтр по типу"
       disabled={isPending}
     >
-      {options.map((t) => (
+      {optionsList.map((t) => (
         <option key={t} value={t}>
           {t}
         </option>

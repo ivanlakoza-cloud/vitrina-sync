@@ -25,7 +25,7 @@ function formatAddress(r: any): string {
 
 // ---------- Home page helpers ----------
 
-/** Уникальные города из City/city/"Город" (безопасно, без падений). */
+/** Уникальные города из City/city/"Город" (безопасно). */
 export async function fetchCities(): Promise<string[]> {
   noStore();
   const client = sb();
@@ -64,12 +64,12 @@ export async function fetchTypes(): Promise<string[]> {
   return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-/** Карточки для главной. Фильтр по type — на БД. Фильтр по city — на сервере, без кейса/пробелов. */
+/** Карточки для главной. Фильтр по type — на БД. Фильтр по city — на сервере, без регистра/пробелов. */
 export async function fetchList(city?: string, type?: string): Promise<any[]> {
   noStore();
   const client = sb();
   let q = client.from(TABLE).select("*").order("id", { ascending: true }).limit(200);
-  if ((type ?? "").trim()) q = q.eq("tip_pomescheniya", type);
+  if ((type ?? "").trim() && type !== "Все типы") q = q.eq("tip_pomescheniya", type);
   const { data } = await q;
   let rows = (data || []) as any[];
 
@@ -78,7 +78,7 @@ export async function fetchList(city?: string, type?: string): Promise<any[]> {
     rows = rows.filter((r) => normCity(cityKey(r)) === wanted);
   }
 
-  // Приводим address к формату "Город, Адрес" (или только одно из них)
+  // Приводим address к формату "Город, Адрес" для плитки
   rows = rows.map((r) => ({ ...r, address: formatAddress(r) }));
 
   return rows;
