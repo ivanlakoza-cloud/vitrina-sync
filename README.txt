@@ -1,22 +1,38 @@
-# Map Links patch (overlay)
+Vitrina — Map links near Back button (drop-in patch)
+===================================================
 
-Files included:
-- components/MapLinks.tsx
-- public/2gis.png
-- public/ya_mao.png
-- public/goglemap.png
+What this adds
+--------------
+A small component `components/MapLinks.tsx` that renders three 30px map buttons
+(2ГИС, Яндекс.Карты, Google) with 20px gaps. Buttons open maps search for the
+address from your record (prefer `adres_avito`, fallback to `address`).
 
-How to use (page: app/o/[external_id]/page.tsx):
-------------------------------------------------
-import MapLinks from "@/components/MapLinks";
+Files in this archive
+---------------------
+components/MapLinks.tsx
 
-// get address from record:
-const addrAvito = (rec?.adres_avito as string | undefined) ?? null;
+How to wire it (2 lines of code)
+--------------------------------
+1) Import the component in `app/o/[external_id]/page.tsx`:
+   -------------------------------------------------------
+   import MapLinks from "@/components/MapLinks";
 
-// in section header "2. Локация и окружение" put the component on the right:
-<div className="flex items-center justify-between mb-4">
-  <h2 className="text-xl font-semibold">2. Локация и окружение</h2>
-  <MapLinks address={addrAvito} />
-</div>
+2) Render it to the right of the Back button:
+   ------------------------------------------
+   Replace your Back-button container with something like:
 
-That’s it. Icons are 30px, gaps are 20px. If address is empty, the row hides itself.
+   <div className="flex items-center">
+     <BackButton />
+     <MapLinks address={rec?.adres_avito || rec?.address} />
+   </div>
+
+That’s it. The icons will sit to the right of your Back button with a small left
+margin and 20px spacing between themselves. Buttons are disabled (greyed out) if
+the address is empty, so the page won't break if the field is missing.
+
+Notes
+-----
+- Icons expected at public root: /2gis.png, /ya_mao.png, /goglemap.png
+  (use the ones you sent earlier). If you keep them in a subfolder, update the src.
+- The component is client-side for hover/opacity only; it doesn’t require state.
+- Uses Tailwind classes. If you don’t use Tailwind, replace classes with your CSS.
