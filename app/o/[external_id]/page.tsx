@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import PhotoStrip from "@/components/PhotoStrip";
 import PriceTable from "@/components/PriceTable";
 import { fetchByExternalId, getGallery, fetchFieldOrder } from "@/app/data";
+import MapLinks from "@/components/MapLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -147,7 +148,8 @@ export default async function Page({ params }: { params: { external_id: string }
     <div className="container py-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 text-sm text-gray-600">
-          <BackButton />
+            <BackButton />
+            <MapLinks address={rec?.adres_avito || rec?.address} />
         </div>
         <div className="text-2xl font-bold text-right">{header}</div>
       </div>
