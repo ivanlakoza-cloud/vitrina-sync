@@ -1,7 +1,6 @@
 (function(){
   const $ = s => document.querySelector(s);
   const pre = (el, data) => { try { el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2); } catch(e){ el.textContent = String(data); } };
-  const qs = (k)=> new URLSearchParams(location.search).get(k);
   const now = ()=> new Date().toLocaleTimeString();
 
   const summary = $('#summary');
@@ -13,15 +12,20 @@
   const manualId = $('#manualId');
   const dealEl = $('#deal');
   const authEl = $('#auth');
+  const serverEl = $('#server');
+
+  // Show server-captured POST/GET data
+  pre(serverEl, (window as any).__B24_POST || "(нет данных)");
+  const serverData = (window as any).__B24_POST || {};
 
   $('#copyTpl').onclick = ()=>{
-    const input = $('#tpl');
+    const input = $('#tpl') as HTMLInputElement;
     input.select(); input.setSelectionRange(0, 99999);
     document.execCommand('copy');
   };
 
-  function detectId(placement){
-    const opt = (placement && placement.options) || {};
+  function detectId(placement: any){
+    const opt = (placement && placement.options) || serverData.PLACEMENT_OPTIONS_PARSED || {};
     let id =
       opt.ENTITY_ID || opt.ENTITY_VALUE_ID || opt.VALUE_ID ||
       opt.entity_id || opt.entityId || opt.value_id ||
@@ -41,37 +45,39 @@
     return id||null;
   }
 
-  function summarize(placement) {
+  function summarize(placement: any) {
     const q = Object.fromEntries(Array.from(new URLSearchParams(location.search).entries()));
     const ref = document.referrer;
     const id = detectId(placement);
 
     let lines = [];
-    lines.push(`[${now()}] typeof BX24: ${typeof BX24}`);
-    lines.push(`Placement: ${placement && placement.placement || 'N/A'}`);
+    lines.push(`[${now()}] typeof BX24: ${typeof (window as any).BX24}`);
+    lines.push(`Placement (client): ${placement && placement.placement || 'N/A'}`);
+    lines.push(`Placement (server): ${serverData.PLACEMENT || 'N/A'}`);
     lines.push(`ID (detected): ${id ? id : '—'}`);
     lines.push(`Query keys: ${Object.keys(q).length ? Object.keys(q).join(', ') : '—'}`);
     lines.push(`Has referrer: ${ref ? 'yes' : 'no'}`);
     summary.textContent = lines.join('\n');
+
     detectEl.innerHTML = id ? `<span class="ok">ID найден:</span> <b>${id}</b>` : `<span class="err">ID не найден</span>`;
 
-    if (id && !manualId.value) manualId.value = id;
+    if (id && !(manualId as HTMLInputElement).value) (manualId as HTMLInputElement).value = id;
     pre(queryEl, q);
     pre(refEl, ref || '(пусто)');
   }
 
   function refreshPlacement() {
     placementStatus.textContent = 'loading…';
-    BX24.placement.info(function(p){
+    (window as any).BX24.placement.info(function(p: any){
       placementStatus.textContent = '';
       pre(placementEl, p);
       summarize(p);
     });
   }
 
-  function getDeal(id) {
+  function getDeal(id: string) {
     if(!id){ dealEl.textContent = 'Укажите ID сделки'; return; }
-    BX24.callMethod('crm.deal.get',{id}, function(r){
+    (window as any).BX24.callMethod('crm.deal.get',{id}, function(r: any){
       try{
         if(r.error()){ pre(dealEl, 'Ошибка: '+r.error()+': '+r.error_description()); }
         else{ pre(dealEl, r.data()); }
@@ -81,30 +87,28 @@
     });
   }
 
-  $('#btnPlacement').onclick = refreshPlacement;
-  $('#btnGetDeal').onclick = function(){ getDeal(manualId.value.trim()); };
-  $('#btnAuth').onclick = function(){
-    BX24.getAuth(function(a){ pre(authEl, a); });
+  ($('#btnPlacement') as HTMLButtonElement).onclick = refreshPlacement;
+  ($('#btnGetDeal') as HTMLButtonElement).onclick = function(){ getDeal((manualId as HTMLInputElement).value.trim()); };
+  ($('#btnAuth') as HTMLButtonElement).onclick = function(){
+    (window as any).BX24.getAuth(function(a: any){ pre(authEl, a); });
   };
-  $('#btnScope').onclick = function(){
-    BX24.callMethod('app.info', {}, function(r){
+  ($('#btnScope') as HTMLButtonElement).onclick = function(){
+    (window as any).BX24.callMethod('app.info', {}, function(r: any){
       if(r && r.data) pre(authEl, r.data()); else pre(authEl, r);
     });
   };
 
   document.addEventListener('DOMContentLoaded', function(){
     summarize(null);
-    refreshPlacement();
   });
 
-  // init
-  if (typeof BX24 === 'undefined') {
+  if (typeof (window as any).BX24 === 'undefined') {
     pre(placementEl, 'BX24 API недоступно (страница открыта вне Bitrix24?).');
   } else {
-    BX24.init(function(){
+    (window as any).BX24.init(function(){
       refreshPlacement();
       setTimeout(function(){
-        const id = manualId.value.trim();
+        const id = (manualId as HTMLInputElement).value.trim();
         if(id) getDeal(id);
       }, 600);
     });

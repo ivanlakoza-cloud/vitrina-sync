@@ -1,12 +1,11 @@
 // app/api/b24/diagnostics/route.ts
-// TypeScript-friendly diagnostics route for Next.js App Router.
-// Serves the diagnostics HTML on GET and POST (Bitrix often uses POST).
-
 import type { NextRequest } from "next/server";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
-const html = `<!doctype html>
+function pageHtml(injected: any){
+  const boot = `<script>window.__B24_POST=${JSON.stringify(injected||{})};</script>`;
+  return `<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
@@ -26,13 +25,11 @@ const html = `<!doctype html>
     pre{white-space:pre-wrap;word-break:break-word;background:#0b1220;border:1px solid var(--br);border-radius:10px;padding:10px;max-height:280px;overflow:auto}
     code{color:#93c5fd}
     .row{display:flex;gap:8px;align-items:center;margin-top:8px}
-    input,select,button{border-radius:10px;border:1px solid var(--br);background:#0b1220;color:var(--ink);padding:8px 10px}
+    input,select,button{border-radius:10px;border:1px solid var(--br);background:#0b1220;color:#e2e8f0;padding:8px 10px}
     button{cursor:pointer;font-weight:600}
     .ok{color:var(--ok)} .err{color:var(--err)} .muted{color:var(--muted)}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
     .footer{margin-top:12px;font-size:12px;color:var(--muted)}
-    a{color:#93c5fd;text-decoration:none}
-    .pill{display:inline-flex;align-items:center;gap:6px;background:#0b1220;border:1px solid var(--br);padding:6px 10px;border-radius:999px}
     .btn-accent{background:#0284c7;border-color:#0284c7}
   </style>
 </head>
@@ -53,6 +50,11 @@ const html = `<!doctype html>
       <div class="card">
         <div class="title">Сводка</div>
         <div id="summary" class="mono"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">SERVER: полученные POST-поля</div>
+        <pre id="server" class="mono muted">…</pre>
       </div>
 
       <div class="card">
@@ -90,24 +92,56 @@ const html = `<!doctype html>
       </div>
     </div>
 
-    <div class="footer">Если где-то пусто — пришлите скрин/копию «Сводки» и блоков выше.</div>
+    <div class="footer">Эта страница также читает поля, которые Bitrix отправляет POST-ом при открытии слайдера (например PLACEMENT/PLACEMENT_OPTIONS). Если где-то пусто — пришлите скрин «Сводки» + «SERVER: POST» + «placement.info».</div>
   </div>
 
-  <script src="/b24/diagnostics/diag.js?v=1.1"></script>
+  ${boot}
+  <script src="/b24/diagnostics/diag.js?v=1.2"></script>
 </body>
 </html>`;
+}
 
-function pageResponse(): Response {
+function asPlain(obj: any){
+  const out: any = {};
+  for (const k in obj){ out[k] = obj[k]; }
+  return out;
+}
+
+async function collectFromRequest(req: NextRequest){
+  const method = req.method.toUpperCase();
+  const injected: any = { method };
+  if (method === "POST") {
+    try{
+      const form = await req.formData();
+      for (const [k, v] of form.entries()) {
+        injected[k] = typeof v === "string" ? v : "(file)";
+      }
+      // If PLACEMENT_OPTIONS is JSON – try parse
+      if (typeof injected.PLACEMENT_OPTIONS === "string") {
+        try{ injected.PLACEMENT_OPTIONS_PARSED = JSON.parse(injected.PLACEMENT_OPTIONS); }catch{}
+      }
+    }catch(e){
+      injected.POST_PARSE_ERROR = String(e);
+    }
+  } else {
+    // also show url query (to compare with macros)
+    const url = new URL(req.url);
+    injected.query = asPlain(Object.fromEntries(url.searchParams.entries()));
+  }
+  return injected;
+}
+
+function respond(html: string){
   return new Response(html, {
     status: 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      "X-Diagnostics": "b24-diag-v1.1"
+      "X-Diagnostics": "b24-diag-v1.2"
     }
   });
 }
 
-export async function GET(_req: NextRequest): Promise<Response> { return pageResponse(); }
-export async function POST(_req: NextRequest): Promise<Response> { return pageResponse(); }
-export async function HEAD(): Promise<Response> { return new Response(null, { status: 200 }); }
+export async function GET(req: NextRequest){ const inj = await collectFromRequest(req); return respond(pageHtml(inj)); }
+export async function POST(req: NextRequest){ const inj = await collectFromRequest(req); return respond(pageHtml(inj)); }
+export async function HEAD(){ return new Response(null, { status: 200 }); }
