@@ -30,11 +30,10 @@ function pageHTML() {
                  radial-gradient(900px 700px at 120% -20%, #2b2f6940, transparent 60%),
                  var(--bg);
       color:var(--text);
-      font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
+      font:16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
       -webkit-font-smoothing:antialiased;
       -moz-osx-font-smoothing:grayscale;
     }
-    a{color:inherit}
     .wrap{max-width:1180px;margin:0 auto;padding:24px 20px 80px}
     .hdr{
       position:sticky; top:0; z-index:9;
@@ -44,9 +43,7 @@ function pageHTML() {
       padding:14px 20px 10px;
       border-bottom:1px solid var(--border);
     }
-    .hdrRow{
-      display:flex; align-items:center; gap:24px;
-    }
+    .hdrRow{ display:flex; align-items:center; gap:24px; }
     .title{
       font-weight:700; letter-spacing:0.2px;
       font-size:20px; line-height:1.2;
@@ -86,16 +83,14 @@ function pageHTML() {
     textarea{ min-height:124px; resize:vertical }
     .filled{ background:#0e1236; border-color:#6F62FF52; box-shadow:0 0 0 2px #6F62FF22 inset }
     .invalid{ border-color: var(--danger); box-shadow:0 0 0 2px #ff4d4f22 inset }
-    .hint{ color:var(--muted); font-size:13px }
-    .divider{ height:1px; background:var(--border); margin:20px 0 10px }
+    .divider{ height:1px; background:var(--border); margin:0 }
     .longPair{ display:grid; grid-template-columns: 1.3fr 2fr; gap:24px; align-items:stretch; }
     @media (max-width: 960px){ .longPair{ grid-template-columns:1fr; } }
     .longLabel{ white-space:pre-wrap; }
-    .final{
-      text-align:center; padding:70px 14px;
-    }
+    .final{ text-align:center; padding:70px 14px; }
     .big{ font-size:28px; font-weight:800; margin:4px 0 8px }
     .ok{ color:var(--ok) }
+    .notice{ padding:18px 20px; background:#111738; border:1px solid var(--border); border-radius:16px; color:#c9cff7 }
   </style>
 </head>
 <body>
@@ -113,6 +108,8 @@ function pageHTML() {
     </div>
   </div>
 
+  <!-- Обязателен для BX24 в iframe -->
+  <script src="https://api.bitrix24.com/api/v1/"></script>
   <script src="/b24/soglasovanie-ceny/app.js"></script>
 </body>
 </html>`;
