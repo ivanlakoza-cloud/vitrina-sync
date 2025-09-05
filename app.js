@@ -1,143 +1,112 @@
 
 (function(){
-  const el = sel => document.querySelector(sel);
-  const app = el('#app');
-  const submitBtn = el('#submit');
-  const statusEl = el('#status');
-  const diag = el('#diag');
-  const formWrap = el('#formWrap');
-  const done = el('#done');
+  const $ = sel => document.querySelector(sel);
+  const app = $('#app');
+  const submitBtn = $('#submit');
+  const statusEl = $('#status');
+  const diagEl = $('#diag');
+  const doneEl = $('#done');
 
-  log('boot v23');
-  log('path=' + location.pathname);
-  log('query=' + location.search);
-  log('typeof BX24=' + (typeof window.BX24));
-
-  function log(s){ const li = document.createElement('li'); li.textContent = s; diag.appendChild(li); }
-
-  function showStatus(msg, type='info'){
-    if (!statusEl) return;
+  function addDiag(line){
+    const li = document.createElement('li');
+    li.textContent = line;
+    diagEl.appendChild(li);
+  }
+  function setStatus(msg, type='info'){
     statusEl.textContent = msg;
-    statusEl.className = 'status ' + type;
+    statusEl.className = 'status '+type;
   }
 
-  // --- Field config
-  const FIELDS = [
-    {code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:false},
-    {code:'UF_CRM_1737115941816', label:'Площадь м²', type:'number', required:true},
-    {code:'UF_CRM_1737116070781', label:'Направление/вид бизнеса клиента', required:true},
-    {code:'UF_CRM_1737116470642', label:'Стоимость м² на согласование', type:'number', required:true},
-    {code:'UF_CRM_1755537385514', label:'Город и адрес', required:true},
-    {code:'UF_CRM_1756910832606', label:'Арендные каникулы (есть/нет/сколько)', required:true},
-    {code:'UF_CRM_1756969923506', label:'Отопление (Отсутствует/Сверху/Иное)', required:true},
-    {code:'UF_CRM_1756969983186', label:'НДС (Отсутствует/Сверху+процент)', required:true}
-  ];
-  const LONGS = [
-    {code:'UF_CRM_1757040827538', label:'Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите\\nПример: 1. Стены выровнять, зашпаклевать - покрасят сами\\n2. Пол подготовить под ламинат\\n3. Откосы выровнять и закрыть\\n4. Провести электрику\\n5. Установить двери\\n6. Привести в порядок коридорную группу\\nАрендатор своими силами положит ламинат и устроит натяжной потолок, покрасит стены', type:'textarea', required:true},
-    {code:'UF_CRM_1757040956282', label:'Опишите, что-то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет... Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки', type:'textarea', required:false}
-  ];
+  const bootVer = 'v26';
+  addDiag('boot '+bootVer);
+  addDiag('path='+location.pathname.replace(/\/+$/,''));
+  addDiag('query='+location.search.replace(/^\?/,'') || '(пусто)');
 
-  // Helpers
+  // small helpers
   const qs = new URLSearchParams(location.search);
-  const qid = qs.get('id')||qs.get('deal_id')||qs.get('entityId')||qs.get('ID');
-  let dealId = qid||null;
-  let dealData = null;
+  const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
-  if (!window.BX24){
-    showStatus('BX24 не доступен. Откройте виджет из карточки сделки.', 'error');
-    return;
-  }
+  // Robust dealId resolver for Tabs/Activities + fallbacks
+  async function resolveDealId(){
+    // 1) From explicit URL macros, if есть
+    const direct = qs.get('deal_id') || qs.get('DEAL_ID') || qs.get('id') || qs.get('entityId');
+    if (direct) return direct;
 
-  BX24.init(function(){
-    log('BX24.init() ok');
-    BX24.placement.info(function(info){
-      log('placement=' + (info && info.placement));
+    // 2) Try BX24 placement
+    if (typeof BX24 !== 'undefined' && BX24 && BX24.placement && BX24.placement.info){
+      const p = await new Promise(res => BX24.placement.info(res));
+      addDiag('placement='+p.placement);
       try{
-        if (!dealId){
-          const po = info && info.options || {};
-          const parsed = typeof po === 'string' ? JSON.parse(po||'{}') : po;
-          dealId = parsed.ID || parsed.id || null;
-          log('placement.options -> ' + JSON.stringify(parsed));
+        const opts = p.options || {};
+        // TAB: opts.ID = dealId
+        if (/CRM_DEAL_DETAIL/i.test(p.placement) && opts.ID){
+          return String(opts.ID);
         }
-      }catch(e){}
-      if (!dealId){
-        // final fallback: try referrer /crm/deal/details/{id}/
-        const m = (document.referrer||'').match(/\/crm\/deal\/details\/(\d+)\//);
-        if (m) dealId = m[1];
+        // ACTIVITY: opts.ID = activityId -> need get owner
+        if (p.placement === 'CRM_DEAL_DETAIL_ACTIVITY' && opts.ID){
+          const actId = String(opts.ID);
+          addDiag('activityId='+actId);
+          const dealId = await new Promise(resolve => {
+            BX24.callMethod('crm.activity.get', { id: actId }, r=>{
+              if (r && !r.error() && r.data()){
+                const d = r.data();
+                // 2 - DEAL
+                if (String(d.OWNER_TYPE_ID) === '2') resolve(String(d.OWNER_ID));
+                else resolve(null);
+              } else resolve(null);
+            });
+          });
+          if (dealId) return dealId;
+        }
+      }catch(e){
+        console.warn('placement resolve error', e);
       }
-      log('dealId=' + dealId);
-      if (!dealId){ showStatus('Не удалось определить ID сделки (placement/options).', 'error'); return; }
-      loadDeal();
-    });
-  });
+    }
 
-  function loadDeal(){
-    showStatus('Загружаем данные сделки #' + dealId + ' …');
-    BX24.callMethod('crm.deal.get', { id: dealId }, function(res){
-      if (res.error()){ showStatus('Ошибка crm.deal.get: ' + res.error(), 'error'); return; }
-      dealData = res.data();
-      showStatus('Данные получены. Заполните поля и отправьте на согласование.');
-      renderForm();
-    });
+    // 3) Referrer fallback: /crm/deal/details/{id}/
+    const ref = document.referrer || '';
+    const m = ref.match(/\/crm\/deal\/details\/(\d+)\//i);
+    if (m) return m[1];
+
+    return null;
   }
 
-  function renderForm(){
-    const grid = document.createElement('div');
-    grid.className = 'form-grid';
-
-    const changed = {};
-    function fieldBlock(def){
-      const wrap = document.createElement('div');
-      wrap.className = 'field';
-      const lab = document.createElement('label'); lab.className='label'; lab.textContent = def.label; 
-      const inp = (def.type==='textarea') ? document.createElement('textarea') : document.createElement('input');
-      if (def.type && def.type!=='textarea') inp.type = def.type;
-      inp.className='input';
-      let val = dealData[def.code];
-      if (Array.isArray(val)) val = val.join(', ');
-      if (typeof val === 'object' && val!==null) val = '';
-      inp.value = (val??'').toString();
-      if (def.required && !inp.value) inp.classList.add('warn');
-      inp.addEventListener('input', ()=>{
-        const original = (val??'').toString();
-        if (inp.value !== original){ changed[def.code] = inp.value; inp.classList.add('ok'); }
-        else { delete changed[def.code]; inp.classList.remove('ok'); }
-        updateSubmit();
-      });
-      wrap.appendChild(lab); wrap.appendChild(inp);
-      return wrap;
+  async function init(){
+    // Wait a tick if BX24 script is still loading
+    for (let i=0;i<20;i++){
+      if (typeof BX24 !== 'undefined') break;
+      await new Promise(r=>setTimeout(r,50));
     }
 
-    FIELDS.forEach(f=>grid.appendChild(fieldBlock(f)));
-    const longRows = document.createElement('div'); longRows.className='long-rows';
-    LONGS.forEach(f=> longRows.appendChild(fieldBlock(f)));
+    const dealId = await resolveDealId();
+    addDiag('resolved dealId='+(dealId||'null'));
 
-    formWrap.innerHTML='';
-    formWrap.appendChild(grid);
-    formWrap.appendChild(longRows);
-    formWrap.classList.remove('hidden');
-
-    function updateSubmit(){
-      if (Object.keys(changed).length===0){ submitBtn.disabled = true; submitBtn.classList.remove('ready'); }
-      else { submitBtn.disabled = false; submitBtn.classList.add('ready'); }
+    if (!dealId){
+      setStatus('Не удалось определить ID сделки. Проверьте URL- макросы #ID#/#DEAL_ID# или откройте виджет из карточки сделки.', 'error');
+      return;
     }
-    updateSubmit();
 
-    submitBtn.onclick = function(){
+    setStatus('Загружаем сделку #'+dealId+'…');
+    BX24.callMethod('crm.deal.get', { id: dealId }, r => {
+      if (r && r.error()){
+        setStatus('Ошибка crm.deal.get: '+r.error_description(), 'error');
+        return;
+      }
+      const deal = r.data();
+      addDiag('deal='+ (deal && deal.TITLE ? deal.TITLE : 'получена'));
+
+      // здесь можно отрисовать форму; для проверки — просто активируем кнопку
+      submitBtn.disabled = false;
+      setStatus('Данные сделки получены — можно отправлять.');
+    });
+
+    submitBtn.addEventListener('click', ()=>{
       submitBtn.disabled = true;
-      showStatus('Сохраняем изменения…');
-      BX24.callMethod('crm.deal.update', { id: dealId, fields: changed }, function(r1){
-        if (r1.error()){ showStatus('Ошибка crm.deal.update: ' + r1.error(), 'error'); submitBtn.disabled=false; return; }
-        // попытка запустить БП #209 — если нет прав/шаблона, просто покажем успех
-        const docId = ['crm', 'CCrmDocumentDeal', 'DEAL_'+dealId];
-        BX24.callMethod('bizproc.workflow.start', { TEMPLATE_ID: 209, DOCUMENT_ID: docId }, function(r2){
-          if (r2 && r2.error()){ log('bizproc start error: ' + r2.error()); }
-          showStatus('Готово. Изменения сохранены.', 'info');
-          done.classList.remove('hidden');
-          formWrap.classList.add('hidden');
-        });
-      });
-    };
+      // TODO: здесь отправка в ваш БП/REST
+      doneEl.classList.remove('hidden');
+      setStatus('Отправлено!', 'info');
+    });
   }
 
+  init();
 })();
