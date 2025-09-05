@@ -13,9 +13,17 @@ function showStatus(msg, type='info'){
 
 if (!window.BX24) {
   showStatus('BX24 не доступен. Откройте виджет из карточки сделки.', 'error');
-  // можно попытаться взять id из query (?id=) для одиночного теста:
-  const id = new URLSearchParams(location.search).get('id');
-  if (!id) return; // без ID дальше не идём
+  const q = new URLSearchParams(location.search);
+  const id = q.get('ID') || q.get('id') || q.get('deal_id') || q.get('entityId');
+  // Даже если BX24 нет, но есть id из query — продолжаем рендер с ним:
+  if (id) {
+    renderFormWithDealId(id);
+  }
+  // И НИ В КОЕМ СЛУЧАЕ не делаем return без рендера!
+}
+
+if(!document.getElementById('status')){
+  document.body.insertAdjacentHTML('afterbegin','<div id="status" class="status"></div>');
 }
 
   const FIELDS = [
