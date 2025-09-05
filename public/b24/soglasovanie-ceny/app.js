@@ -1,164 +1,217 @@
-
-// v21 widget logic with robust diagnostics
 (function(){
-  const $ = (s,root=document)=>root.querySelector(s);
-  const $$ = (s,root=document)=>Array.from(root.querySelectorAll(s));
-  const statusEl = $('#status');
-  const diagList = $('#diag-list');
-  const form = $('#form');
-  const submitBtn = $('#submit');
-  const finalBox = $('#final');
+  var $ = function(s){ return document.querySelector(s); };
+  var server = window.__B24_POST || {};
+  var dealId = null;
+  var dealOriginal = null;
+  var responsibleName = null;
 
-  function log(line){ try{ const li=document.createElement('li'); li.textContent=String(line); diagList.appendChild(li); }catch(e){} }
-  function status(msg, kind='info'){ if(!statusEl) return; statusEl.textContent=msg; statusEl.className='status'+(kind==='err'?' err':''); }
-  window.addEventListener('error', e=>{ log('JS error: '+(e.message||e.error)); status('Ошибка скрипта: '+(e.message||'см. консоль'), 'err'); });
-
-  // Prevent native form submit (avoid 405)
-  form && form.addEventListener('submit', e=>e.preventDefault());
-
-  log('boot v21');
-  log('path='+location.pathname);
-  log('query='+location.search);
-
-  const FIELDS = [
-    {code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:true},
-    {code:'UF_CRM_1737115941816', label:'Площадь м²', type:'number', required:true},
-    {code:'UF_CRM_1737116070781', label:'Направление/вид бизнеса клиента', type:'text', required:true},
-    {code:'UF_CRM_1737116470642', label:'Стоимость м² на согласование', type:'number', required:true},
-    {code:'UF_CRM_1755537385514', label:'Город и адрес', type:'text', required:true},
-    {code:'UF_CRM_1756910832606', label:'Арендные каникулы (есть/нет/сколько)', type:'text', required:true},
-    {code:'UF_CRM_1756969923506', label:'Отопление (Отсутствует/Сверху/Иное)', type:'text', required:true},
-    {code:'UF_CRM_1756969983186', label:'НДС (Отсутствует/Сверху+процент)', type:'text', required:true},
-  ];
-  const LONGS = [
-    {code:'UF_CRM_1757040827538', label:`Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите 
-Пример: 
-1. Стены выровнять, зашпаклевать - покрасят сами 
-2. Пол подготовить под ламинат 
-3. Откосы выровнять и закрыть 
-4. Провести электрику 
-5. Установить двери 
-6. Привести в порядок коридорную группу 
-Арендатор своими силами положит ламинат и устроит натяжной потолок, покрасить стены`, type:'textarea', required:true},
-    {code:'UF_CRM_1757040956282', label:`Опишите, что-то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет... Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки`, type:'textarea', required:true},
+  var FIELD_LIST = [
+    {label:'Комментарий клиента, что важно клиенту?', code:'UF_CRM_1737115114028', type:'textarea', required:true},
+    {label:'Площадь м²', code:'UF_CRM_1737115941816', type:'number', required:true},
+    {label:'Направление/вид бизнеса клиента', code:'UF_CRM_1737116070781', type:'text', required:true},
+    {label:'Стоимость м² на согласование', code:'UF_CRM_1737116470642', type:'number', required:true},
+    {label:'Город и адрес', code:'UF_CRM_1755537385514', type:'text', required:true},
+    {label:'Арендные каникулы (есть/нет/сколько)', code:'UF_CRM_1756910832606', type:'text', required:true},
+    {label:'Отопление (Отсутствует/Сверху/Иное)', code:'UF_CRM_1756969923506', type:'tags', required:true},
+    {label:'НДС (Отсутствует/Сверху+процент)', code:'UF_CRM_1756969983186', type:'tags', required:true}
   ];
 
-  function inputEl(f){
-    const wrap = document.createElement('div');
-    wrap.className='field';
-    const lab = document.createElement('div'); lab.className='label'; lab.textContent=f.label;
-    const ctrl = f.type==='textarea'? document.createElement('textarea') : document.createElement('input');
-    if(f.type==='number'){ ctrl.type='number'; ctrl.step='any'; }
-    ctrl.className='input'; ctrl.dataset.code=f.code; ctrl.required=!!f.required;
-    ctrl.addEventListener('input', ()=>{ validate(); filledState(ctrl); });
-    wrap.appendChild(lab); wrap.appendChild(ctrl);
-    return wrap;
+  var LONG_LIST = [
+    {label:'Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите \nПример: 1. Стены выровнять, зашпаклевать - покрасят сами \n2. Пол подготовить под ламинат \n3. Откосы выровнять и закрыть \n4. Провести электрику \n5. Установить двери \n6. Привести в порядок коридорную группу \nАрендатор своими силами положит ламинат и устроит натяжной потолок, покрасить стены', 
+      code:'UF_CRM_1757040827538', type:'textarea', required:true},
+    {label:'Опишите, что-то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет. Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки', 
+      code:'UF_CRM_1757040956282', type:'textarea', required:true}
+  ];
+
+  function detectDealId(){
+    var opt = server.PLACEMENT_OPTIONS_PARSED || {};
+    var id = opt.ENTITY_ID || opt.ID || opt.id || null;
+    if(!id){
+      var q = new URLSearchParams(location.search);
+      id = q.get('id') || q.get('ID') || q.get('entityId') || q.get('DEAL_ID');
+    }
+    if(!id){
+      var m = (document.referrer||'').match(/\/crm\/deal\/details\/(\d+)\//);
+      if(m) id = m[1];
+    }
+    id = String(id||'').replace(/[^0-9]/g,'');
+    return id||null;
   }
-  function longEl(f){
-    const row=document.createElement('div'); row.className='long';
-    const lab=document.createElement('div'); lab.className='label'; lab.textContent=f.label;
-    const ta=document.createElement('textarea'); ta.className='input'; ta.dataset.code=f.code; ta.required=!!f.required; ta.style.minHeight='220px';
-    ta.addEventListener('input', ()=>{ validate(); filledState(ta); });
-    row.appendChild(lab); row.appendChild(ta);
-    return row;
+
+  function valueToInput(value, type){
+    if(type==='tags'){
+      if(Array.isArray(value)) return value.map(function(v){return String(v).trim();}).join(', ');
+      if(typeof value==='string') return value;
+      return '';
+    }
+    if(type==='number'){
+      var n = (value===null || value===undefined)? '' : String(value).replace(',', '.');
+      return n;
+    }
+    return value===null || value===undefined ? '' : String(value);
   }
-  function filledState(el){
-    const empty = (el.value||'').trim()==='';
-    el.classList.toggle('invalid', el.required && empty);
-    el.classList.toggle('filled', !empty);
+
+  function inputToValue(input, type){
+    var v = input.value.trim();
+    if(type==='number'){ return v===''? '' : v; }
+    if(type==='tags'){ return v==='' ? [] : v.split(',').map(function(x){return x.trim();}).filter(Boolean); }
+    return v;
   }
-  function setValues(data){
-    [...form.querySelectorAll('.input')].forEach(el=>{
-      const code=el.dataset.code;
-      let v = data && data[code];
-      if (v==null) v='';
-      if (Array.isArray(v)) v=v.join(', ');
-      el.value = v;
-      filledState(el);
+
+  function allValid(){
+    var ok = true;
+    document.querySelectorAll('.control').forEach(function(el){
+      var required = el.dataset.required === '1';
+      var empty = el.value.trim()==='';
+      if(required && empty) ok=false;
     });
-  }
-  function validate(){
-    let ok=true;
-    [...form.querySelectorAll('.input')].forEach(el=>{
-      if(el.required && (el.value||'').trim()===''){ ok=false; el.classList.add('invalid'); }
-    });
-    submitBtn.classList.toggle('enabled', ok);
-    submitBtn.disabled=!ok;
     return ok;
   }
-  function diff(orig){
-    const d={};
-    [...form.querySelectorAll('.input')].forEach(el=>{
-      const code=el.dataset.code;
-      const now=(el.value||'').trim();
-      const was=(orig && (Array.isArray(orig[code])? orig[code].join(', '): (orig[code]||''))).trim();
-      if(now!==was) d[code]=now;
-    });
-    return d;
+
+  function refreshButton(){
+    var btn = $('#btnSubmit');
+    if(allValid()){ btn.removeAttribute('disabled'); }
+    else { btn.setAttribute('disabled',''); }
   }
 
-  function bx(method, params){ return new Promise((res,rej)=>{ BX24.callMethod(method, params||{}, r=>{ if(r && r.error()) rej(new Error(r.error()+': '+(r.error_description&&r.error_description()||''))); else res(r.data()); }); }); }
-
-  function findDealId(cb){
-    const usp=new URLSearchParams(location.search);
-    let id = usp.get('ID')||usp.get('id')||usp.get('deal_id')||usp.get('entityId')||'';
-    log('typeof BX24='+typeof BX24);
-    if(typeof BX24!=='object'){
-      log('BX24 not object; fallback only query/referrer');
-      if(!id){
-        const m=(document.referrer||'').match(/\/crm\/deal\/details\/(\d+)\//);
-        if(m) id=m[1];
-      }
-      cb(id);
-      return;
+  function makeInput(f, value){
+    var control;
+    if(f.type==='textarea'){
+      control = document.createElement('textarea');
+      control.rows = 4;
+    }else{
+      control = document.createElement('input');
+      control.type = 'text';
     }
-    BX24.placement.info(pi=>{
-      log('placement='+pi.placement);
-      let optId='';
-      try{
-        const raw=pi && pi.options;
-        if(typeof raw==='string' && raw){
-          try{ const parsed=JSON.parse(raw); optId=parsed.ID||parsed.id||''; }catch{ const q2=new URLSearchParams(raw); optId=q2.get('ID')||q2.get('id')||''; }
-        }else if(raw && (raw.ID||raw.id)){ optId=raw.ID||raw.id; }
-      }catch(e){}
-      cb(optId || id);
+    control.className = 'control';
+    control.id = 'fld_'+f.code;
+    control.dataset.code = f.code;
+    control.dataset.type = f.type;
+    control.dataset.required = f.required ? '1' : '0';
+    control.value = valueToInput(value, f.type);
+    var empty = control.value=='';
+    if(f.required && empty){ control.classList.add('invalid'); }
+    if(!empty){ control.classList.add('filled'); }
+    control.addEventListener('input', function(){
+      var isEmpty = control.value.trim()==='';
+      control.classList.toggle('invalid', f.required && isEmpty);
+      control.classList.toggle('filled', !isEmpty);
+      refreshButton();
     });
+    return control;
   }
 
-  function start(){
-    status('Подключаемся к порталу…');
-    findDealId(async dealId=>{
-      log('resolved dealId='+dealId);
-      if(!dealId){ status('ID сделки не определён. Откройте из карточки сделки.', 'err'); return; }
-      try{
-        await new Promise(r=>{ try{ BX24.init(r); }catch{ r(); } });
-        const deal = await bx('crm.deal.get', { id: dealId });
-        log('deal loaded: title='+deal.TITLE);
-        // render
-        form.innerHTML='';
-        FIELDS.forEach(f=> form.appendChild(inputEl(f)));
-        LONGS.forEach(f=> form.appendChild(longEl(f)));
-        setValues(deal);
-        validate();
-        status('Данные сделки загружены. Проверьте поля и отправьте на согласование.');
-        submitBtn.addEventListener('click', async ()=>{
-          if(!validate()) return;
-          submitBtn.disabled=true;
-          const changes = diff(deal);
-          if(Object.keys(changes).length){ await bx('crm.deal.update', { id: dealId, fields: changes }); }
-          await bx('bizproc.workflow.start', { TEMPLATE_ID: 209, DOCUMENT_ID: ['crm','CCrmDocumentDeal','DEAL_'+dealId] });
-          finalBox.classList.remove('hidden');
-          form.classList.add('hidden');
-          status('Готово. Бизнес‑процесс запущен.');
-        });
-      }catch(e){
-        console.error(e);
-        status('Ошибка: '+e.message, 'err');
-        log('error during load: '+e.message);
+  function renderForm(deal){
+    var form = $('#dealForm'); form.innerHTML = '';
+    FIELD_LIST.forEach(function(f){
+      var wrap = document.createElement('div');
+      wrap.className = 'group';
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = f.label;
+      var control = makeInput(f, deal[f.code]);
+      wrap.appendChild(label);
+      wrap.appendChild(control);
+      form.appendChild(wrap);
+    });
+
+    var longWrap = $('#longRows'); longWrap.innerHTML='';
+    LONG_LIST.forEach(function(f){
+      var row = document.createElement('div');
+      row.className = 'row-pair';
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.style.whiteSpace = 'pre-wrap';
+      label.textContent = f.label;
+      var control = makeInput(f, deal[f.code]);
+      setTimeout(function(){
+        try{
+          var h = label.scrollHeight;
+          control.style.height = Math.max(120, h) + 'px';
+        }catch(e){}
+      }, 0);
+      row.appendChild(label);
+      row.appendChild(control);
+      longWrap.appendChild(row);
+    });
+
+    refreshButton();
+  }
+
+  function diffFields(){
+    var changed = {};
+    [].concat(FIELD_LIST, LONG_LIST).forEach(function(f){
+      var el = document.getElementById('fld_'+f.code);
+      var newVal = inputToValue(el, f.type);
+      var oldVal = dealOriginal[f.code];
+      var norm = function(v){
+        if(Array.isArray(v)) return JSON.stringify(v);
+        if(v===null || v===undefined) return '';
+        return String(v).trim();
+      };
+      if(norm(newVal) !== norm(oldVal)){
+        changed[f.code] = newVal;
       }
     });
+    return changed;
   }
 
-  // kick
-  start();
+  function submit(){
+    if(!allValid()) return;
+    var changed = diffFields();
+    var proceed = function(){
+      var docId = ['crm','CCrmDocumentDeal','DEAL_'+dealId];
+      window.BX24.callMethod('bizproc.workflow.start', {
+        'TEMPLATE_ID': 209,
+        'DOCUMENT_ID': docId,
+        'PARAMETERS': {}
+      }, function(r){
+        var name = responsibleName || 'Менеджер';
+        var el = $('#done');
+        el.innerHTML = `<div><b>${name}</b> — отлично! Запрос отправлен ✅</div>
+        <div style="margin-top:8px">Он(а) уже получил(а) уведомление и скоро свяжется с решением, что делаем дальше 🙂</div>
+        <div style="margin-top:14px" class="muted">Благодарю за заявку! Желаю продуктивного дня 🚀</div>`;
+        el.style.display = 'block';
+        document.querySelector('.card').style.display = 'none';
+        $('.hdr').style.display = 'none';
+      });
+    };
+    if(Object.keys(changed).length===0){ proceed(); return; }
+    window.BX24.callMethod('crm.deal.update', { id: dealId, fields: changed }, function(r){
+      if(r && r.error && r.error()){
+        alert('Ошибка сохранения: '+r.error()+': '+r.error_description());
+      }else{ proceed(); }
+    });
+  }
+
+  function init(){
+    var opt = server.PLACEMENT_OPTIONS_PARSED || {};
+    var q = new URLSearchParams(location.search);
+    dealId = (opt.ENTITY_ID || opt.ID || opt.id || q.get('id') || q.get('ID') || q.get('entityId') || q.get('DEAL_ID') || '' ).replace(/[^0-9]/g,'');
+    if(!window.BX24){ return; }
+    window.BX24.init(function(){
+      if(!dealId){ return; }
+      window.BX24.callMethod('crm.deal.get', { id: dealId }, function(r){
+        if(r.error()){}
+        else{
+          dealOriginal = r.data();
+          renderForm(dealOriginal);
+          var uid = dealOriginal && dealOriginal.ASSIGNED_BY_ID;
+          if(uid){
+            window.BX24.callMethod('user.get', { ID: uid }, function(u){
+              try{
+                if(u && u.data && u.data()[0]){
+                  var usr = u.data()[0];
+                  responsibleName = (usr.NAME||'') + ' ' + (usr.LAST_NAME||'');
+                  responsibleName = responsibleName.trim() || (usr.LOGIN||'Менеджер');
+                }
+              }catch(e){}
+            });
+          }
+        }
+      });
+    });
+    $('#btnSubmit').addEventListener('click', function(e){ e.preventDefault(); submit(); });
+  }
+  document.addEventListener('DOMContentLoaded', init);
 })();
