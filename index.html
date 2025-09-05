@@ -1,35 +1,27 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Проверка полей сделки</title>
-  <link rel="preconnect" href="https://api.bitrix24.com" crossorigin>
-  <link rel="stylesheet" href="styles_v33.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Согласование цены — виджет</title>
+  <!-- Версия оболочки: v34 (используется для анти‑кэша) -->
+  <link rel="preload" href="styles.css?v=34" as="style">
+  <link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body>
-  <header class="topbar">
-    <h1 class="title">Проверка полей сделки перед отправкой на согласование:</h1>
-    <button id="submit" class="btn btn-primary" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
-  </header>
-
-  <main id="app" class="app">
-    <section class="card">
-      <h3>Диагностика</h3>
-      <ul id="diag" class="diag"></ul>
-    </section>
-
-    <section class="card">
-      <div id="status" class="status">Подключаемся к порталу…</div>
-    </section>
-
-    <section id="done" class="card done hidden">
-      <h2>Спасибо :) Отправлено!</h2>
-      <p>Благодарю за заявку! Желаю продуктивного дня 🚀</p>
-    </section>
-  </main>
-
-  <script src="https://api.bitrix24.com/api/v1/"></script>
-  <script src="app_v33.js?v=33" defer></script>
+  <!-- Оболочка загружена (v34). Дальше подключаем основное приложение с анти‑кэшем. -->
+  <div id="app"><noscript>Требуется JavaScript</noscript></div>
+  <script>
+    // Доп. защита от кэша: если CDN/браузер перепутает, добавим случайный параметр.
+    (function() {
+      var s = document.createElement('script');
+      var rnd = Date.now().toString().slice(-6);
+      s.src = 'app.js?v=34&cb=' + rnd;
+      s.defer = true;
+      document.currentScript.after(s);
+      // Маркер версии оболочки, чтобы можно было проверить в консоли
+      window.__WIDGET_SHELL_VERSION__ = 'v34';
+    })();
+  </script>
 </body>
 </html>
