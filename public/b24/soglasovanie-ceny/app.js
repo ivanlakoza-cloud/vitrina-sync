@@ -3,6 +3,20 @@
   const el = sel => document.querySelector(sel);
   const app = el('#app');
   const submitBtn = el('#submit');
+const statusEl = document.getElementById('status'); // элемент статуса вверху
+
+function showStatus(msg, type='info'){
+  if (!statusEl) return;
+  statusEl.textContent = msg;
+  statusEl.className = `status ${type}`; // .status.error подсветит красным
+}
+
+if (!window.BX24) {
+  showStatus('BX24 не доступен. Откройте виджет из карточки сделки.', 'error');
+  // можно попытаться взять id из query (?id=) для одиночного теста:
+  const id = new URLSearchParams(location.search).get('id');
+  if (!id) return; // без ID дальше не идём
+}
 
   const FIELDS = [
     {code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:true},
