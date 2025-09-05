@@ -103,7 +103,6 @@
   } else {
     BX24.init(function(){
       refreshPlacement();
-      // try auto-deal-get if ID is visible
       setTimeout(function(){
         const id = manualId.value.trim();
         if(id) getDeal(id);
