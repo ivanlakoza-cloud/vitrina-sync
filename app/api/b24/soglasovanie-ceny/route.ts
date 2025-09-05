@@ -1,103 +1,45 @@
-// app/api/b24/soglasovanie-ceny/route.ts (v17)
-import type { NextRequest } from "next/server";
+// v21 — Next.js App Route with GET+POST returning full HTML
+export const runtime = 'edge';
 
-export const dynamic = "force-dynamic";
-export const runtime  = "edge";
-
-function pageHtml(injected: any){
-  const boot = `<script>window.__B24_POST=${JSON.stringify(injected||{})};</script>`;
+function html(){
   return `<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Проверка полей сделки — перед согласованием</title>
-  <script src="https://api.bitrix24.com/api/v1/"></script>
-  <style>
-    :root{
-      --bg:#0b1220;--card:#0f172a;--ink:#e7e9ef;--muted:#9aa7c0;--accent:#8b5cf6;--accent-d:#7c3aed;--err:#ef4444;--br:#1f2937;
-      --shadow:0 12px 28px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.25);
-      --field-filled: rgba(139,92,246,.12);
-      --field-border: #5b21b6aa;
-      --btn-disabled:#4b5563;
-    }
-    html,body{height:100%}
-    body{margin:0;background:linear-gradient(180deg,#0b1220,#0a1020);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,'Noto Sans',sans-serif}
-    .wrap{max-width:1180px;margin:0 auto;padding:24px}
-    .hdr{display:flex;align-items:center;gap:24px;flex-wrap:nowrap;margin-bottom:12px}
-    .title{font-size:22px;font-weight:800;line-height:1.2;white-space:nowrap}
-    .hdr .spacer{flex:1 1 auto}
-    .hdr .action{margin-left:100px;white-space:nowrap}
-    .card{background:var(--card);border:1px solid var(--br);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
-    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .group{margin-bottom:40px}
-    .label{display:block;font-size:15px;font-weight:800;color:var(--ink);margin-bottom:8px}
-    .control{display:block;width:100%;border-radius:12px;border:1px solid #22304a;background:#0b1325;color:var(--ink);padding:12px 12px;outline:none;box-shadow:inset 0 1px 2px rgba(0,0,0,.2)}
-    .control:focus{border-color:#3b82f6;box-shadow:inset 0 1px 2px rgba(0,0,0,.2),0 0 0 3px rgba(59,130,246,.25)}
-    .invalid{border-color:var(--err)!important;box-shadow:inset 0 1px 2px rgba(0,0,0,.2),0 0 0 3px rgba(239,68,68,.25)!important}
-    .filled{background:var(--field-filled);border-color:var(--field-border)}
-    .rows{margin-top:16px;display:grid;grid-template-columns:1fr;gap:40px}
-    .row-pair{display:grid;grid-template-columns:1.2fr 1.8fr;gap:16px;align-items:stretch}
-    .btn{border-radius:14px;border:1px solid #5b21b6;background:linear-gradient(135deg,var(--accent),var(--accent-d));color:white;padding:14px 18px;cursor:pointer;font-weight:800;letter-spacing:.2px;box-shadow:var(--shadow);transition:transform .05s ease;text-transform:uppercase}
-    .btn:hover{transform:translateY(-1px)}
-    .btn[disabled]{background:var(--btn-disabled);border-color:var(--btn-disabled);cursor:not-allowed;transform:none}
-    .bigmsg{font-size:26px;text-align:center;padding:60px 20px;border-radius:18px;background:linear-gradient(180deg,#111827,#0b1220);border:1px solid #273244;box-shadow:var(--shadow);margin-top:18px}
-    .muted{color:var(--muted)}
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Проверка полей сделки</title>
+  <link rel="stylesheet" href="/b24/soglasovanie-ceny/styles.css?v=21" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="hdr">
-      <div class="title">Проверка полей сделки перед отправкой на согласование:</div>
-      <div class="spacer"></div>
-      <button class="btn action" id="btnSubmit" disabled>Отправить стоимость м² на согласование</button>
+  <header class="sticky">
+    <div class="wrap">
+      <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+      <button id="submit" class="btn" type="button" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="diag" class="diag">
+      <div><b>Диагностика</b></div>
+      <ul id="diag-list"></ul>
     </div>
 
-    <div class="card">
-      <form id="dealForm" class="two-col"></form>
-      <div id="longRows" class="rows"></div>
-    </div>
+    <div id="status" class="status info">Загрузка…</div>
 
-    <div id="done" class="bigmsg" style="display:none"></div>
-  </div>
+    <form id="form" class="grid two-col" autocomplete="off" novalidate onsubmit="return false"></form>
 
-  ${boot}
-  <script src="/b24/soglasovanie-ceny/app.js?v=17"></script>
+    <section id="final" class="final hidden">
+      <div class="big ok">Спасибо :) Отправлено!</div>
+      <div class="muted">Благодарю за заявку! Желаю продуктивного дня 🚀</div>
+    </section>
+  </main>
+
+  <!-- Bitrix24 SDK must be loaded inside iframe -->
+  <script src="https://api.bitrix24.com/api/v1/"></script>
+  <script src="/b24/soglasovanie-ceny/app.js?v=21"></script>
 </body>
 </html>`;
 }
 
-async function collectFromRequest(req: NextRequest){
-  const method = req.method.toUpperCase();
-  const injected: any = { method };
-  if (method === "POST") {
-    try{
-      const form = await req.formData();
-      for (const [k, v] of (form as any).entries()) {
-        injected[k] = typeof v === "string" ? v : "(file)";
-      }
-      if (typeof injected.PLACEMENT_OPTIONS === "string") {
-        try{ injected.PLACEMENT_OPTIONS_PARSED = JSON.parse(injected.PLACEMENT_OPTIONS); }catch{}
-      }
-    }catch(e){ injected.POST_PARSE_ERROR = String(e); }
-  } else {
-    const url = new URL(req.url);
-    injected.query = Object.fromEntries(url.searchParams.entries());
-  }
-  return injected;
-}
-
-function respond(html: string){
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-Widget": "b24-soglasovanie-v17"
-    }
-  });
-}
-
-export async function GET(req: NextRequest){ const inj = await collectFromRequest(req); return respond(pageHtml(inj)); }
-export async function POST(req: NextRequest){ const inj = await collectFromRequest(req); return respond(pageHtml(inj)); }
-export async function HEAD(){ return new Response(null, { status: 200 }); }
+export async function GET(){ return new Response(html(), { headers: { 'content-type':'text/html; charset=utf-8', 'cache-control':'no-store' } }); }
+export async function POST(){ return new Response(html(), { headers: { 'content-type':'text/html; charset=utf-8', 'cache-control':'no-store' } }); }
