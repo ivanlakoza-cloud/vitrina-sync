@@ -2,6 +2,7 @@
 import type { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "edge"; // ensure req.formData() works reliably
 
 function pageHtml(injected: any){
   const boot = `<script>window.__B24_POST=${JSON.stringify(injected||{})};</script>`;
@@ -96,14 +97,14 @@ function pageHtml(injected: any){
   </div>
 
   ${boot}
-  <script src="/b24/diagnostics/diag.js?v=1.2"></script>
+  <script src="/b24/diagnostics/diag.js?v=1.2a"></script>
 </body>
 </html>`;
 }
 
 function asPlain(obj: any){
   const out: any = {};
-  for (const k in obj){ out[k] = obj[k]; }
+  for (const k in obj){ out[k] = (obj as any)[k]; }
   return out;
 }
 
@@ -113,10 +114,9 @@ async function collectFromRequest(req: NextRequest){
   if (method === "POST") {
     try{
       const form = await req.formData();
-      for (const [k, v] of form.entries()) {
+      for (const [k, v] of (form as any).entries()) {
         injected[k] = typeof v === "string" ? v : "(file)";
       }
-      // If PLACEMENT_OPTIONS is JSON – try parse
       if (typeof injected.PLACEMENT_OPTIONS === "string") {
         try{ injected.PLACEMENT_OPTIONS_PARSED = JSON.parse(injected.PLACEMENT_OPTIONS); }catch{}
       }
@@ -124,7 +124,6 @@ async function collectFromRequest(req: NextRequest){
       injected.POST_PARSE_ERROR = String(e);
     }
   } else {
-    // also show url query (to compare with macros)
     const url = new URL(req.url);
     injected.query = asPlain(Object.fromEntries(url.searchParams.entries()));
   }
@@ -137,7 +136,7 @@ function respond(html: string){
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      "X-Diagnostics": "b24-diag-v1.2"
+      "X-Diagnostics": "b24-diag-v1.2a"
     }
   });
 }
