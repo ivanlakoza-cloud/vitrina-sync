@@ -1,224 +1,191 @@
-
 (function(){
-  // helpers
-  const $ = (s,root=document)=>root.querySelector(s);
-  const $$ = (s,root=document)=>Array.from(root.querySelectorAll(s));
-  const el = id => document.getElementById(id);
-  const form = el('form');
-  const submitBtn = el('submit');
-  const statusEl = el('status');
-  const overlay = el('overlay');
+  const $ = (s, r=document) => r.querySelector(s);
+  const app = $('#app');
+  const statusEl = $('#status');
+  const submitBtn = $('#submit');
+  const logEl = $('#log');
+  const doneEl = $('#done');
 
-  function showStatus(msg, type='info'){
+  const log = (m) => { if (logEl){ const li=document.createElement('li'); li.textContent=m; logEl.appendChild(li);} };
+
+  const show = (msg, kind='ok') => {
+    if (!statusEl) return;
     statusEl.textContent = msg;
-    statusEl.className = 'status ' + type;
+    statusEl.className = 'status ' + kind;
+  };
+
+  window.addEventListener('error', e => show('Ошибка: '+(e.message||e.error?.message||'unknown'), 'error'));
+  window.addEventListener('unhandledrejection', e => show('Ошибка: '+(e.reason?.message||'rejection'), 'error'));
+
+  log('boot v22');
+  log('path='+location.pathname);
+  log('query='+location.search.replace(/^\?/, ''));
+  log('typeof BX24='+typeof window.BX24);
+
+  if (!window.BX24){
+    show('BX24 не доступен. Откройте виджет из карточки сделки.', 'error');
+    return;
   }
 
   const FIELDS = [
-    {code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:true},
-    {code:'UF_CRM_1737115941816', label:'Площадь м²', type:'number', required:true},
-    {code:'UF_CRM_1737116070781', label:'Направление/вид бизнеса клиента', type:'text', required:true},
-    {code:'UF_CRM_1737116470642', label:'Стоимость м² на согласование', type:'number', required:true},
-    {code:'UF_CRM_1755537385514', label:'Город и адрес', type:'text', required:true},
-    {code:'UF_CRM_1756910832606', label:'Арендные каникулы (есть/нет/сколько)', type:'text', required:true},
-    {code:'UF_CRM_1756969923506', label:'Отопление (Отсутствует/Сверху/Иное)', type:'text', required:true},
-    {code:'UF_CRM_1756969983186', label:'НДС (Отсутствует/Сверху+процент)', type:'text', required:true},
+    { code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:true},
+    { code:'UF_CRM_1737115941816', label:'Площадь м²', type:'number', required:true},
+    { code:'UF_CRM_1737116070781', label:'Направление/вид бизнеса клиента', type:'text', required:true},
+    { code:'UF_CRM_1737116470642', label:'Стоимость м² на согласование', type:'number', required:true},
+    { code:'UF_CRM_1755537385514', label:'Город и адрес', type:'text', required:true},
+    { code:'UF_CRM_1756910832606', label:'Арендные каникулы (есть/нет/сколько)', type:'text', required:true},
+    { code:'UF_CRM_1756969923506', label:'Отопление (Отсутствует/Сверху/Иное)', type:'text', required:true},
+    { code:'UF_CRM_1756969983186', label:'НДС (Отсутствует/Сверху+процент)', type:'text', required:true},
   ];
+
   const LONGS = [
-    {code:'UF_CRM_1757040827538', label:`Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите 
-Пример: 1. Стены выровнять, зашпаклевать - покрасят сами 
-2. Пол подготовить под ламинат 
-3. Откосы выровнять и закрыть 
-4. Провести электрику 
-5. Установить двери 
-6. Привести в порядок коридорную группу 
-Арендатор своими силами положит ламинат и устроит натяжной потолок, покрасить стены`, type:'textarea', required:true},
-    {code:'UF_CRM_1757040956282', label:`Опишите, что-то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет... Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки`, type:'textarea', required:true}
+    { code:'UF_CRM_1757040827538', label:'Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите \nПример: 1. Стены выровнять, зашпаклевать - покрасят сами \n2. Пол подготовить под ламинат \n3. Откосы выровнять и закрыть \n4. Провести электрику \n5. Установить двери \n6. Привести в порядок коридорную группу \nАрендатор своими силами положит ламинат и устроит натяжной потолок, покрасить стены', type:'textarea', required:true },
+    { code:'UF_CRM_1757040956282', label:'Опишите, что-то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет... Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки', type:'textarea', required:true }
   ];
 
-  // UI builders
-  function makeField(label, type, name){
-    const tpl = $('#tpl-field');
-    const node = tpl.content.firstElementChild.cloneNode(true);
-    $('.label', node).textContent = label;
-    let ctrl;
-    if (type==='textarea'){
-      ctrl = document.createElement('textarea');
-    } else {
-      ctrl = document.createElement('input');
-      ctrl.type = type||'text';
-      if(type==='number'){ ctrl.inputMode='decimal'; ctrl.step='any'; }
+  const state = { dealId:null, initial:{}, inputs:{} };
+
+  function parseIdFallback(){
+    const q = new URLSearchParams(location.search);
+    let id = q.get('entityId') || q.get('DEAL_ID') || q.get('ID') || q.get('id') || q.get('deal_id');
+    if (!id && document.referrer){
+      const m = document.referrer.match(/\/crm\/deal\/details\/(\d+)/i);
+      if (m) id = m[1];
     }
-    ctrl.name = name;
-    ctrl.required = true;
-    ctrl.addEventListener('input', onInputState);
-    $('.control', node).appendChild(ctrl);
-    node.classList.add('required');
-    return node;
+    return id;
   }
 
-  function buildForm(data){
-    form.innerHTML = '';
-    // two col simple fields
-    FIELDS.forEach(f=>{
-      const node = makeField(f.label, f.type, f.code);
-      const ctrl = $('input, textarea', node);
-      const v = data[f.code] ?? '';
-      ctrl.value = Array.isArray(v) ? v.join(', ') : (v??'');
-      if(String(ctrl.value).trim()!==''){ ctrl.classList.add('filled'); node.classList.remove('required'); }
-      form.appendChild(node);
-    });
-    // long rows
-    LONGS.forEach(f=>{
-      const row = document.createElement('div');
-      row.className='long-row';
-      const left = document.createElement('div');
-      left.className='pill';
-      left.innerText = f.label;
-      const field = makeField('', 'textarea', f.code);
-      const ctrl = $('textarea', field);
-      ctrl.style.minHeight='220px';
-      const v = data[f.code] ?? '';
-      ctrl.value = Array.isArray(v) ? v.join(', ') : (v??'');
-      if(String(ctrl.value).trim()!==''){ ctrl.classList.add('filled'); field.classList.remove('required'); }
-      row.appendChild(left); row.appendChild(field);
-      form.appendChild(row);
+  function getDealId(cb){
+    BX24.placement.info(info => {
+      try{
+        log('placement='+(info?.placement||'n/a'));
+        log('placement.options='+(info?.options? JSON.stringify(info.options):'{}'));
+        const opts = info?.options||{};
+        const pid = opts.ID || opts.entityId || opts.DEAL_ID || opts.id;
+        if (pid){ cb(String(pid)); return; }
+      }catch(e){}
+      const f = parseIdFallback();
+      cb(f ? String(f) : null);
     });
   }
 
-  function onInputState(e){
-    const ctrl = e.currentTarget;
-    const holder = ctrl.closest('.field');
-    if(holder){
-      const empty = String(ctrl.value).trim()==='';
-      holder.classList.toggle('required', empty);
-      ctrl.classList.toggle('filled', !empty);
+  function call(method, params){
+    return new Promise((resolve, reject)=>{
+      BX24.callMethod(method, params, res => {
+        if (res.error()){ reject(new Error(res.error()+': '+(res.error_description&&res.error_description()))); return; }
+        try{ resolve(res.data()); } catch(e){ resolve(null); }
+      });
+    });
+  }
+
+  function inputEl(field, value){
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    const control = field.type==='textarea' ? document.createElement('textarea') : document.createElement('input');
+    control.className = field.type==='textarea' ? 'textarea' : 'input';
+    if (field.type!=='textarea') control.type = field.type;
+    control.value = value ?? '';
+    if (control.value) control.classList.add('filled');
+
+    control.addEventListener('input', () => {
+      control.classList.toggle('filled', !!control.value.trim());
+      validateAll();
+    });
+
+    wrap.appendChild(label);
+    wrap.appendChild(control);
+    state.inputs[field.code] = control;
+    return wrap;
+  }
+
+  function renderForm(data){
+    app.innerHTML='';
+    state.initial = {};
+    [...FIELDS, ...LONGS].forEach(f=> state.initial[f.code] = (data[f.code] ?? ''));
+
+    FIELDS.forEach(f => app.appendChild(inputEl(f, data[f.code] ?? '')));
+
+    LONGS.forEach(f => {
+      const block = document.createElement('div');
+      block.className = 'field field--long';
+      const inner = document.createElement('div');
+      inner.className = 'long-grid';
+      const left = document.createElement('label');
+      left.textContent = f.label;
+      const control = document.createElement('textarea');
+      control.className = 'textarea';
+      control.value = data[f.code] ?? '';
+      if (control.value) control.classList.add('filled');
+      control.addEventListener('input', ()=>{ control.classList.toggle('filled', !!control.value.trim()); validateAll(); });
+      state.inputs[f.code] = control;
+      inner.appendChild(left);
+      inner.appendChild(control);
+      block.appendChild(inner);
+      app.appendChild(block);
+    });
+
+    validateAll();
+  }
+
+  function validateAll(){
+    let ok = true;
+    const reqCodes = [...FIELDS, ...LONGS].filter(f=>f.required).map(f=>f.code);
+    reqCodes.forEach(code => {
+      const ctrl = state.inputs[code];
+      if (!ctrl) return;
+      const valid = !!String(ctrl.value||'').trim();
+      ctrl.classList.toggle('invalid', !valid);
+      if (!valid) ok = false;
+    });
+    submitBtn.disabled = !ok;
+  }
+
+  function changedFields(){
+    const result = {};
+    for (const code in state.inputs){
+      const now = String(state.inputs[code].value||'').trim();
+      const was = String(state.initial[code]||'').trim();
+      if (now !== was) result[code] = now;
     }
-    validate();
+    return result;
   }
 
-  function validate(){
-    const empties = $$('input[required], textarea[required]', form).filter(i=>String(i.value).trim()==='');
-    submitBtn.disabled = empties.length>0;
-  }
-
-  // collect changed values
-  function collectDiff(initial){
-    const diff = {};
-    $$('input, textarea', form).forEach(i=>{
-      const val = i.value;
-      const old = initial[i.name] ?? '';
-      if(String(val) !== String(Array.isArray(old)? old.join(', '): old)){
-        diff[i.name] = val;
-      }
-    });
-    return diff;
-  }
-
-  // ID detection helpers
-  function getQuery(){
-    const p = new URLSearchParams(location.search);
-    const keys = ['id','ID','deal_id','entityId','ENTITY_ID','DEAL_ID'];
-    for(const k of keys){ if(p.get(k)) return p.get(k); }
-    return '';
-  }
-  function idFromReferrer(){
-    const r = document.referrer||'';
-    const m = r.match(/\/crm\/deal\/details\/(\d+)\//);
-    return m? m[1] : '';
-  }
-
-  // main
-  let DEAL_ID = '';
-  let initial = {};
-
-  async function init(){
-    // If not inside Bitrix – show hint but allow query testing
-    if(!window.BX24){
-      DEAL_ID = getQuery() || idFromReferrer();
-      if(!DEAL_ID){
-        showStatus('BX24 не доступен. Откройте виджет из карточки сделки.', 'error');
+  async function boot(){
+    show('Подключаемся к порталу…');
+    getDealId(async id => {
+      if (!id){
+        show('Не удалось определить ID сделки. Откройте виджет из карточки сделки.', 'error');
         return;
       }
-      showStatus('Тестовый режим без BX24. ID сделки: '+DEAL_ID, 'info');
-      renderPlain();
-      return;
-    }
-
-    BX24.ready(function(){
-      BX24.placement.info(function(info){
-        let optId = '';
-        try{
-          const o = info && info.options || {};
-          if(o && o.ID) optId = o.ID;
-          if(typeof o === 'string'){ const p = JSON.parse(o); optId = p.ID || ''; }
-        }catch(e){}
-        DEAL_ID = optId || getQuery() || idFromReferrer();
-        if(!DEAL_ID){ showStatus('ID сделки не найден. Откройте виджет из карточки сделки.', 'error'); return; }
-        loadDeal();
-      });
-    });
-  }
-
-  function bx(method, params){
-    return new Promise((resolve,reject)=>{
-      BX24.callMethod(method, params, res=>{
-        if(res.error()){ reject(new Error(res.error()+': '+ (res.error_description?.()||''))); }
-        else resolve(res.data());
-      });
-    });
-  }
-
-  async function loadDeal(){
-    try{
-      showStatus('Загружаем данные сделки #'+DEAL_ID+' …', 'info');
-      const data = await bx('crm.deal.get', {id: DEAL_ID});
-      initial = data||{};
-      buildForm(initial);
-      showStatus('Данные загружены. Проверьте поля и отправьте на согласование.', 'ok');
-      validate();
-    }catch(e){
-      console.error(e);
-      showStatus('Ошибка загрузки сделки: '+e.message, 'error');
-    }
-  }
-
-  // Static render if no BX24 (dev)
-  function renderPlain(){
-    buildForm({});
-    validate();
-  }
-
-  submitBtn.addEventListener('click', async (e)=>{
-    e.preventDefault();
-    if(submitBtn.disabled) return;
-    try{
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Отправка…';
-      const diff = collectDiff(initial);
-      if(Object.keys(diff).length){
-        await bx('crm.deal.update', {id: DEAL_ID, fields: diff});
-      }
-      // старт БП #209
+      state.dealId = id;
+      log('dealId='+id);
       try{
-        await bx('bizproc.workflow.start', {
-          TEMPLATE_ID: 209,
-          DOCUMENT_ID: ['crm', 'CCrmDocumentDeal', 'DEAL_'+DEAL_ID],
-          PARAMETERS: {}
-        });
+        const deal = await call('crm.deal.get', { id });
+        renderForm(deal||{});
+        show('Данные сделки получены. Проверьте и заполните обязательные поля.');
       }catch(e){
-        console.warn('Запуск БП:', e.message);
+        show('Не удалось получить сделку: '+e.message, 'error');
       }
-      overlay.classList.remove('hidden');
-      showStatus('Отправлено!', 'ok');
+    });
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    if (submitBtn.disabled) return;
+    const fields = changedFields();
+    try{
+      if (Object.keys(fields).length){
+        await call('crm.deal.update', { id: state.dealId, fields });
+      }
+      try{ await call('bizproc.workflow.start', { TEMPLATE_ID: 209, DOCUMENT_ID: ['crm','CCrmDocumentDeal','DEAL_'+state.dealId] }); }catch(e){ log('bp209: '+e.message); }
+      show('Готово! Обновили сделку и отправили на согласование.', 'ok');
+      doneEl.classList.add('show');
+      app.style.display='none';
     }catch(e){
-      console.error(e);
-      showStatus('Ошибка: '+e.message, 'error');
-    }finally{
-      submitBtn.textContent = 'ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ';
-      validate();
+      show('Ошибка сохранения: '+e.message, 'error');
     }
   });
 
-  init();
+  BX24.init(boot);
 })();
