@@ -1,4 +1,4 @@
-/* QuickFill core (Bitrix24) — v1.3.1 (debug + robust ID detect) */
+/* QuickFill core (Bitrix24) — v1.3.1 (diagnostic) */
 (function(global){
   const log=(...a)=>{ try{ console.log('[QuickFill]', ...a);}catch(e){} };
   const QuickFill={
