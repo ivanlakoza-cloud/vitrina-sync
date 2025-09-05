@@ -1,34 +1,35 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Проверка полей сделки</title>
-  <link rel="stylesheet" href="styles.css?v=32">
+  <link rel="preconnect" href="https://api.bitrix24.com" crossorigin>
+  <link rel="stylesheet" href="styles_v33.css">
 </head>
 <body>
-<header class="topbar">
-  <h1>Проверка полей сделки перед отправкой на согласование:</h1>
-  <button id="submit" class="cta" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
-</header>
+  <header class="topbar">
+    <h1 class="title">Проверка полей сделки перед отправкой на согласование:</h1>
+    <button id="submit" class="btn btn-primary" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+  </header>
 
-<main id="app">
-  <section class="card">
-    <div class="card-title">Диагностика</div>
-    <ul id="diag"></ul>
-  </section>
+  <main id="app" class="app">
+    <section class="card">
+      <h3>Диагностика</h3>
+      <ul id="diag" class="diag"></ul>
+    </section>
 
-  <section class="card">
-    <div id="status" class="status info">Подключаемся к порталу...</div>
-  </section>
+    <section class="card">
+      <div id="status" class="status">Подключаемся к порталу…</div>
+    </section>
 
-  <section id="thanks" class="card thanks hidden">
-    <h2>Спасибо :) Отправлено!</h2>
-    <p>Благодарю за заявку! Желаю продуктивного дня 🚀</p>
-  </section>
-</main>
+    <section id="done" class="card done hidden">
+      <h2>Спасибо :) Отправлено!</h2>
+      <p>Благодарю за заявку! Желаю продуктивного дня 🚀</p>
+    </section>
+  </main>
 
-<script src="https://api.bitrix24.com/api/v1/"></script>
-<script src="app.js?v=32"></script>
+  <script src="https://api.bitrix24.com/api/v1/"></script>
+  <script src="app_v33.js?v=33" defer></script>
 </body>
 </html>
