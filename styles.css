@@ -1,0 +1,62 @@
+
+:root{
+  --bg:#0f1422;
+  --card:#121a2b;
+  --border:rgba(155,133,255,.18);
+  --text:#e9f0ff;
+  --muted:#98a2c9;
+  --label:#cbd3ff;
+  --accent:#8b5cf6;
+  --accent-2:#6d28d9;
+  --danger:#ff6b6b;
+  --ok:#8cf5b1;
+  --shadow:0 8px 18px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  background:var(--bg); color:var(--text);
+}
+.header{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:24px;
+  padding:18px 24px; background:linear-gradient(180deg, rgba(15,20,34,.92), rgba(15,20,34,.78) 60%, rgba(15,20,34,0));
+  border-bottom:1px solid var(--border); backdrop-filter: blur(6px);
+}
+.title{font-weight:800; font-size:22px}
+.cta{
+  margin-left:auto; padding:16px 28px; border:none; border-radius:16px;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));
+  color:white; font-weight:800; letter-spacing:.5px; cursor:pointer; box-shadow:var(--shadow); opacity:.7;
+}
+.cta[disabled]{cursor:not-allowed; filter:grayscale(.35); opacity:.5}
+.cta.ready{opacity:1}
+
+main{padding:18px 20px 60px; max-width:1200px; margin:0 auto}
+.card{
+  background:var(--card); border:1px solid var(--border); border-radius:20px; padding:20px 22px; margin:18px 0; box-shadow:var(--shadow);
+}
+.card-title{color:var(--label); font-weight:700; margin-bottom:8px}
+.mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; color:var(--muted)}
+.status{padding:18px 22px; border-radius:16px; border:1px solid var(--border); background:var(--card); margin:18px 0}
+.status.error{border-color:var(--danger); color:#ffdada}
+.hidden{display:none}
+.done{ text-align:center; padding:44px}
+.done h1{font-size:38px; color:var(--ok); margin:0 0 10px}
+
+.form-grid{display:grid; grid-template-columns: 1fr 1fr; gap:40px; margin-top:6px}
+.field{display:flex; flex-direction:column; gap:10px}
+.label{color:var(--label); font-weight:600; font-size:14px}
+.input, textarea{
+  width:100%; background:rgba(255,255,255,.02); border:1px solid var(--border);
+  border-radius:14px; color:var(--text); padding:14px 14px; outline:none;
+}
+.input:focus, textarea:focus{border-color:var(--accent)}
+.ok{box-shadow:0 0 0 2px rgba(139,92,246,.15) inset}
+textarea{min-height:80px; resize:vertical}
+.long-rows{display:grid; grid-template-columns: 1fr 1fr; gap:40px}
+.long{display:grid; grid-template-columns: 1fr; gap:10px}
+@media (max-width: 900px){
+  .form-grid, .long-rows{grid-template-columns: 1fr}
+  .title{font-size:18px}
+}
