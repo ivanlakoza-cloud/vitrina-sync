@@ -1,1 +1,58 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><title>Проверка полей сделки</title><link rel="stylesheet" href="styles.css"></head><body><div class="page"><header class="toolbar" id="toolbar"><h1 class="title">Проверка полей сделки перед отправкой на согласование:</h1><button id="submit" class="btn btn-primary" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button></header><section id="diag" class="panel"><div class="panel__title">Диагностика</div><ul id="log" class="log"></ul></section><div id="status" class="status"></div><form id="app" class="form" autocomplete="off"></form><section id="done" class="done"><h2>Спасибо :) Отправлено!</h2><p>Благодарю за заявку! Желаю продуктивного дня 🚀</p></section></div><script src="https://api.bitrix24.com/api/v1/"></script><script src="app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="pragma" content="no-cache" />
+<meta http-equiv="expires" content="0" />
+<title>Проверка полей сделки</title>
+<link rel="stylesheet" href="./styles.css?v=35" />
+<script>window.__WIDGET_SHELL_VERSION__="v35";</script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="hrow">
+        <h1>Проверка полей сделки перед отправкой на согласование: <span class="badge">shell v35</span></h1>
+        <button id="submit" class="button" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="code" id="diag">загрузка диагностики...</div>
+    </div>
+
+    <div class="panel code" id="status">Подключаемся к порталу…</div>
+  </div>
+
+  <script>
+  // --- Diagnostics (client) ---
+  (function() {
+    const p = new URLSearchParams(location.search);
+    const diag = [];
+    diag.push("boot <b>shell v35</b>");
+    diag.push("path=" + location.pathname);
+    diag.push("query=" + (location.search || "—"));
+    diag.push("typeof BX24=" + (typeof window.BX24));
+    document.getElementById('diag').innerHTML = "<ul><li>" + diag.join("</li><li>") + "</li></ul>";
+  })();
+  </script>
+
+  <!-- Robust anti-cache loader for the real widget app.js -->
+  <script type="module">
+    const version = "35";
+    const cb = Date.now().toString();
+    const url = new URL("./app.js?v=" + version + "&cb=" + cb, location.href).toString();
+    console.log("[shell] loading real app:", url);
+    try {
+      await import(url);
+    } catch (e) {
+      console.error("[shell] failed to import app.js", e);
+      const s = document.getElementById('status');
+      s.textContent = "Не удалось загрузить app.js (" + e + ")";
+      s.style.color = "#ff7b7b";
+    }
+  </script>
+</body>
+</html>
