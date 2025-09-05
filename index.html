@@ -1,49 +1,34 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Проверка полей сделки</title>
-  <link rel="stylesheet" href="./styles.css?v=31"/>
+  <link rel="stylesheet" href="styles.css?v=32">
 </head>
 <body>
-  <header class="topbar">
-    <h1 id="title">Проверка полей сделки перед отправкой на согласование:</h1>
-    <button id="submit" class="btn" disabled>ОТПРАВИТЬ СТОИМОСТЬ м² НА СОГЛАСОВАНИЕ</button>
-  </header>
+<header class="topbar">
+  <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+  <button id="submit" class="cta" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+</header>
 
-  <main id="app">
-    <section class="card">
-      <h2>Диагностика</h2>
-      <ul id="diag">
-        <li>boot v31</li>
-        <li id="diag-path"></li>
-        <li id="diag-query"></li>
-        <li id="diag-bx"></li>
-      </ul>
-    </section>
+<main id="app">
+  <section class="card">
+    <div class="card-title">Диагностика</div>
+    <ul id="diag"></ul>
+  </section>
 
-    <section class="card">
-      <div id="status" class="status info">Подключаемся к порталу…</div>
-    </section>
+  <section class="card">
+    <div id="status" class="status info">Подключаемся к порталу...</div>
+  </section>
 
-    <section id="result" class="card hidden">
-      <h2>Спасибо :) Отправлено!</h2>
-      <p>Благодарю за заявку! Желаю продуктивного дня 🚀</p>
-    </section>
-  </main>
+  <section id="thanks" class="card thanks hidden">
+    <h2>Спасибо :) Отправлено!</h2>
+    <p>Благодарю за заявку! Желаю продуктивного дня 🚀</p>
+  </section>
+</main>
 
-  <!-- Bitrix24 API loader (works only inside portal iframe) -->
-  <script>
-    // if already injected by portal, this will be ignored
-    (function injectBx(){
-      if (window.BX24) return;
-      var s=document.createElement('script');
-      s.src='https://api.bitrix24.com/api/v1/';
-      s.async=true;
-      document.head.appendChild(s);
-    })();
-  </script>
-  <script src="./app.js?v=31"></script>
+<script src="https://api.bitrix24.com/api/v1/"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
