@@ -1,0 +1,58 @@
+
+:root{
+  --bg:#0d1220;
+  --panel:#111832;
+  --ink:#eaf1ff;
+  --muted:#a6b2d1;
+  --accent:#7b5cff;
+  --ok:#a9f5c8;
+  --err:#ff9aa2;
+  --radius:18px;
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+  --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background: radial-gradient(1200px 600px at 20% -10%, #172040 0%, transparent 50%) no-repeat, var(--bg);
+  color:var(--ink);
+  font: 16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,'Helvetica Neue',Arial,'Apple Color Emoji','Segoe UI Emoji';
+  padding:0 14px 40px;
+}
+
+.topbar{
+  position:sticky; top:0; background:linear-gradient(180deg, rgba(13,18,32,.98), rgba(13,18,32,.6));
+  backdrop-filter: blur(6px); padding:14px 0 10px; z-index:10;
+  display:flex; align-items:center; gap:14px; border-bottom:1px solid rgba(255,255,255,.06);
+}
+.topbar h1{margin:0; font-size:22px}
+.topbar small{font-weight:400; color:var(--muted); font-size:.85em}
+.topbar .tag{margin-left:auto; background:rgba(123,92,255,.2); color:#d9d1ff; padding:.3rem .6rem; border-radius:999px; font-size:.85em}
+
+.container{max-width:1100px; margin:18px auto 0; display:flex; flex-direction:column; gap:16px}
+
+.panel{
+  background:var(--panel);
+  border-radius:var(--radius);
+  padding:16px 18px;
+  box-shadow: var(--shadow);
+  border:1px solid rgba(255,255,255,.06);
+}
+.panel h2,.panel h3{margin:.2rem 0 0.6rem}
+.panel.ok{border-color: rgba(169,245,200,.4); box-shadow: 0 10px 30px rgba(37,151,106,.25)}
+
+.grid{display:grid; gap:16px; grid-template-columns: 1fr 1fr}
+@media (max-width: 900px){ .grid{grid-template-columns:1fr} }
+
+pre{margin:0; white-space:pre-wrap; word-break:break-word; font-family: var(--mono); color:var(--ink); background:rgba(255,255,255,.03); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.06)}
+.mono{width:100%; font-family:var(--mono); background:rgba(255,255,255,.03); color:var(--ink); border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:10px}
+.row{display:flex; gap:10px; flex-wrap:wrap}
+
+button{
+  background: linear-gradient(180deg, #8a6bff, #6b4dff);
+  color:white; border:none; padding:10px 14px; border-radius:12px; cursor:pointer; box-shadow: 0 6px 18px rgba(123,92,255,.35);
+  font-weight:600;
+}
+button:disabled{opacity:.5; cursor:not-allowed}
