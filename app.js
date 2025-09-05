@@ -1,233 +1,269 @@
 
-(function(){
-  const qs = (sel) => document.querySelector(sel);
-  const el = qs.bind(document);
-  const submitBtn = el('#submit');
-  const statusEl = el('#status');
-  const diag = el('#diag');
-  const diagList = el('#diagList');
-  const formWrap = el('#formWrap');
-  const formEl = el('#dealForm');
-  const doneEl = el('#done');
+(() => {
+  const log = (...a)=>{ try{console.log('[b24 v29]',...a);}catch(e){} }
+  const sel = s => document.querySelector(s);
+  const diagList = sel('#diag_list');
 
-  const DEBUG = location.search.includes('debug=1');
-  if (DEBUG) diag.classList.remove('hidden');
-
-  function logDiag(msg){
-    if (!DEBUG) return;
-    const li = document.createElement('li'); li.textContent = msg; diagList.appendChild(li);
+  const addDiag = (k,v='') => {
+    const li = document.createElement('li');
+    li.textContent = v ? `${k} → ${v}` : k;
+    diagList.append(li);
   }
+
+  addDiag('boot', window.__WIDGET_VERSION__);
+
+  // Status helper
   function showStatus(msg, type='info'){
-    statusEl.textContent = msg;
-    statusEl.className = `status ${type} card`;
-  }
-  function showError(msg){ showStatus(msg, 'error'); }
-
-  const LONGS = [
-    { code:'UF_CRM_1757040827538', label:'Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите\\nПример: 1. Стены выровнять, зашпаклевать - покрасят сами\\n2. Пол подготовить под ламинат\\n3. Откосы выровнять и закрыть\\n4. Провести электрику\\n5. Установить двери\\n6. Привести в порядок коридорную группу\\nАрендатор своими силами положит ламинат и устроит натяжной потолок, покрасить стены', type:'textarea', required:true },
-    { code:'UF_CRM_1757040956282', label:'Опишите, что‑то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет... Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки', type:'textarea', required:false },
-  ];
-  const FIELDS = [
-    { code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:true },
-    { code:'UF_CRM_1737115941816', label:'Площадь м²', type:'number', required:true },
-    { code:'UF_CRM_1737116070781', label:'Направление/вид бизнеса клиента', type:'text', required:true },
-    { code:'UF_CRM_1737116470642', label:'Стоимость м² на согласование', type:'number', required:true },
-    { code:'UF_CRM_1755537385514', label:'Город и адрес', type:'text', required:true },
-    { code:'UF_CRM_1756910832606', label:'Арендные каникулы (есть/нет/сколько)', type:'text', required:false },
-    { code:'UF_CRM_17569699235306', label:'Отопление (Отсутствует/Сверху/Иное)', type:'text', required:false },
-    { code:'UF_CRM_1756969983186', label:'НДС (Отсутствует/Сверху+процент)', type:'text', required:false },
-  ];
-
-  const ALL_FIELDS = [...FIELDS, ...LONGS];
-
-  // util to create form
-  function fieldItem({label, name, type='text', value='', long=false}){
-    const wrap = document.createElement('div');
-    wrap.className = `form-item ${long ? 'long':''}`;
-    const lab = document.createElement('label'); lab.className='label'; lab.textContent = label;
-    const ctrl = (type === 'textarea') ? document.createElement('textarea') : document.createElement('input');
-    if (type !== 'textarea') ctrl.type = type;
-    ctrl.className = 'control';
-    ctrl.name = name; ctrl.value = value ?? '';
-    ctrl.addEventListener('input', () => {
-      wrap.classList.toggle('filled', (ctrl.value ?? '').toString().trim().length>0);
-      validateForm();
-    });
-    wrap.appendChild(lab);
-    const cwrap = document.createElement('div'); cwrap.className='control'; cwrap.appendChild(ctrl);
-    wrap.appendChild(cwrap);
-    return {wrap, input: ctrl};
+    const el = sel('#status');
+    if(!el) return;
+    el.textContent = msg;
+    el.className = 'status ' + type;
   }
 
-  let DEAL_ID = null;
-  let dealData = null;
-  let inputsMap = new Map();
-
-  function enableSubmit(flag){
-    submitBtn.disabled = !flag;
-  }
-
-  function validateForm(){
-    let ok = true;
-    inputsMap.forEach((inp, code)=>{
-      const cfg = ALL_FIELDS.find(f=>f.code===code);
-      const item = inp.closest('.form-item');
-      if (cfg && cfg.required){
-        const val = (inp.value ?? '').toString().trim();
-        const valid = val.length>0;
-        item.classList.toggle('invalid', !valid);
-        ok = ok && valid;
-      }
-    });
-    enableSubmit(ok);
-  }
-
-  function buildForm(){
-    formEl.innerHTML = '';
-    inputsMap.clear();
-
-    FIELDS.forEach(cfg => {
-      const val = dealData?.[cfg.code] ?? '';
-      const {wrap, input} = fieldItem({label: cfg.label, name: cfg.code, type: cfg.type, value: (Array.isArray(val)? val.join(', ') : val)});
-      inputsMap.set(cfg.code, input);
-      formEl.appendChild(wrap);
-      wrap.classList.toggle('filled', (!!val && (val.toString().trim().length>0)));
-    });
-
-    LONGS.forEach(cfg => {
-      const val = dealData?.[cfg.code] ?? '';
-      const {wrap, input} = fieldItem({label: cfg.label, name: cfg.code, type: cfg.type, value: (Array.isArray(val)? val.join(', ') : val), long:true});
-      inputsMap.set(cfg.code, input);
-      formEl.appendChild(wrap);
-      wrap.classList.toggle('filled', (!!val && (val.toString().trim().length>0)));
-    });
-
-    formWrap.classList.remove('hidden');
-    validateForm();
-  }
-
-  function diffFields(){
-    const fields = {};
-    inputsMap.forEach((input, code)=>{
-      const orig = dealData?.[code];
-      let val = input.value;
-      if (val === undefined || val === null) val = '';
-      // normalize numbers
-      if (/number/i.test(input.type)){
-        const n = Number(val.toString().replace(',', '.'));
-        if (!Number.isNaN(n)) val = n;
-      }
-      const same = (Array.isArray(orig)? orig.join(', ') : (orig ?? '')).toString() === val.toString();
-      if (!same) fields[code] = val;
-    });
-    return fields;
-  }
-
-  async function handleSubmit(){
-    enableSubmit(false);
-    showStatus('Сохраняем изменения и запускаем бизнес‑процесс…', 'info');
-    try{
-      const changed = diffFields();
-      if (Object.keys(changed).length){
-        await bxCall('crm.deal.update', {id: DEAL_ID, fields: changed});
-      }
-      // Запуск БП #209
-      const docId = ["crm", "CCrmDocumentDeal", `DEAL_${DEAL_ID}`];
-      await bxCall('bizproc.workflow.start', { TEMPLATE_ID: 209, DOCUMENT_ID: docId });
-      showStatus('Готово.', 'success');
-      doneEl.classList.remove('hidden');
-      formWrap.classList.add('hidden');
-    }catch(e){
-      console.error(e);
-      showError('Ошибка при сохранении или запуске БП: ' + (e?.message || e));
-      enableSubmit(true);
-    }
-  }
-
-  submitBtn.addEventListener('click', (e)=>{ e.preventDefault(); handleSubmit(); });
-
-  // BX helpers
-  function loadBxSdk(){
-    return new Promise((resolve,reject)=>{
+  // Load BX24 api if missing
+  function ensureBX24() {
+    return new Promise((resolve, reject) => {
+      if (window.BX24 && typeof BX24 === 'object') return resolve(BX24);
       const s = document.createElement('script');
       s.src = 'https://api.bitrix24.com/api/v1/';
       s.async = true;
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('Не удалось загрузить SDK Bitrix24'));
+      s.onload = () => {
+        if (window.BX24) resolve(BX24);
+        else reject(new Error('BX24 not available after load'));
+      };
+      s.onerror = () => reject(new Error('Failed to load Bitrix API'));
       document.head.appendChild(s);
     });
   }
-  function bxInit(){
-    return new Promise((resolve,reject)=>{
-      if (!window.BX24){ reject(new Error('BX24 не найден после загрузки SDK')); return; }
-      try{
-        BX24.init(()=> resolve());
-      }catch(e){ reject(e); }
-    });
-  }
-  function bxCall(method, params){
-    return new Promise((resolve,reject)=>{
-      try{
-        BX24.callMethod(method, params, (res)=>{
-          if (res && res.error()) {
-            reject(new Error(res.error() + ': ' + res.error_description()));
-          }else{
-            resolve(res.data && res.data());
-          }
-        });
-      }catch(e){ reject(e); }
-    });
-  }
 
-  async function detectDealId(){
-    // 1) placement
-    try{
-      const info = await new Promise((resolve)=> BX24.placement.info(resolve));
-      if (info && info.options && (info.options.ID || info.options.id)){
-        return info.options.ID || info.options.id;
-      }
-    }catch(_){}
-    // 2) query macros from Bitrix widget URL
-    const q = new URLSearchParams(location.search);
+  // Parse query
+  function q(v){ return new URLSearchParams(location.search).get(v) }
+  addDiag('path', location.pathname);
+  addDiag('query', location.search || '—');
+
+  function getIdFromQuery(){
     const keys = ['id','ID','deal_id','DEAL_ID','entityId','ENTITY_ID'];
-    for (const k of keys){
-      if (q.get(k)) return q.get(k);
+    for(const k of keys){
+      const val = q(k);
+      if(val && /^\d+$/.test(val)) return val;
     }
-    // 3) referrer pattern
-    const ref = document.referrer || '';
-    const m = ref.match(/\/crm\/deal\/details\/(\d+)\//);
-    if (m) return m[1];
     return null;
   }
 
-  async function boot(){
-    try{
-      if (DEBUG){
-        diag.classList.remove('hidden');
-        diagList.innerHTML = '';
-        logDiag('boot v27');
-        logDiag('path=' + location.pathname);
-        logDiag('query=' + location.search);
-      }
-      showStatus('Грузим SDK Bitrix24…');
-      await loadBxSdk();
-      showStatus('Инициализируем SDK…');
-      await bxInit();
-      if (DEBUG) logDiag('typeof BX24=' + typeof BX24);
-      showStatus('Определяем ID сделки…');
-      DEAL_ID = await detectDealId();
-      if (!DEAL_ID){ showError('Не смогли определить ID сделки. Откройте виджет из карточки сделки.'); return; }
-      if (DEBUG) logDiag('dealId='+DEAL_ID);
-      showStatus('Загружаем данные сделки #' + DEAL_ID + '…');
-      dealData = await bxCall('crm.deal.get', {id: DEAL_ID});
-      if (!dealData){ showError('Не получили данные сделки'); return; }
-      showStatus('Готово. Проверьте поля и отправьте на согласование.', 'success');
-      buildForm();
-    }catch(e){
-      console.error(e);
-      showError(e.message || e.toString());
-    }
+  function getIdFromReferrer(){
+    const ref = document.referrer || '';
+    const m = ref.match(/\/crm\/deal\/details\/(\d+)\//);
+    return m ? m[1] : null;
   }
 
-  boot();
+  function resolveDealIdViaPlacement(){
+    return new Promise((resolve) => {
+      try{
+        BX24.placement.info((d)=>{
+          log('placement.info', d);
+          addDiag('placement', (d && d.placement) || '—');
+          let id = null;
+          const opt = (d && d.options) || {};
+          const cand = [opt.ID, opt.id, opt.deal_id, opt.entityId, opt.ENTITY_ID, opt.ownerId];
+          for(const c of cand){ if(c && /^\d+$/.test(String(c))) { id = String(c); break; } }
+          if(id) return resolve(id);
+
+          // If activity id is present, try to resolve deal via activity.get
+          const actId = opt.activityId || opt.ACTIVITY_ID || opt.id;
+          if(actId && /^\d+$/.test(String(actId))){
+            BX24.callMethod('crm.activity.get', {id: actId}, (r)=>{
+              try{
+                const data = r && r.data && r.data();
+                const ownerId = data && (data.OWNER_ID || (data.bindings && data.bindings[0] && data.bindings[0].OWNER_ID));
+                if(ownerId) return resolve(String(ownerId));
+              }catch(e){}
+              resolve(null);
+            });
+          } else {
+            resolve(null);
+          }
+        });
+      }catch(e){
+        resolve(null);
+      }
+    });
+  }
+
+  async function resolveDealId(){
+    let id = getIdFromQuery();
+    if(id){ addDiag('id(query)', id); return id; }
+
+    try{
+      await ensureBX24();
+    }catch(e){
+      addDiag('bx24-load', e.message);
+      return getIdFromReferrer();
+    }
+
+    try{
+      const viaPlacement = await resolveDealIdViaPlacement();
+      if(viaPlacement){ addDiag('id(placement)', viaPlacement); return viaPlacement; }
+    }catch(e){}
+
+    const viaRef = getIdFromReferrer();
+    if(viaRef){ addDiag('id(referrer)', viaRef); return viaRef; }
+
+    return null;
+  }
+
+  // Render form
+  const FIELDS = [
+    {code:'UF_CRM_1737115114028', label:'Комментарий клиента, что важно клиенту?', type:'textarea', required:false},
+    {code:'UF_CRM_1737115941816', label:'Площадь м²', type:'number', required:true},
+    {code:'UF_CRM_1737116470642', label:'Стоимость м² на согласование', type:'number', required:true},
+    {code:'UF_CRM_1737116070781', label:'Направление/вид бизнеса клиента', type:'text', required:true},
+    {code:'UF_CRM_1755537385514', label:'Город и адрес', type:'text', required:true},
+    {code:'UF_CRM_1756910832606', label:'Как пойдет', type:'text', required:false},
+    {code:'UF_CRM_1756969983186', label:'НДС (Отсутствует/Сверху+процент)', type:'text', required:true},
+    {code:'UF_CRM_175569699283186', label:'Отопление (Отсутствует/Сверху/Иное)', type:'text', required:true},
+  ];
+
+  const LONGS = [
+    {code:'UF_CRM_1757040827538', label:'Опишите максимально подробно, что необходимо сделать на объекте для того, чтобы арендатор заехал. Именно этот запрос попадет в строительный отдел. Если ни каких работ не требуется, так и напишите\\nПример: 1. Стены выровнять, зашпаклевать - покрасят сами\\n2. Пол подготовить под ламинат\\n3. Откосы выровнять и закрыть\\n4. Провести электрику\\n5. Установить двери\\n6. Привести в порядок коридорную группу\\nАрендатор своими силами положит ламинат и устроит натяжной потолок, покрасить стены', type:'textarea', required:true},
+    {code:'UF_CRM_1757040956282', label:'Опишите, что-то еще, что пригодится для принятия решения. Например — как давно пустует помещение, или что вы договорились, что через 3 месяца цена вырастет... Тут можно указать любую важную дополнительную информацию, которой нет в полях сделки', type:'textarea', required:false},
+  ];
+
+  function makeInput(field, value){
+    const wrap = document.createElement('div');
+    wrap.className = 'field' + (field.required ? ' required' : '');
+    const id = 'f_' + field.code;
+    wrap.innerHTML = `<label for="${id}">${field.label}</label>`;
+    let el;
+    if(field.type === 'textarea'){
+      el = document.createElement('textarea');
+      el.className = 'input';
+      el.placeholder = field.required ? 'обязательно заполните' : '';
+      el.value = value || '';
+    }else{
+      el = document.createElement('input');
+      el.className = 'input';
+      el.type = field.type || 'text';
+      el.placeholder = field.required ? 'обязательно заполните' : '';
+      el.value = (value ?? '').toString();
+    }
+    el.id = id;
+    el.name = field.code;
+    wrap.appendChild(el);
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = field.required ? 'Обязательное поле' : ' ';
+    wrap.appendChild(hint);
+
+    const setFilled = () => {
+      if(String(el.value || '').trim().length) wrap.classList.add('filled');
+      else wrap.classList.remove('filled');
+      validate();
+    };
+    el.addEventListener('input', setFilled);
+    setFilled();
+    return wrap;
+  }
+
+  function renderForm(deal){
+    const form = sel('#deal_form');
+    form.innerHTML = '';
+
+    // Grid of short fields
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for(const f of FIELDS){
+      grid.appendChild(makeInput(f, deal[f.code]));
+    }
+    form.appendChild(grid);
+
+    // Long fields row (2 columns)
+    const longGrid = document.createElement('div');
+    longGrid.className = 'grid';
+    for(const f of LONGS){
+      longGrid.appendChild(makeInput(f, deal[f.code]));
+    }
+    form.appendChild(longGrid);
+
+    sel('#form_wrap').classList.remove('hidden');
+  }
+
+  function collectChanges(initial){
+    const data = {};
+    const inputs = sel('#deal_form').querySelectorAll('.input');
+    inputs.forEach((el)=>{
+      const code = el.name;
+      const val = (el.value || '').toString();
+      if ((initial[code] || '') !== val) data[code] = val;
+    });
+    return data;
+  }
+
+  function validate(){
+    const submit = sel('#submit');
+    const requiredFields = document.querySelectorAll('.field.required .input');
+    let ok = true;
+    requiredFields.forEach((el)=>{
+      if(!String(el.value || '').trim().length) ok = false;
+    });
+    submit.disabled = !ok;
+    return ok;
+  }
+
+  async function main(){
+    showStatus('Подключаемся к порталу…');
+    let bx;
+    try{
+      bx = await ensureBX24();
+      addDiag('typeof BX24', typeof BX24);
+    }catch(e){
+      addDiag('bx24', 'not loaded: ' + e.message);
+    }
+
+    const dealId = await resolveDealId();
+    if(!dealId){
+      showStatus('Не удалось определить ID сделки. Добавьте макросы #ID# / #DEAL_ID# / #ENTITY_ID# в URL обработчика виджета или откройте виджет из карточки сделки.', 'error');
+      return;
+    }
+    addDiag('Deal ID', dealId);
+
+    if(!bx){ // still try if BX24 missing
+      showStatus('BX24 недоступен. Откройте виджет из карточки сделки.', 'error');
+      return;
+    }
+
+    // Fetch deal
+    BX24.callMethod('crm.deal.get', {id: dealId}, (r)=>{
+      const data = r && r.data && r.data();
+      if(!data){
+        showStatus('Не удалось получить данные сделки', 'error');
+        return;
+      }
+      showStatus('Данные сделки получены');
+      renderForm(data);
+
+      // Hook submit
+      sel('#submit').onclick = ()=>{
+        if(!validate()) return;
+        const fields = collectChanges(data);
+        if(Object.keys(fields).length === 0){
+          // nothing to save – still show success to proceed
+          sel('#success').classList.remove('hidden');
+          return;
+        }
+        BX24.callMethod('crm.deal.update', {id: dealId, fields}, (res)=>{
+          const err = res && res.error && res.error();
+          if(err){
+            showStatus('Ошибка сохранения: ' + err, 'error');
+          }else{
+            sel('#success').classList.remove('hidden');
+          }
+        });
+      };
+    });
+  }
+
+  // Kick off
+  main().catch(e=>{
+    showStatus('Ошибка инициализации: ' + (e && e.message ? e.message : e), 'error');
+  });
 })();

@@ -1,37 +1,38 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Проверка полей сделки</title>
-  <link rel="stylesheet" href="./styles.css?v=27"/>
+  <link rel="stylesheet" href="styles.css?v=29">
 </head>
 <body>
-  <header class="sticky">
-    <h1 id="title">Проверка полей сделки перед отправкой на согласование:</h1>
-    <button id="submit" class="btn btn-primary" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+  <header id="topbar">
+    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+    <button id="submit" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
   </header>
 
   <main id="app">
-    <section id="diag" class="card hidden">
+    <section class="card" id="diag">
       <h2>Диагностика</h2>
-      <ul id="diagList"></ul>
+      <ul id="diag_list"></ul>
     </section>
 
-    <section id="status" class="status info card">Подключаемся к порталу…</section>
-
-    <section id="formWrap" class="card hidden">
-      <form id="dealForm" novalidate></form>
+    <section class="card" id="status_wrap">
+      <div id="status" class="status info">Подключаемся к порталу…</div>
     </section>
 
-    <section id="done" class="card success hidden">
-      <div class="done">
-        <div class="big">Спасибо :) Отправлено!</div>
-        <div class="sub">Благодарю за заявку! Желаю продуктивного дня 🚀</div>
-      </div>
+    <section class="card hidden" id="form_wrap">
+      <form id="deal_form" novalidate></form>
+    </section>
+
+    <section class="card success hidden" id="success">
+      <div class="big">Спасибо :) Отправлено!</div>
+      <div>Благодарю за заявку! Желаю продуктивного дня 🚀</div>
     </section>
   </main>
 
-  <script src="./app.js?v=27"></script>
+  <script>window.__WIDGET_VERSION__ = "v29";</script>
+  <script src="app.js?v=29"></script>
 </body>
 </html>
