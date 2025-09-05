@@ -11,70 +11,56 @@ function pageHtml(injected: any){
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Согласование цены — виджет</title>
+  <title>Проверка полей сделки — перед согласованием</title>
   <script src="https://api.bitrix24.com/api/v1/"></script>
   <style>
     :root{
-      --bg:#0b1220;--card:#0f172a;--ink:#e2e8f0;--muted:#94a3b8;--accent:#8b5cf6;--ok:#22c55e;--err:#ef4444;--br:#1f2937;
-      --shadow:0 10px 25px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.25)
+      --bg:#0b1220;--card:#0f172a;--ink:#e7e9ef;--muted:#9aa7c0;--accent:#8b5cf6;--accent-d:#7c3aed;--ok:#22c55e;--err:#ef4444;--br:#1f2937;
+      --shadow:0 12px 28px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.25);
+      --field-filled: rgba(139,92,246,.12);
+      --field-border: #5b21b6aa;
+      --btn-disabled:#4b5563;
     }
     html,body{height:100%}
     body{margin:0;background:linear-gradient(180deg,#0b1220,#0a1020);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,'Noto Sans',sans-serif}
     .wrap{max-width:1100px;margin:0 auto;padding:24px}
-    h1{font-size:26px;margin:0 0 14px;display:flex;align-items:center;gap:12px}
-    .badge{background:#172554;border:1px solid #1e293b;border-radius:999px;padding:8px 12px;box-shadow:var(--shadow)}
-    .muted{color:var(--muted)} .ok{color:var(--ok)} .err{color:var(--err)}
+    .hdr{display:flex;align-items:center;gap:24px;margin-bottom:12px}
+    .title{font-size:24px;font-weight:800;line-height:1.2}
+    .hdr .spacer{flex:1 1 auto}
+    .hdr .action{margin-left:100px}
     .card{background:var(--card);border:1px solid var(--br);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
-    .grid{display:grid;gap:18px;grid-template-columns:1fr 1fr}
-    .label{display:block;font-size:12px;color:var(--muted);margin-bottom:8px}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .group{margin-bottom:12px}
+    .label{display:block;font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}
+    .hint{color:var(--muted);font-size:12px;margin:4px 0 0}
     .control{display:block;width:100%;border-radius:12px;border:1px solid #22304a;background:#0b1325;color:var(--ink);padding:12px 12px;outline:none;box-shadow:inset 0 1px 2px rgba(0,0,0,.2)}
     .control:focus{border-color:#3b82f6;box-shadow:inset 0 1px 2px rgba(0,0,0,.2),0 0 0 3px rgba(59,130,246,.25)}
     .invalid{border-color:var(--err)!important;box-shadow:inset 0 1px 2px rgba(0,0,0,.2),0 0 0 3px rgba(239,68,68,.25)!important}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .btn{border-radius:14px;border:1px solid #5b21b6;background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:white;padding:14px 18px;cursor:pointer;font-weight:700;letter-spacing:.3px;box-shadow:var(--shadow);transition:transform .05s ease}
+    .filled{background:var(--field-filled);border-color:var(--field-border)}
+    .btn{border-radius:14px;border:1px solid #5b21b6;background:linear-gradient(135deg,var(--accent),var(--accent-d));color:white;padding:14px 18px;cursor:pointer;font-weight:800;letter-spacing:.3px;box-shadow:var(--shadow);transition:transform .05s ease;text-transform:uppercase}
     .btn:hover{transform:translateY(-1px)}
-    .footer-note{margin-top:10px;color:var(--muted);font-size:12px}
-    .pill{display:inline-flex;align-items:center;border:1px solid #243045;border-radius:999px;padding:8px 12px;gap:8px;background:#0b1325;box-shadow:var(--shadow)}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .group{margin-bottom:14px}
-    .bigmsg{font-size:34px;text-align:center;padding:60px 20px;border-radius:18px;background:linear-gradient(180deg,#111827,#0b1220);border:1px solid #273244;box-shadow:var(--shadow)}
+    .btn[disabled]{background:var(--btn-disabled);border-color:var(--btn-disabled);cursor:not-allowed;transform:none}
+    .bigmsg{font-size:26px;text-align:center;padding:60px 20px;border-radius:18px;background:linear-gradient(180deg,#111827,#0b1220);border:1px solid #273244;box-shadow:var(--shadow);margin-top:18px}
+    .muted{color:var(--muted)}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Согласование цены <span id="state" class="ok" style="display:none">готово</span></h1>
-
-    <div class="card" id="cardInit">
-      <div class="row">
-        <div class="pill mono">Placement: <b id="pServer" style="margin-left:6px"></b></div>
-        <div class="pill mono">Deal ID: <b id="dealId" style="margin-left:6px"></b></div>
-      </div>
-      <div class="footer-note" id="hint"></div>
+    <div class="hdr">
+      <div class="title">Проверка полей сделки перед отправкой на согласование:</div>
+      <div class="spacer"></div>
+      <button class="btn action" id="btnSubmit" disabled>Отправить стоимость м² на согласование</button>
     </div>
 
-    <div class="grid" style="margin-top:18px">
-      <div class="card">
-        <h3 style="margin:0 0 10px">Поля сделки</h3>
-        <form id="dealForm" class="two-col"></form>
-      </div>
-      <div class="card">
-        <h3 style="margin:0 0 10px">Действия</h3>
-        <div class="group">
-          <button class="btn" id="btnSubmit">Отправить стоимость на согласование</button>
-        </div>
-        <div id="status" class="mono muted"></div>
-      </div>
+    <div class="card">
+      <form id="dealForm" class="two-col"></form>
     </div>
 
-    <div id="done" class="bigmsg" style="display:none">
-      <div>Спасибо :) Отправлено!</div>
-      <div style="margin-top:8px">Ждем вас снова! ;)</div>
-    </div>
+    <div id="done" class="bigmsg" style="display:none"></div>
   </div>
 
   ${boot}
-  <script src="/b24/soglasovanie-ceny/app.js?v=14"></script>
+  <script src="/b24/soglasovanie-ceny/app.js?v=15"></script>
 </body>
 </html>`;
 }
@@ -107,7 +93,7 @@ function respond(html: string){
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      "X-Widget": "b24-soglasovanie-v14"
+      "X-Widget": "b24-soglasovanie-v15"
     }
   });
 }
