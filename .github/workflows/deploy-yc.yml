@@ -16,10 +16,11 @@ on:
       - 'yarn.lock'
       - 'package-lock.json'
       - 'deploy/yandex-single-vm/**'
+      - 'src/**'
 
 permissions:
   contents: read
-  packages: write   # нужно для push в GHCR
+  packages: write               # пушим образ в GHCR
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -29,13 +30,14 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}/web
 
 jobs:
+  # 1) СБОРКА И ПУШ ОБРАЗА В GHCR
   build_and_push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
@@ -45,11 +47,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push image (with cache)
+      - name: Build & push (with cache)
         uses: docker/build-push-action@v5
         with:
-          context: ./src              # ← если Dockerfile в корне, поставьте "."
-          file: ./src/Dockerfile      # ← и здесь "./Dockerfile"
+          context: ./src                # если Dockerfile в корне — поставь "." и file: ./Dockerfile
+          file: ./src/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest
@@ -57,6 +59,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # 2) ДЕПЛОЙ НА ВМ
   deploy:
     needs: build_and_push
     runs-on: ubuntu-latest
@@ -70,12 +73,20 @@ jobs:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
-          # кладём ровно эти два файла в каталог деплоя
           source: |
             deploy/yandex-single-vm/docker-compose.yml
             deploy/yandex-single-vm/Caddyfile
           target: "~/app/deploy/yandex-single-vm"
-          strip_components: 2  # уберёт "deploy/yandex-single-vm" из пути
+          strip_components: 2
+
+      - name: Login to GHCR on VM (нужно, если пакет приватный)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          script: |
+            echo '${{ secrets.YC_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ github.repository_owner }}' --password-stdin
 
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
@@ -88,7 +99,7 @@ jobs:
             DEPLOY_DIR=~/app/deploy/yandex-single-vm
             mkdir -p "$DEPLOY_DIR"
 
-            # создаём .env только если его ещё нет
+            # .env приложения — создать, если ещё нет
             if [ ! -f "$DEPLOY_DIR/.env" ]; then
               printf '%s\n' \
                 'NODE_ENV=production' \
@@ -98,8 +109,10 @@ jobs:
                 > "$DEPLOY_DIR/.env"
             fi
 
+            # переменная IMAGE для compose-подстановки
+            echo "IMAGE=ghcr.io/${{ github.repository }}/web:latest" > "$DEPLOY_DIR/.compose.env"
+
             cd "$DEPLOY_DIR"
-            # образ теперь приходит из GHCR — просто тянем и перезапускаем
-            docker compose pull web || true
-            docker compose up -d --no-build --remove-orphans
+            docker compose --env-file .compose.env pull web
+            docker compose --env-file .compose.env up -d --no-build --remove-orphans
             docker image prune -f || true
