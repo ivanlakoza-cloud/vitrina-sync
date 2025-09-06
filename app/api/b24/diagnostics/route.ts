@@ -1,8 +1,7 @@
-// app/api/b24/diagnostics/route.ts
 import type { NextRequest } from "next/server";
 
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
-export const runtime = "edge"; // ensure req.formData() works reliably
 
 function pageHtml(injected: any){
   const boot = `<script>window.__B24_POST=${JSON.stringify(injected||{})};</script>`;
@@ -27,6 +26,7 @@ function pageHtml(injected: any){
     code{color:#93c5fd}
     .row{display:flex;gap:8px;align-items:center;margin-top:8px}
     input,select,button{border-radius:10px;border:1px solid var(--br);background:#0b1220;color:#e2e8f0;padding:8px 10px}
+    input{width:100%}
     button{cursor:pointer;font-weight:600}
     .ok{color:var(--ok)} .err{color:var(--err)} .muted{color:var(--muted)}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
@@ -42,7 +42,7 @@ function pageHtml(injected: any){
       <div class="card">
         <div class="title">URL шаблон (в «URL обработчика виджета»)</div>
         <div class="row">
-          <input id="tpl" class="mono" style="flex:1" value="https://vitran.ru/api/b24/diagnostics?id=#ID#&deal_id=#DEAL_ID#&entityId=#ENTITY_ID#"/>
+          <input id="tpl" class="mono" value="https://vitran.ru/api/b24/diagnostics?id=#ID#&deal_id=#DEAL_ID#&entityId=#ENTITY_ID#" />
           <button id="copyTpl" class="btn-accent">Копировать</button>
         </div>
         <div class="footer">Подставляем сразу 3 макроса — Bitrix заменит хотя бы один.</div>
@@ -77,7 +77,7 @@ function pageHtml(injected: any){
         <div class="title">Определение ID сделки</div>
         <div id="idDetect" class="mono"></div>
         <div class="row">
-          <input id="manualId" class="mono" placeholder="ID сделки вручную (например: 6443)"/>
+          <input id="manualId" class="mono" placeholder="ID сделки вручную (например: 6443)" />
           <button id="btnGetDeal">crm.deal.get</button>
         </div>
         <pre id="deal" class="mono muted" style="margin-top:8px">…</pre>
@@ -93,11 +93,11 @@ function pageHtml(injected: any){
       </div>
     </div>
 
-    <div class="footer">Эта страница также читает поля, которые Bitrix отправляет POST-ом при открытии слайдера (например PLACEMENT/PLACEMENT_OPTIONS). Если где-то пусто — пришлите скрин «Сводки» + «SERVER: POST» + «placement.info».</div>
+    <div class="footer">Эта страница также читает POST, который Bitrix шлёт при открытии слайдера (PLACEMENT, PLACEMENT_OPTIONS и т.п.). Если где-то пусто — приложи «Сводку» + «SERVER: POST» + «placement.info».</div>
   </div>
 
   ${boot}
-  <script src="/b24/diagnostics/diag.js?v=1.2a"></script>
+  <script src="/b24/diagnostics/diag.js?v=1.3.0"></script>
 </body>
 </html>`;
 }
@@ -120,13 +120,15 @@ async function collectFromRequest(req: NextRequest){
       if (typeof injected.PLACEMENT_OPTIONS === "string") {
         try{ injected.PLACEMENT_OPTIONS_PARSED = JSON.parse(injected.PLACEMENT_OPTIONS); }catch{}
       }
-    }catch(e){
+    }catch(e:any){
       injected.POST_PARSE_ERROR = String(e);
     }
-  } else {
+  }
+  // always include query snapshot
+  try{
     const url = new URL(req.url);
     injected.query = asPlain(Object.fromEntries(url.searchParams.entries()));
-  }
+  }catch{}
   return injected;
 }
 
@@ -136,7 +138,7 @@ function respond(html: string){
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      "X-Diagnostics": "b24-diag-v1.2a"
+      "X-Diagnostics": "b24-diag-v1.3.0"
     }
   });
 }
