@@ -6,7 +6,7 @@ vitran.ru, www.vitran.ru {
     encode gzip
     reverse_proxy web:3000
 
-    # Кэш «хэшованной» статики Next.js
+    # Кэшируем только хэшованную статику Next.js
     @nextStatic path /_next/static/* /favicon.ico /robots.txt /sitemap.xml
     header @nextStatic Cache-Control "public, max-age=31536000, immutable"
 
@@ -14,7 +14,7 @@ vitran.ru, www.vitran.ru {
     @health path /healthz
     respond @health 200
 
-    # Только HTTPS: HSTS
+    # Только HTTPS
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     }

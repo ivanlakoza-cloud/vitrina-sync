@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   web:
     image: ghcr.io/ivanlakoza-cloud/vitrina-sync/web:latest
@@ -12,7 +14,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp" # для HTTP/3 (нужен открыт UDP:443 в SG)
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
