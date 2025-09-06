@@ -1,28 +1,55 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Проверка полей сделки перед отправкой на согласование</title>
-  <!-- ВАЖНО: абсолютные пути, чтобы работать из /api/... -->
-  <link rel="stylesheet" href="/b24/soglasovanie-ceny/styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Проверка полей сделки</title>
+  <link rel="stylesheet" href="/b24/soglasovanie-ceny/styles.css?v=29" />
+  <script src="https://api.bitrix24.com/api/v1/"></script>
 </head>
 <body>
-  <main class="page">
+  <div class="wrap">
     <h1>Проверка полей сделки перед отправкой на согласование:</h1>
-    <div id="status" class="status">Подключаемся к порталу...</div>
+
+    <div class="status" id="status">Подключаемся к порталу…</div>
 
     <section class="card">
       <h2>Диагностика</h2>
-      <div id="log" class="log"></div>
-      <div class="actions">
-        <button id="reloadBtn">Перезагрузить</button>
-        <button id="copyBtn">Скопировать логи</button>
+      <pre id="log" class="mono"></pre>
+      <div class="row">
+        <button id="btnReload">Перезагрузить</button>
+        <button id="btnCopy">Скопировать логи</button>
       </div>
     </section>
-  </main>
 
-  <!-- Абсолютный путь к JS -->
-  <script defer src="/b24/soglasovanie-ceny/app.js"></script>
+    <section class="card">
+      <h2>Данные для согласования</h2>
+      <form id="form">
+        <div class="grid">
+          <label class="field">
+            <span>Площадь (м²)</span>
+            <input type="number" step="0.01" id="area" placeholder="например: 120" />
+          </label>
+
+          <label class="field">
+            <span>Ставка за м² (₽)</span>
+            <input type="number" step="0.01" id="rate" placeholder="например: 350" />
+          </label>
+
+          <label class="field col-2">
+            <span>Комментарий менеджера по цене</span>
+            <textarea id="priceComment" rows="3" placeholder="кратко по сути…"></textarea>
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="btnSend" type="submit" class="accent">ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+          <span id="saveStatus" class="muted"></span>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script src="/b24/soglasovanie-ceny/app.js?v=29"></script>
 </body>
 </html>
