@@ -1,9 +1,5 @@
-# B24 widget (v28)
+# b24_widget_v29
+Static widget files for Bitrix24.
 
-Файлы для каталога: `public/b24/soglasovanie-ceny/`
-
-- index.html — подключает **api.bitrix24.com/api/v1** ПЕРЕД `app.js`
-- styles.css
-- app.js — v28, долгий пуллинг BX24 (до 10 сек), понятная диагностика
-
-Если страница открыта не из карточки сделки — выводится предупреждение, но код всё равно продолжает ждать BX24 (до 10 сек), на случай поздней инициализации.
+Place these into `public/b24/soglasovanie-ceny/` in your Next/Vercel repo.
+Your API route `/api/b24/soglasovanie-ceny` should return this HTML.

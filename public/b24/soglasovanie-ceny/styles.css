@@ -1,9 +1,55 @@
 
-:root { --bg:#0e1520; --panel:#121b2a; --ink:#dbe7ff; --muted:#9aa8c7; --accent:#7555e8; --accent-2:#8d6bff; }
-*{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 800px at 40% -10%,#182235 0%,#0b111b 60%,#060a11 100%);color:var(--ink);font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji','Segoe UI Emoji';}
-.wrap{max-width:1280px;margin:32px auto;padding:0 16px}
-h1{font-weight:800;letter-spacing:.3px;margin:0 0 16px}
-.status{padding:14px 18px;border-radius:14px;background:rgba(18,27,42,.8);border:1px solid rgba(117,85,232,.25);backdrop-filter: blur(6px);}
-.status.info{color:#cfe4ff} .status.error{color:#ffd3d3;border-color:#ff8a8a;background:rgba(60,0,0,.25)}
-.diags{margin-top:16px;padding:12px 14px;border-radius:12px;background:rgba(18,27,42,.6);border:1px dashed rgba(154,168,199,.35);font-size:14px;color:var(--muted);white-space:pre-wrap}
-.app{margin-top:24px}
+:root {
+  --bg:#0d1420;
+  --panel:#121c2a;
+  --text:#e8efff;
+  --muted:#9fb1d1;
+  --accent:#7f5af0;
+  --border:rgba(127,90,240,.25);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:radial-gradient(80% 60% at 50% -10%,#162033 0%,var(--bg) 60%);
+  color:var(--text);
+  font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue','Noto Sans',Arial,'Apple Color Emoji','Segoe UI Emoji';
+}
+.wrap{
+  max-width:1400px;
+  margin:32px auto;
+  padding:0 20px 48px;
+}
+h1{
+  margin:0 0 16px;
+  font-weight:700;
+  letter-spacing:.3px;
+}
+.status{
+  padding:18px 24px;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:0 0 0 1px rgba(127,90,240,.08) inset;
+  color:var(--muted);
+}
+.status.ok{color:#c3f0c2}
+.status.error{color:#ffb3b3}
+.card{
+  margin-top:18px;
+  background:var(--panel);
+  border:1px dashed var(--border);
+  border-radius:14px;
+  padding:16px 18px;
+}
+.card-title{
+  font-weight:700;
+  color:var(--muted);
+  margin-bottom:8px;
+}
+#log{
+  white-space:pre-wrap;
+  margin:0;
+  color:#9cc0ff;
+  font-size:14px;
+}

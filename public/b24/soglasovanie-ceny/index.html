@@ -1,20 +1,20 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Проверка полей сделки перед отправкой на согласование</title>
-  <link rel="stylesheet" href="styles.css">
-  <!-- ВАЖНО: api/v1 подключаем ПЕРЕД app.js -->
-  <script src="https://api.bitrix24.com/api/v1/"></script>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Проверка полей сделки</title>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <main class="wrap">
+  <div class="wrap">
     <h1>Проверка полей сделки перед отправкой на согласование:</h1>
-    <div id="status" class="status info">Загрузка…</div>
-    <section id="diags" class="diags" hidden></section>
-    <section id="app" class="app"></section>
-  </main>
-  <script defer src="app.js?v=28"></script>
+    <div id="status" class="status info">Загрузка...</div>
+    <div id="diag" class="card">
+      <div class="card-title">Диагностика</div>
+      <pre id="log"></pre>
+    </div>
+  </div>
+  <script src="app.js?v=1757126682931"></script>
 </body>
 </html>
