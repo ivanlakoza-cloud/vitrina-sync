@@ -61,6 +61,21 @@ jobs:
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
             set -e
+            # 1) гарантируем папку деплоя и .env
+            mkdir -p ~/app/deploy/yandex-single-vm
+            [ -f ~/app/deploy/yandex-single-vm/.env ] || cat > ~/app/deploy/yandex-single-vm/.env << 'EOF'
+            NODE_ENV=production
+            PORT=3000
+            NEXT_PUBLIC_SITE_URL=https://vitran.ru
+            NEXT_TELEMETRY_DISABLED=1
+            EOF
+
+            # 2) копируем compose и Caddyfile из репозитория в папку деплоя
+            cp -f ~/app/src/deploy/yandex-single-vm/docker-compose.yml ~/app/deploy/yandex-single-vm/docker-compose.yml
+            cp -f ~/app/src/deploy/yandex-single-vm/Caddyfile        ~/app/deploy/yandex-single-vm/Caddyfile
+
+            # 3) собираем/перезапускаем
             cd ~/app/deploy/yandex-single-vm
             docker compose up -d --build --remove-orphans
             docker image prune -f
+
