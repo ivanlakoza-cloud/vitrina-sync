@@ -1,7 +1,7 @@
 name: Deploy to Yandex Cloud (1 VM)
 
 on:
-  workflow_dispatch:        # запуск вручную из Actions
+  workflow_dispatch:  # запуск вручную
   # push:
   #   branches: [ main ]
   #   paths:
@@ -32,8 +32,8 @@ jobs:
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
             set -e
-            mkdir -p ~/app/src
-            rm -rf ~/app/src/*
+            mkdir -p "$HOME/app/src"
+            rm -rf "$HOME/app/src"/*
 
       - name: Copy repo to VM (to ~/app/src)
         uses: appleboy/scp-action@v0.1.7
@@ -41,8 +41,8 @@ jobs:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
-          source: "."
-          target: "~/app/src"
+          source: .
+          target: ~/app/src
           overwrite: true
           rm: true
           exclude: |
@@ -53,7 +53,7 @@ jobs:
             **/dist/*
             **/*.log
 
-        - name: Build & restart containers
+      - name: Build & restart containers
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.YC_VM_HOST }}
@@ -63,22 +63,21 @@ jobs:
             set -e
 
             # 1) гарантируем папку деплоя и .env (создаём .env один раз)
-            mkdir -p ~/app/deploy/yandex-single-vm
-            if [ ! -f ~/app/deploy/yandex-single-vm/.env ]; then
+            mkdir -p "$HOME/app/deploy/yandex-single-vm"
+            if [ ! -f "$HOME/app/deploy/yandex-single-vm/.env" ]; then
               printf '%s\n' \
                 'NODE_ENV=production' \
                 'PORT=3000' \
                 'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
                 'NEXT_TELEMETRY_DISABLED=1' \
-                > ~/app/deploy/yandex-single-vm/.env
+                > "$HOME/app/deploy/yandex-single-vm/.env"
             fi
 
-            # 2) кладём compose и Caddyfile из репозитория в папку деплоя
-            cp -f ~/app/src/deploy/yandex-single-vm/docker-compose.yml ~/app/deploy/yandex-single-vm/docker-compose.yml
-            cp -f ~/app/src/deploy/yandex-single-vm/Caddyfile        ~/app/deploy/yandex-single-vm/Caddyfile
+            # 2) копируем compose и Caddyfile из репозитория в папку деплоя
+            cp -f "$HOME/app/src/deploy/yandex-single-vm/docker-compose.yml" "$HOME/app/deploy/yandex-single-vm/docker-compose.yml"
+            cp -f "$HOME/app/src/deploy/yandex-single-vm/Caddyfile"        "$HOME/app/deploy/yandex-single-vm/Caddyfile"
 
             # 3) собираем/перезапускаем
-            cd ~/app/deploy/yandex-single-vm
+            cd "$HOME/app/deploy/yandex-single-vm"
             docker compose up -d --build --remove-orphans
             docker image prune -f
-
