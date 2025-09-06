@@ -7,20 +7,16 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <main class="wrap">
+  <div class="wrap">
     <h1>Проверка полей сделки перед отправкой на согласование:</h1>
     <div id="status" class="status">Подключаемся к порталу...</div>
 
-    <section class="card">
-      <h2>Диагностика</h2>
-      <pre id="diag"></pre>
-    </section>
+    <div class="card">
+      <div class="card__title">Диагностика</div>
+      <pre id="log" class="log"></pre>
+    </div>
+  </div>
 
-    <noscript>
-      <div class="card error">Для работы виджета включите JavaScript.</div>
-    </noscript>
-  </main>
-
-  <script src="app.js?v=30"></script>
+  <script src="app.js"></script>
 </body>
 </html>

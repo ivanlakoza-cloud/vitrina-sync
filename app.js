@@ -1,65 +1,69 @@
 (function(){
-  const statusEl = document.getElementById('status');
-  const diagEl = document.getElementById('diag');
+  const $ = sel => document.querySelector(sel);
+  const statusEl = $('#status');
+  const logEl = $('#log');
+  const t0 = Date.now();
 
-  function now(){ const d=new Date(); return d.toTimeString().slice(0,8); }
-  function log(msg){ if(!diagEl) return; diagEl.textContent += `[${now()}] ${msg}\n`; }
-  function setStatus(text, type){
-    statusEl.textContent = text;
-    statusEl.className = 'status' + (type ? ' '+type : '');
+  function time(){ const d = new Date(); return '['+d.toLocaleTimeString('ru-RU',{hour12:false})+'] '; }
+  function log(line){ if(!logEl) return; logEl.textContent += time()+ line + "\n"; }
+  function setStatus(text, type){ if(statusEl){ statusEl.textContent = text; statusEl.className = 'status'+(type?(' '+type):''); } }
+
+  async function waitFor(predicate, timeout=8000, step=80){
+    const start = performance.now();
+    while(performance.now() - start < timeout){
+      try { if(predicate()) return true; } catch(e){}
+      await new Promise(r => setTimeout(r, step));
+    }
+    return false;
   }
 
-  // Ensure Bitrix API tag exists (inside B24 виджет он обычно уже вставлен)
-  function ensureApiTag(){
-    const present = !!document.querySelector('script[src*="api.bitrix24.com/api/v1"]');
-    if (present){ log('api/v1: script tag detected'); return Promise.resolve(); }
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://api.bitrix24.com/api/v1/';
-      s.async = true;
-      s.onload = () => { log('api/v1: injected manually'); resolve(); };
-      s.onerror = () => { log('api/v1: failed to load'); reject(new Error('b24 api failed')); };
-      document.head.appendChild(s);
-    });
-  }
-
-  function waitForBX24(timeoutMs=8000){
-    return new Promise((resolve, reject)=>{
-      const t0 = Date.now();
-      (function tick(){
-        if (window.BX24){ resolve(); return; }
-        if (Date.now()-t0 > timeoutMs){ reject(new Error('BX24 not found')); return; }
-        setTimeout(tick, 50);
-      })();
-    });
+  function ensureApiScript(){
+    if(window.BX24){ log('api/v1: script tag detected'); return true; }
+    // try to find existing <script src=".../api/v1/">
+    const has = Array.from(document.scripts || []).some(s => (s.src||'').includes('api.bitrix24.com/api/v1'));
+    if(has){ log('api/v1: script tag detected'); return true; }
+    // inject
+    const s = document.createElement('script');
+    s.src = 'https://api.bitrix24.com/api/v1/';
+    s.async = true;
+    document.head.appendChild(s);
+    log('api/v1: injected manually');
+    return true;
   }
 
   async function boot(){
-    try {
-      await ensureApiTag();
-      await waitForBX24();
-      log('BX24 detected');
+    setStatus('Подключаемся к порталу…');
+    ensureApiScript();
 
-      // Инициализация виджета
-      BX24.init(function(){
-        log('BX24.init: done');
+    const okBX = await waitFor(() => typeof window.BX24 === 'function', 10000);
+    if(!okBX){ setStatus('Не удалось загрузить API Bitrix24 (BX24)', 'error'); log('BX24 not available'); return; }
+    log('BX24 detected');
 
-        try {
-          BX24.placement.info(function(info){
-            log('placement: ' + JSON.stringify(info));
-            setStatus('Готово', 'ok');
-          });
-        } catch(e){
-          log('placement.info error: ' + (e && (e.message || e.stack) || String(e)));
-          setStatus('B24 подключен, placement недоступен', 'error');
-        }
+    // BX24.init
+    const inited = await new Promise(resolve => {
+      try{
+        window.BX24.init(function(){ resolve(true); });
+        // fallback if callback is never called
+        setTimeout(() => resolve('timeout'), 7000);
+      }catch(e){ resolve(false); }
+    });
+    if(inited !== true){ setStatus('BX24.init не ответил', 'error'); log('BX24.init: failed or timeout'); return; }
+    log('BX24.init: done');
+
+    // try placement.info to confirm we're inside placement
+    try{
+      window.BX24.placement.info(function(data){
+        try{
+          log('placement: ' + JSON.stringify(data));
+        }catch(e){}
+        setStatus('Готово', 'ok');
       });
-    } catch(e){
-      log('error: ' + (e && (e.message || e.stack) || String(e)));
-      setStatus('BX24 не доступен. Откройте виджет из карточки сделки.', 'error');
+    }catch(e){
+      log('placement.info error: ' + (e && (e.message||e)));
+      setStatus('Готово', 'ok'); // даже если нет placement — API работает
     }
   }
 
-  setStatus('Подключаемся к порталу...');
+  // start
   boot();
 })();
