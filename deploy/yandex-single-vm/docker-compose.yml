@@ -1,27 +1,27 @@
+version: "3.9"
+
 services:
   web:
-    image: cr.yandex/${CR_REGISTRY}/${CR_REPOSITORY}:latest
-    restart: unless-stopped
+    build:
+      context: ../../src       # код репо мы копируем в ~/app/src
+      dockerfile: Dockerfile
     env_file:
-      - .env
-    networks: [ webnet ]
+      - .env                   # лежит рядом (на ВМ), не в репо
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
-    restart: unless-stopped
+    depends_on:
+      - web
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - web
-    networks: [ webnet ]
-
-networks:
-  webnet:
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
 
 volumes:
-  caddy_data:
-  caddy_config:
+  caddy-data:
+  caddy-config:
