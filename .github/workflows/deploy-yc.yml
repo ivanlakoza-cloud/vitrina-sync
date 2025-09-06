@@ -16,7 +16,6 @@ on:
       - 'yarn.lock'
       - 'package-lock.json'
       - 'deploy/yandex-single-vm/**'
-      - '.github/workflows/deploy-yc.yml'
 
 permissions:
   contents: read
@@ -46,7 +45,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push image (with cache)
+      - name: Build & push image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -62,20 +61,19 @@ jobs:
     needs: build_and_push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (только чтобы взять compose/Caddyfile)
+      - name: Checkout (compose/Caddyfile only)
         uses: actions/checkout@v4
 
-      - name: "Debug - list files we expect to copy"
-        shell: bash
+      - name: "Debug: list files we expect to copy"
         run: |
-          echo "branch=${GITHUB_REF_NAME}  commit=${GITHUB_SHA}"
+          echo "branch=${GITHUB_REF_NAME} commit=${GITHUB_SHA}"
           echo "pwd=$(pwd)"
           ls -lah
-          echo "----- deploy dir -----"
+          echo "---- deploy dir ----"
           ls -lah deploy || true
-          echo "----- yandex-single-vm dir -----"
+          echo "---- yandex-single-vm ----"
           ls -lah deploy/yandex-single-vm || true
-          echo "----- files in deploy (max depth 2) -----"
+          echo "---- files in deploy (max depth 2) ----"
           find deploy -maxdepth 2 -type f -print || true
 
       - name: Copy compose & Caddyfile to VM
@@ -84,10 +82,10 @@ jobs:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
-          source: "deploy/yandex-single-vm/**"
-          target: "~/app/deploy/yandex-single-vm"
-          strip_components: 2
           overwrite: true
+          rm: false
+          source: "deploy/yandex-single-vm/*"
+          target: "~/app/deploy/yandex-single-vm"
 
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
@@ -101,11 +99,18 @@ jobs:
             mkdir -p "$DEPLOY_DIR"
 
             if [ ! -f "$DEPLOY_DIR/.env" ]; then
-              printf '%s\n'                 'NODE_ENV=production'                 'PORT=3000'                 'NEXT_PUBLIC_SITE_URL=https://vitran.ru'                 'NEXT_TELEMETRY_DISABLED=1'                 > "$DEPLOY_DIR/.env"
+              printf '%s\n' \
+                'NODE_ENV=production' \
+                'PORT=3000' \
+                'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
+                'NEXT_TELEMETRY_DISABLED=1' \
+                > "$DEPLOY_DIR/.env"
             fi
 
+            # GHCR login (нужны секреты GHCR_USERNAME и YC_GHCR_TOKEN)
+            echo '${{ secrets.YC_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.GHCR_USERNAME }}' --password-stdin
+
             cd "$DEPLOY_DIR"
-            echo "${{ secrets.YC_GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull web || true
             docker compose up -d --no-build --remove-orphans
             docker image prune -f || true
