@@ -1,11 +1,17 @@
 services:
   web:
     build:
-      context: ../../src       # код репо копируем в ~/app/src
+      context: ../../src
       dockerfile: Dockerfile
     env_file:
-      - .env                   # лежит рядом (на ВМ), не в репо
+      - .env
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   caddy:
     image: caddy:2
@@ -13,6 +19,7 @@ services:
       - web
     ports:
       - "80:80"
+      - "443:443/udp"   # HTTP/3
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
