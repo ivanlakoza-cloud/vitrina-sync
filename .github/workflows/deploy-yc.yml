@@ -63,17 +63,25 @@ jobs:
           script: |
             set -e
             mkdir -p ~/app/deploy/yandex-single-vm
+
+            # Создаём .env один раз
             if [ ! -f ~/app/deploy/yandex-single-vm/.env ]; then
               cat > ~/app/deploy/yandex-single-vm/.env <<'EOF'
-              NODE_ENV=production
-              PORT=3000
-              NEXT_PUBLIC_SITE_URL=https://vitran.ru
-              NEXT_TELEMETRY_DISABLED=1
-              EOF
+NODE_ENV=production
+PORT=3000
+NEXT_PUBLIC_SITE_URL=https://vitran.ru
+NEXT_TELEMETRY_DISABLED=1
+EOF
             fi
 
+            # Кладём compose и Caddyfile из репозитория в папку деплоя
             cp -f ~/app/src/deploy/yandex-single-vm/docker-compose.yml ~/app/deploy/yandex-single-vm/docker-compose.yml
             cp -f ~/app/src/deploy/yandex-single-vm/Caddyfile        ~/app/deploy/yandex-single-vm/Caddyfile
+
+            # Собирать/перезапускать
+            cd ~/app/deploy/yandex-single-vm
+            docker compose up -d --build --remove-orphans
+            docker image prune -f
 
             cd ~/app/deploy/yandex-single-vm
             docker compose up -d --build --remove-orphans
