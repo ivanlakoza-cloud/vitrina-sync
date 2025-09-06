@@ -1,27 +1,86 @@
-version: "3.9"
+name: Deploy to Yandex Cloud (1 VM)
 
-services:
-  web:
-    build:
-      context: ../../src       # код репо мы копируем в ~/app/src
-      dockerfile: Dockerfile
-    env_file:
-      - .env                   # лежит рядом (на ВМ), не в репо
-    restart: unless-stopped
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'public/**'
+      - 'next.config.*'
+      - 'deploy/yandex-single-vm/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'yarn.lock'
+      - 'package-lock.json'
+  workflow_dispatch: {}
 
-  caddy:
-    image: caddy:2
-    depends_on:
-      - web
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    restart: unless-stopped
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-volumes:
-  caddy-data:
-  caddy-config:
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Clean target dir on VM (keep deploy/.env)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          script: |
+            set -e
+            mkdir -p ~/app/src
+            rm -rf ~/app/src/*
+
+      - name: Copy repo to VM (to ~/app/src)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          source: .
+          target: ~/app/src
+          overwrite: true
+          rm: true
+          exclude: |
+            .git*
+            .github/*
+            node_modules/*
+            **/.next/*
+            **/dist/*
+            **/*.log
+
+      - name: Build & restart containers
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          script: |
+            set -e
+            # папка деплоя + .env (если его ещё нет — создаём шаблон)
+            mkdir -p ~/app/deploy/yandex-single-vm
+            cd ~/app/deploy/yandex-single-vm
+
+            if [ ! -f .env ]; then
+              cat > .env << 'EOF'
+              NODE_ENV=production
+              PORT=3000
+              NEXT_PUBLIC_SITE_URL=https://vitran.ru
+              NEXT_TELEMETRY_DISABLED=1
+              EOF
+            fi
+
+            # обновляем compose и Caddyfile из репозитория
+            cp -f ~/app/src/deploy/yandex-single-vm/docker-compose.yml ./docker-compose.yml
+            cp -f ~/app/src/deploy/yandex-single-vm/Caddyfile        ./Caddyfile
+
+            # сборка и запуск
+            docker compose up -d --build --remove-orphans
+            docker image prune -f
