@@ -53,7 +53,7 @@ jobs:
             **/dist/*
             **/*.log
 
-      - name: Build & restart containers
+        - name: Build & restart containers
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.YC_VM_HOST }}
@@ -65,12 +65,12 @@ jobs:
             # 1) гарантируем папку деплоя и .env (создаём .env один раз)
             mkdir -p ~/app/deploy/yandex-single-vm
             if [ ! -f ~/app/deploy/yandex-single-vm/.env ]; then
-              cat > ~/app/deploy/yandex-single-vm/.env << 'EOF'
-              NODE_ENV=production
-              PORT=3000
-              NEXT_PUBLIC_SITE_URL=https://vitran.ru
-              NEXT_TELEMETRY_DISABLED=1
-              EOF
+              printf '%s\n' \
+                'NODE_ENV=production' \
+                'PORT=3000' \
+                'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
+                'NEXT_TELEMETRY_DISABLED=1' \
+                > ~/app/deploy/yandex-single-vm/.env
             fi
 
             # 2) кладём compose и Caddyfile из репозитория в папку деплоя
@@ -81,3 +81,4 @@ jobs:
             cd ~/app/deploy/yandex-single-vm
             docker compose up -d --build --remove-orphans
             docker image prune -f
+
