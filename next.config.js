@@ -13,6 +13,7 @@ const BITRIX_ANCESTORS = [
 const nextConfig = {
   reactStrictMode: false,
   trailingSlash: true, // <— ключевая строка: сохраняем / в конце
+    output: 'standalone',       // ВАЖНО: режим сборки для Docker
 
   async headers() {
     const common = [
