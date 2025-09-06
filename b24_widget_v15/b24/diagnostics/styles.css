@@ -1,0 +1,60 @@
+
+/* v15 */
+#diagapp, #diagapp * { box-sizing:border-box; }
+#diagapp :root{
+  --bg:#0f1115; --panel:#151823; --muted:#a4afc3; --text:#e9eef6;
+  --accent:#7c5cff; --accent-weak: rgba(124,92,255,.12);
+  --danger:#ff5c7c; --border:#222638; --shadow:0 12px 24px rgba(0,0,0,.35);
+  --radius:14px; --gap:24px;
+}
+#diagapp body{ margin:0; background:var(--bg); color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  line-height:1.45;
+}
+#diagapp .container{ max-width:1100px; margin:0 auto; padding:24px; }
+#diagapp .header{ position:sticky; top:0; z-index:100;
+  background:linear-gradient(180deg, rgba(15,17,21,.98), rgba(15,17,21,.92));
+  padding:16px 24px; border-bottom:1px solid var(--border);
+  box-shadow:0 8px 20px rgba(0,0,0,.25); border-radius:0 0 var(--radius) var(--radius);
+  display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+}
+#diagapp .h-title{ margin:0; font-size:18px; font-weight:600; }
+#diagapp .h-left{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+#diagapp .h-badges{ display:flex; gap:8px; flex-wrap:wrap; }
+#diagapp .badge{ font-size:12px; padding:4px 8px; border-radius:999px; background:#1b2133; color:#cbd5ff; border:1px solid #2f3550; }
+#diagapp .badge.subtle{ opacity:.85; }
+#diagapp .btn-primary{ background:var(--accent); color:#fff; border:0; padding:14px 18px;
+  border-radius:12px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
+  cursor:pointer; box-shadow:var(--shadow); transition: all .15s ease; white-space:nowrap;
+}
+#diagapp .btn-primary[disabled]{ background:#33384d; color:#858dab; cursor:not-allowed; box-shadow:none; }
+#diagapp .panel{ background:var(--panel); border:1px solid var(--border);
+  box-shadow:var(--shadow); border-radius:var(--radius); padding:20px; display:block; margin-bottom:40px;
+}
+#diagapp .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:var(--gap); }
+@media(max-width: 900px){
+  #diagapp .grid-2{ grid-template-columns:1fr; }
+}
+#diagapp .field{ display:flex; flex-direction:column; gap:8px; }
+#diagapp label{ font-size:16px; color:var(--muted); font-weight:400; }
+#diagapp input[type="text"], #diagapp input[type="number"], #diagapp textarea{
+  width:100%; border:1px solid var(--border); background:#0f1320; color:var(--text);
+  border-radius:12px; padding:12px 14px; outline:none; min-height:42px;
+}
+#diagapp input[type="text"]:focus, #diagapp input[type="number"]:focus, #diagapp textarea:focus{
+  box-shadow:0 0 0 3px rgba(124,92,255,.25);
+}
+#diagapp textarea{ min-height:120px; resize:vertical; }
+#diagapp .input-wrap{ position:relative; }
+#diagapp .input-wrap.filled input, #diagapp .input-wrap.filled textarea{ background:var(--accent-weak); }
+#diagapp .input-wrap.invalid input, #diagapp .input-wrap.invalid textarea{ border-color:var(--danger);
+  box-shadow:0 0 0 3px rgba(255,92,124,.15); }
+#diagapp .help{ color:var(--muted); font-size:13px; margin-top:6px; white-space:pre-line; }
+#diagapp .section-gap{ height:40px; }
+#diagapp .alert{ margin-top:8px; padding:14px 16px; border-radius:12px; border:1px solid var(--border); }
+#diagapp .alert.error{ background:#2a1320; border-color:#5a2038; color:#ffb8c7; }
+#diagapp .alert.info{ background:#121826; border-color:#22315e; }
+#diagapp .success{ text-align:center; padding:48px 24px; }
+#diagapp .success h2{ font-size:28px; margin:0 0 12px; }
+#diagapp .success p{ color:var(--muted); font-size:16px; }
+#diagapp .small{ font-size:12px; color:#9aa5bd; }
