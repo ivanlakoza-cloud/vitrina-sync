@@ -61,10 +61,10 @@ jobs:
     needs: build_and_push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (чтобы взять compose/Caddyfile)
+      - name: "Checkout (чтобы взять compose/Caddyfile)"
         uses: actions/checkout@v4
 
-      - name: Debug: list files we expect to copy
+      - name: "Debug: list files we expect to copy"
         run: |
           echo "branch=${GITHUB_REF_NAME} commit=${GITHUB_SHA}"
           echo "pwd=$(pwd)"
@@ -103,8 +103,9 @@ jobs:
                 > "$DEPLOY_DIR/.env"
             fi
 
-            # Логин в GHCR (секреты должны существовать в репозитории)
-            echo "${{ secrets.YC_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            # Логин в GHCR (секреты: GHCR_USERNAME и YC_GHCR_TOKEN)
+            echo "${{ secrets.YC_GHCR_TOKEN }}" \
+              | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
             cd "$DEPLOY_DIR"
             docker compose pull web || true
