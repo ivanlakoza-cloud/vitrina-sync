@@ -1,8 +1,8 @@
 services:
   web:
-    image: ${IMAGE}               # подставляем из .compose.env
+    image: ghcr.io/ivanlakoza-cloud/vitrina-sync/web:latest
     env_file:
-      - .env                      # окружение Next.js
+      - .env
     restart: unless-stopped
 
   caddy:
@@ -12,6 +12,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp" # для HTTP/3 (нужен открыт UDP:443 в SG)
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
