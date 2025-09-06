@@ -37,21 +37,36 @@ jobs:
             # чистим только src, чтобы не трогать deploy/.env
             rm -rf ~/app/src/*
 
-      - name: Copy repo to VM (to ~/app/src)
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.YC_VM_HOST }}
-          username: ${{ secrets.YC_VM_USER }}
-          key: ${{ secrets.YC_VM_SSH_KEY }}
-          source: "."
-          target: "/home/${{ secrets.YC_VM_USER }}/app/src"
-          overwrite: true
-          strip_components: 0
-          rm: false
-          # чуть экономим трафик
-          exclude: |
-            .git
-            node_modules
+- name: Ensure clean target dir on VM
+  uses: appleboy/ssh-action@v1.0.3
+  with:
+    host: ${{ secrets.YC_VM_HOST }}
+    username: ${{ secrets.YC_VM_USER }}
+    key: ${{ secrets.YC_VM_SSH_KEY }}
+    script: |
+      set -e
+      rm -rf ~/app/src
+      mkdir -p ~/app/src
+
+
+- name: Copy repo to VM (to ~/app/src)
+  uses: appleboy/scp-action@v0.1.7
+  with:
+    host: ${{ secrets.YC_VM_HOST }}
+    username: ${{ secrets.YC_VM_USER }}
+    key: ${{ secrets.YC_VM_SSH_KEY }}
+    source: "."
+    target: "~/app/src"
+    overwrite: true
+    rm: true
+    exclude: |
+      .git*
+      .github/*
+      node_modules/*
+      **/.next/*
+      **/dist/*
+      **/*.log
+
 
       - name: Build & restart containers
         uses: appleboy/ssh-action@v1.0.3
