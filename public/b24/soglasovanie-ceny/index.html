@@ -1,17 +1,20 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- ... твои meta/ title ... -->
-  <base href="/b24/soglasovanie-ceny/">
-  <!-- дальше можно оставлять относительные пути -->
-  <link rel="stylesheet" href="styles.css?v=25">
-
-<title>Проверка полей сделки — виджет</title>
-<link rel="stylesheet" href="/b24/soglasovanie-ceny/styles.css">
-<style>body{background:#0c1220;color:#dbe4ff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:0}
-.shell{max-width:1200px;margin:24px auto;padding:0 16px}
-.status{padding:12px 14px;border-radius:12px;background:#0f1730;border:1px solid rgba(173,135,255,.25);color:#b9c2ff;font-size:14px}
-.status.error{border-color:#ff7080;color:#ffdbe0}h1{font-size:24px;font-weight:700;margin:0 0 12px}</style>
-<script defer src="app.js?v=25"></script></head>
-<body><div class="shell"><h1>Проверка полей сделки перед отправкой на согласование:</h1>
-<div id="status" class="status">Загрузка…</div><div id="app" style="margin-top:20px;"></div></div></body></html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Проверка полей сделки перед отправкой на согласование</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- ВАЖНО: api/v1 подключаем ПЕРЕД app.js -->
+  <script src="https://api.bitrix24.com/api/v1/"></script>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+    <div id="status" class="status info">Загрузка…</div>
+    <section id="diags" class="diags" hidden></section>
+    <section id="app" class="app"></section>
+  </main>
+  <script defer src="app.js?v=28"></script>
+</body>
+</html>
