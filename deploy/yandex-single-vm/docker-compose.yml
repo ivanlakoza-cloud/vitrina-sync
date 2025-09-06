@@ -1,8 +1,8 @@
 services:
   web:
-    image: ghcr.io/ivanlakoza-cloud/vitrina-sync/web:latest  # ← ПОДМЕНЕНО
+    image: ${IMAGE}               # подставляем из .compose.env
     env_file:
-      - .env
+      - .env                      # окружение Next.js
     restart: unless-stopped
 
   caddy:
