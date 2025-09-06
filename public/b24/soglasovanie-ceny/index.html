@@ -3,18 +3,23 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Проверка полей сделки</title>
+  <title>Проверка полей сделки — расширенная диагностика</title>
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
-    <div id="status" class="status info">Загрузка...</div>
-    <div id="diag" class="card">
-      <div class="card-title">Диагностика</div>
-      <pre id="log"></pre>
+  <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+
+  <div id="status" class="status status-info">Подключаемся к порталу…</div>
+
+  <section class="card">
+    <h2>Диагностика</h2>
+    <pre id="log" class="log"></pre>
+    <div class="actions">
+      <button id="btn-retry">Повторить</button>
+      <button id="btn-copy">Скопировать логи</button>
     </div>
-  </div>
-  <script src="app.js?v=1757126682931"></script>
+  </section>
+
+  <script src="app.js?v=1757128590442"></script>
 </body>
 </html>
