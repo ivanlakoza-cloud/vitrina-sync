@@ -8,7 +8,7 @@ function html(postData: any = null) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Проверка полей сделки</title>
+  <title>123Проверка полей сделки</title>
   <link rel="preconnect" href="https://api.bitrix24.com" crossorigin>
   <script src="https://api.bitrix24.com/api/v1/"></script>
   <link href="/b24/soglasovanie-ceny/styles.css?v=v25" rel="stylesheet">
@@ -16,7 +16,7 @@ function html(postData: any = null) {
 </head>
 <body>
   <header class="topbar">
-    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+    <h1>1234Проверка полей сделки перед отправкой на согласование:</h1>
     <button id="submit" class="cta" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
   </header>
 
