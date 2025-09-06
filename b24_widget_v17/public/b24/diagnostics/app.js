@@ -1,0 +1,3 @@
+
+// diagnostics v17
+(function(){ const q = Object.fromEntries(new URLSearchParams(location.search)); const badge = document.createElement('div'); badge.textContent = 'Проверка 17 • ' + (q.rev ? 'rev=' + q.rev : 'rev=?'); Object.assign(badge.style, {position:'fixed', right:'12px', top:'8px', zIndex: 2147483647, background:'rgba(27,33,51,.95)', color:'#cbd5ff', border:'1px solid #2f3550', borderRadius:'999px', padding:'6px 10px', fontSize:'12px', fontFamily:'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial', pointerEvents:'none', boxShadow:'0 8px 20px rgba(0,0,0,.25)'}); document.addEventListener('DOMContentLoaded', ()=>document.body.appendChild(badge)); } )();
