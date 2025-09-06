@@ -1,30 +1,42 @@
+
 :root{
-  --bg:#0e1621;
-  --panel:#121c2a;
-  --panel2:#0f1a2a;
-  --text:#e6f0ff;
-  --muted:#94a3b8;
-  --ok:#19c37d;
-  --err:#ff4d4f;
-  --border:#24324a;
+  --bg:#0f1420;
+  --panel:#111a2b;
+  --ink:#e7f0ff;
+  --muted:#9fb1d8;
+  --accent:#6c63ff;
+  --ok:#5ad39c;
+  --warn:#f7b955;
+  --err:#ff6b6b;
+  --border:rgba(255,255,255,.07);
+  --code:#0b1020;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
-  margin:0;
-  background:radial-gradient(1200px 800px at 60% -20%, #1c2a44 0%, transparent 60%), var(--bg);
-  color:var(--text);
-  font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+  margin:0; font:16px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Fira Sans","Droid Sans","Helvetica Neue",Arial,sans-serif;
+  background:radial-gradient(1200px 900px at 80% -20%, #1b2a56 0, transparent 60%), var(--bg);
+  color:var(--ink);
 }
-.wrap{max-width:1200px;margin:40px auto;padding:0 24px}
-h1{font-weight:800; letter-spacing:.2px; margin:0 0 18px}
+.container{max-width:1100px; margin:32px auto; padding:0 16px}
+h1{margin:0 0 16px; letter-spacing:.3px}
 .status{
-  background:var(--panel); border:1px solid var(--border);
-  border-radius:14px; padding:16px 18px; font-weight:700; color:#bcd2f7;
+  padding:14px 16px; border-radius:12px; border:1px solid var(--border); background:var(--panel);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
+  margin:12px 0 20px; white-space:pre-wrap
 }
-.status.ok{color:#caffea;background:rgba(25,195,125,.08);border-color:#184a34}
-.status.error{color:#ffd6d6;background:rgba(255,77,79,.07);border-color:#5c1e20}
-.card{margin-top:22px;background:var(--panel2);border:1px dashed #33415e;padding:16px 18px;border-radius:14px}
-.card__title{font-weight:800;margin-bottom:8px}
-.log{margin:0;white-space:pre-wrap;color:var(--muted)}
-.small{opacity:.8;font-size:12px}
+.status.ok{border-color:rgba(90,211,156,.25)}
+.status.warn{border-color:rgba(247,185,85,.25)}
+.status.err{border-color:rgba(255,107,107,.25)}
+.panel{border:1px dashed var(--border); border-radius:14px; background:rgba(255,255,255,.02); padding:8px 12px}
+.panel>summary{cursor:pointer; padding:6px 4px; color:var(--muted)}
+.log{
+  min-height:180px; max-height:55vh; overflow:auto; margin:8px 0 4px; padding:12px;
+  background:var(--code); border-radius:10px; border:1px solid var(--border);
+  font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+  color:#a9d7ff;
+}
+.toolbar{display:flex; gap:8px; margin:6px 0 16px}
+.btn{border:1px solid var(--border); background:#16223a; color:var(--ink); padding:8px 12px; border-radius:10px; cursor:pointer}
+.btn:hover{background:#1b2a49}
+.btn.ghost{background:transparent}

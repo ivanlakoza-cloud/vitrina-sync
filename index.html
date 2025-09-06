@@ -4,19 +4,25 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Проверка полей сделки перед отправкой на согласование</title>
-  <link rel="stylesheet" href="styles.css"/>
+  <link rel="stylesheet" href="styles.css?v=33"/>
 </head>
 <body>
-  <div class="wrap">
+  <div class="container">
     <h1>Проверка полей сделки перед отправкой на согласование:</h1>
-    <div id="status" class="status">Подключаемся к порталу...</div>
 
-    <div class="card">
-      <div class="card__title">Диагностика</div>
-      <pre id="log" class="log"></pre>
+    <div id="status" class="status info">Загрузка...</div>
+
+    <div class="toolbar">
+      <button id="btn-retry" class="btn">↻ Повторить</button>
+      <button id="btn-copy" class="btn ghost">⧉ Скопировать логи</button>
     </div>
+
+    <details open class="panel">
+      <summary>Диагностика</summary>
+      <pre id="log" class="log"></pre>
+    </details>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=33"></script>
 </body>
 </html>

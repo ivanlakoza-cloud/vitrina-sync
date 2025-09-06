@@ -1,69 +1,149 @@
-(function(){
-  const $ = sel => document.querySelector(sel);
-  const statusEl = $('#status');
-  const logEl = $('#log');
-  const t0 = Date.now();
 
-  function time(){ const d = new Date(); return '['+d.toLocaleTimeString('ru-RU',{hour12:false})+'] '; }
-  function log(line){ if(!logEl) return; logEl.textContent += time()+ line + "\n"; }
-  function setStatus(text, type){ if(statusEl){ statusEl.textContent = text; statusEl.className = 'status'+(type?(' '+type):''); } }
+(() => {
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+  const btnRetry = document.getElementById('btn-retry');
+  const btnCopy = document.getElementById('btn-copy');
 
-  async function waitFor(predicate, timeout=8000, step=80){
-    const start = performance.now();
-    while(performance.now() - start < timeout){
-      try { if(predicate()) return true; } catch(e){}
-      await new Promise(r => setTimeout(r, step));
-    }
-    return false;
-  }
-
-  function ensureApiScript(){
-    if(window.BX24){ log('api/v1: script tag detected'); return true; }
-    // try to find existing <script src=".../api/v1/">
-    const has = Array.from(document.scripts || []).some(s => (s.src||'').includes('api.bitrix24.com/api/v1'));
-    if(has){ log('api/v1: script tag detected'); return true; }
-    // inject
-    const s = document.createElement('script');
-    s.src = 'https://api.bitrix24.com/api/v1/';
-    s.async = true;
-    document.head.appendChild(s);
-    log('api/v1: injected manually');
-    return true;
-  }
-
-  async function boot(){
-    setStatus('Подключаемся к порталу…');
-    ensureApiScript();
-
-    const okBX = await waitFor(() => typeof window.BX24 === 'function', 10000);
-    if(!okBX){ setStatus('Не удалось загрузить API Bitrix24 (BX24)', 'error'); log('BX24 not available'); return; }
-    log('BX24 detected');
-
-    // BX24.init
-    const inited = await new Promise(resolve => {
-      try{
-        window.BX24.init(function(){ resolve(true); });
-        // fallback if callback is never called
-        setTimeout(() => resolve('timeout'), 7000);
-      }catch(e){ resolve(false); }
-    });
-    if(inited !== true){ setStatus('BX24.init не ответил', 'error'); log('BX24.init: failed or timeout'); return; }
-    log('BX24.init: done');
-
-    // try placement.info to confirm we're inside placement
+  function now(){ const d=new Date(); return d.toTimeString().slice(0,8); }
+  function setStatus(text, type='info'){ statusEl.textContent = text; statusEl.className = `status ${type}`; }
+  function j(obj){
     try{
-      window.BX24.placement.info(function(data){
-        try{
-          log('placement: ' + JSON.stringify(data));
-        }catch(e){}
-        setStatus('Готово', 'ok');
+      return JSON.stringify(obj, (k,v) => {
+        if (typeof v === 'function') return `[Function ${v.name||'fn'}]`;
+        if (v instanceof Error) return {name:v.name,message:v.message,stack:v.stack};
+        return v;
+      }, 2);
+    }catch(e){ return String(obj); }
+  }
+  function log(line, payload){
+    const head = `[${now()}] ${line}`;
+    if (payload !== undefined){
+      logEl.textContent += `${head}\n${j(payload)}\n\n`;
+    } else {
+      logEl.textContent += head + "\n";
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+  btnRetry?.addEventListener('click', () => location.reload());
+  btnCopy?.addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(logEl.textContent || '');
+      setStatus('Логи скопированы в буфер обмена', 'ok');
+    }catch(e){ setStatus('Не удалось скопировать логи: '+(e?.message||e), 'warn'); }
+  });
+
+  // ---- Step 1. Basic environment info
+  log('env.href', location.href);
+  log('env.referrer', document.referrer || '(empty)');
+  log('env.userAgent', navigator.userAgent);
+
+  // ---- Step 2. Inject Bitrix24 API if needed
+  function injectApi(){
+    if (window.BX24){
+      log('api/v1: already present');
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://api.bitrix24.com/api/v1/';
+      s.async = true;
+      s.onload = () => { log('api/v1: script tag loaded'); resolve(); };
+      s.onerror = () => reject(new Error('Failed to load api/v1'));
+      document.head.appendChild(s);
+      log('api/v1: script tag injected');
+    });
+  }
+
+  // ---- Step 3. Wait BX24 object
+  async function waitBX24(ms=10000){
+    const started = Date.now();
+    while (Date.now() - started < ms){
+      if (window.BX24){ log('BX24 detected'); return; }
+      await sleep(100);
+    }
+    throw new Error('BX24 не появился в окне за '+ms+'мс');
+  }
+
+  function bxCall(method, params={}){
+    return new Promise((resolve) => {
+      try{
+        window.BX24.callMethod(method, params, (r) => {
+          if (r && r.error()){
+            resolve({ ok:false, error: r.error(), error_description: r.error_description() });
+          } else {
+            resolve({ ok:true, result: r ? r.data() : null });
+          }
+        });
+      }catch(e){
+        resolve({ ok:false, error:'exception', error_description: e?.message || String(e) });
+      }
+    });
+  }
+
+  async function main(){
+    try{
+      setStatus('Подключаемся к порталу…');
+      await injectApi();
+      await waitBX24(15000);
+
+      // init
+      await new Promise((resolve, reject) => {
+        try {
+          window.BX24.init(() => { log('BX24.init: done'); resolve(); });
+        } catch(e) { reject(e); }
       });
-    }catch(e){
-      log('placement.info error: ' + (e && (e.message||e)));
-      setStatus('Готово', 'ok'); // даже если нет placement — API работает
+
+      // ---- Dump everything useful
+      const auth = (typeof BX24.getAuth === 'function') ? BX24.getAuth() : null;
+      log('BX24.getAuth()', auth);
+
+      const lang = (typeof BX24.getLang === 'function') ? BX24.getLang() : '(n/a)';
+      log('BX24.getLang()', lang);
+
+      // placement
+      const placement = await new Promise((resolve) => {
+        try {
+          BX24.placement.info((info) => resolve(info));
+        } catch(e) { resolve({ error: 'placement.exception', message: e?.message || String(e) }); }
+      });
+      log('BX24.placement.info', placement);
+
+      // Try to guess dealId
+      let dealId = null;
+      const q = new URLSearchParams(location.search);
+      dealId = q.get('ID') || q.get('id') || q.get('deal_id') || q.get('DEAL_ID');
+      if (!dealId && placement && placement.options){
+        dealId = placement.options.ID || placement.options.deal_id || placement.options.DEAL_ID;
+      }
+      log('dealId (guessed)', dealId || '(none)');
+
+      // Lightweight API calls (safe to call; will just log errors if perms missing)
+      const user = await bxCall('user.current');
+      log('user.current', user);
+
+      const appInfo = await bxCall('app.info');
+      log('app.info', appInfo);
+
+      const dealFields = await bxCall('crm.deal.fields');
+      log('crm.deal.fields', dealFields);
+
+      if (dealId){
+        const deal = await bxCall('crm.deal.get', { id: dealId });
+        log('crm.deal.get', deal);
+      } else {
+        log('crm.deal.get', { ok:false, error:'no_deal_id', error_description:'Не удалось определить ID сделки' });
+      }
+
+      setStatus('Готово', 'ok');
+    } catch(e){
+      log('fatal', { name: e?.name, message: e?.message, stack: e?.stack });
+      setStatus('Ошибка: ' + (e?.message || String(e)), 'err');
     }
   }
 
-  // start
-  boot();
+  // kick
+  main();
 })();
