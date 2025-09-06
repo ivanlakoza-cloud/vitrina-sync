@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Проверка полей сделки</title>
+  <link rel="stylesheet" href="/b24/soglasovanie-ceny/styles.css?v=23" />
+  <script defer src="/b24/soglasovanie-ceny/bx24-bootstrap.js?v=23"></script>
+  <script defer src="/b24/soglasovanie-ceny/app.js?v=23"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+      <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+      <button id="btnSend" class="accent" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+    </div>
+    <div id="status" class="status"></div>
+    <form id="form" class="card">
+      <h2>Данные для согласования</h2>
+      <div class="grid two">
+        <div class="field">
+          <span>Площадь м²</span>
+          <input id="area" type="number" min="0" step="0.01" placeholder="Например, 100" />
+          <div class="hint small" id="saved_area"></div>
+        </div>
+        <div class="field">
+          <span>Стоимость м² на согласование</span>
+          <input id="rate" type="number" min="0" step="0.01" placeholder="Например, 320" />
+          <div class="hint small" id="saved_rate"></div>
+        </div>
+        <div class="field span2">
+          <span>Комментарий клиента, что важно клиенту?</span>
+          <textarea id="priceComment" rows="4" placeholder="Что важно клиенту…"></textarea>
+          <div class="hint small" id="saved_priceComment"></div>
+        </div>
+      </div>
+      <div class="row end">
+        <span id="saveStatus" class="small muted"></span>
+      </div>
+    </form>
+    <section class="card center" id="success" style="display:none">
+      <h2>Спасибо :) Отправлено!</h2>
+      <p class="muted">Благодарю за заявку! Желаю продуктивного дня 🚀</p>
+    </section>
+  </div>
+</body>
+</html>
