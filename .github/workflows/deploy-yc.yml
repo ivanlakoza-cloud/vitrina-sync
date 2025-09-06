@@ -45,7 +45,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push image
+      - name: Build & push image (with cache)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -61,19 +61,15 @@ jobs:
     needs: build_and_push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (compose/Caddyfile only)
+      - name: Checkout (чтобы взять compose/Caddyfile)
         uses: actions/checkout@v4
 
-      - name: "Debug: list files we expect to copy"
+      - name: Debug: list files we expect to copy
         run: |
           echo "branch=${GITHUB_REF_NAME} commit=${GITHUB_SHA}"
           echo "pwd=$(pwd)"
           ls -lah
-          echo "---- deploy dir ----"
-          ls -lah deploy || true
-          echo "---- yandex-single-vm ----"
-          ls -lah deploy/yandex-single-vm || true
-          echo "---- files in deploy (max depth 2) ----"
+          echo "----- deploy dir tree -----"
           find deploy -maxdepth 2 -type f -print || true
 
       - name: Copy compose & Caddyfile to VM
@@ -82,39 +78,35 @@ jobs:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
-          overwrite: true
-          rm: false
           source: "deploy/yandex-single-vm/*"
           target: "~/app/deploy/yandex-single-vm"
+          strip_components: 2
 
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
         with:
-    host: ${{ secrets.YC_VM_HOST }}
-    username: ${{ secrets.YC_VM_USER }}
-    key: ${{ secrets.YC_VM_SSH_KEY }}
-    script: |
-      set -e
-      DEPLOY_DIR=~/app/deploy/yandex-single-vm
-      mkdir -p "$DEPLOY_DIR"
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          script: |
+            set -e
+            DEPLOY_DIR=~/app/deploy/yandex-single-vm
+            mkdir -p "$DEPLOY_DIR"
 
-      # создаём .env один раз
-      if [ ! -f "$DEPLOY_DIR/.env" ]; then
-        printf '%s\n' \
-          'NODE_ENV=production' \
-          'PORT=3000' \
-          'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
-          'NEXT_TELEMETRY_DISABLED=1' \
-          > "$DEPLOY_DIR/.env"
-      fi
+            # Создаём .env один раз
+            if [ ! -f "$DEPLOY_DIR/.env" ]; then
+              printf '%s\n' \
+                'NODE_ENV=production' \
+                'PORT=3000' \
+                'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
+                'NEXT_TELEMETRY_DISABLED=1' \
+                > "$DEPLOY_DIR/.env"
+            fi
 
-      # === GHCR login ===
-      # GHCR_USERNAME = твой логин GitHub (например, ivanlakoza-cloud)
-      # YC_GHCR_TOKEN  = PAT с как минимум read:packages (и write:packages, если пушишь)
-      echo "${{ secrets.YC_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            # Логин в GHCR (секреты должны существовать в репозитории)
+            echo "${{ secrets.YC_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-      cd "$DEPLOY_DIR"
-      docker compose pull web || true
-      docker compose up -d --no-build --remove-orphans
-      docker image prune -f || true
-
+            cd "$DEPLOY_DIR"
+            docker compose pull web || true
+            docker compose up -d --no-build --remove-orphans
+            docker image prune -f || true
