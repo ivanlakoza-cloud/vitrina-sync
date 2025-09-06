@@ -1,11 +1,16 @@
-# Bitrix24 Widget — API Route (Next.js)
+# Bitrix24 Widget API Route (v19)
 
-Все файлы виджета живут в одной папке: `app/api/b24/soglasovanie-ceny`.
+Next.js App Router endpoint:
+```
+/api/b24/soglasovanie-ceny
+```
+- Поддерживает **GET**, **POST**, **OPTIONS**. (POST нужен для iframe-навигации Битрикс24.)
+- Ассеты раздаются по `?asset=styles.css|app.js|reestr_sopostavleniya.xlsx`.
+- По умолчанию отдаёт `index.html`.
+- Кэш отключён: `Cache-Control: no-store`.
+- Диагностика: заголовок `X-Widget: b24-soglasovanie-v19`.
 
-## Как это работает
-- **GET /api/b24/soglasovanie-ceny** — отдаёт `index.html`
-- **GET /api/b24/soglasovanie-ceny?asset=styles.css** — отдаёт css
-- **GET /api/b24/soglasovanie-ceny?asset=app.js** — отдаёт js
-- **GET /api/b24/soglasovanie-ceny?asset=reestr_sopostavleniya.xlsx** — отдаёт плейсхолдер XLSX
-
-Роут принудительно работает в Node‑runtime и отдаёт заголовки кэша `no-store`, чтобы избежать залипания.
+URL для виджета (пример):
+```
+https://<your-domain>/api/b24/soglasovanie-ceny?rev=v19
+```

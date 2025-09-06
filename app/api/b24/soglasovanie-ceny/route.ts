@@ -1,51 +1,57 @@
-import type { NextRequest } from 'next/server'
+import { NextRequest } from "next/server";
+import fs from "fs/promises";
+import path from "path";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-const HTML = "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u043e\u043b\u0435\u0439 \u0441\u0434\u0435\u043b\u043a\u0438 \u043f\u0435\u0440\u0435\u0434 \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u043e\u0439</title>\n  <link rel=\"stylesheet\" href=\"?asset=styles.css\">\n</head>\n<body>\n  <header class=\"topbar\">\n    <h1>\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u043e\u043b\u0435\u0439 \u0441\u0434\u0435\u043b\u043a\u0438 \u043f\u0435\u0440\u0435\u0434 \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u043e\u0439 \u043d\u0430 \u0441\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430\u043d\u0438\u0435:</h1>\n    <button id=\"submit\" class=\"btn primary\" disabled>\u041e\u0422\u041f\u0420\u0410\u0412\u0418\u0422\u042c \u0421\u0422\u041e\u0418\u041c\u041e\u0421\u0422\u042c \u041c\u00b2 \u041d\u0410 \u0421\u041e\u0413\u041b\u0410\u0421\u041e\u0412\u0410\u041d\u0418\u0415</button>\n  </header>\n\n  <main class=\"container\">\n    <section class=\"card\">\n      <h2>\u0414\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430</h2>\n      <ul id=\"diag\" class=\"mono small\">\n        <li>boot v25</li>\n      </ul>\n    </section>\n\n    <section class=\"card\">\n      <div id=\"status\" class=\"status info\">\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f \u043a \u043f\u043e\u0440\u0442\u0430\u043b\u0443\u2026</div>\n    </section>\n\n    <section class=\"card success\" id=\"done\" hidden>\n      <h2>\u0421\u043f\u0430\u0441\u0438\u0431\u043e :) \u041e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e!</h2>\n      <p>\u0411\u043b\u0430\u0433\u043e\u0434\u0430\u0440\u044e \u0437\u0430 \u0437\u0430\u044f\u0432\u043a\u0443! \u0416\u0435\u043b\u0430\u044e \u043f\u0440\u043e\u0434\u0443\u043a\u0442\u0438\u0432\u043d\u043e\u0433\u043e \u0434\u043d\u044f \ud83d\ude80</p>\n    </section>\n  </main>\n\n  <script src=\"?asset=app.js\" defer></script>\n</body>\n</html>\n";
-const CSS = "\n:root{\n  --bg: #0f172a;\n  --panel: #111827;\n  --muted: #9ca3af;\n  --text: #e5e7eb;\n  --accent: #7c3aed;\n  --accent-weak: #6d28d9;\n  --ok: #22c55e33;\n  --radius: 14px;\n  --shadow: 0 8px 24px rgba(0,0,0,.25);\n  --gap: 20px;\n}\n*{box-sizing:border-box}\nhtml,body{height:100%}\nbody{\n  margin:0;\n  background: radial-gradient(1200px 600px at 20% -10%, #1f2937 0%, transparent 60%),\n              radial-gradient(1000px 600px at 100% 0%, #111827 0%, transparent 50%),\n              var(--bg);\n  color:var(--text);\n  font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Inter, \"Segoe UI Variable\", Arial, sans-serif;\n}\n.topbar{\n  position:sticky;top:0;z-index:10;\n  display:flex;align-items:center;justify-content:space-between;\n  gap:var(--gap);\n  padding:18px 24px;\n  backdrop-filter:saturate(120%) blur(10px);\n  background:linear-gradient(180deg, #0b1020dd, #0b1020b3);\n  border-bottom:1px solid #37415155;\n}\n.topbar h1{margin:0;font-size:22px;font-weight:800;letter-spacing:.2px}\n.container{max-width:1200px;margin:24px auto;padding:0 24px;display:grid;gap:var(--gap)}\n.card{\n  background:rgba(17,24,39,.65);border:1px solid #37415155;border-radius:var(--radius);\n  box-shadow:var(--shadow);padding:18px 20px;\n}\n.card.success{border-color:#22c55e55;background:linear-gradient(180deg,#052e1a,transparent) rgba(17,24,39,.65)}\n.mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace}\n.small{font-size:13px;color:var(--muted)}\n.status{\n  padding:14px 16px;border-radius:12px;border:1px dashed #6b728055;background:#1f2937aa;\n}\n.status.info{border-color:#7c3aed66}\n.status.ok{border-color:#22c55e66;background:var(--ok)}\n.status.error{border-color:#ef444466;background:#ef44441a}\n.btn{\n  font-weight:700;border-radius:16px;padding:16px 22px;border:none;cursor:pointer;\n  transition:.2s transform ease, .2s box-shadow ease, .2s opacity ease;\n}\n.btn.primary{background:linear-gradient(180deg,var(--accent),var(--accent-weak));color:white;\n  box-shadow:0 10px 30px #7c3aed55;\n}\n.btn[disabled]{opacity:.55;cursor:not-allowed;box-shadow:none}\n";
-const JS = "\n(() => {\n  const diag = document.getElementById('diag');\n  const statusEl = document.getElementById('status');\n  const submit = document.getElementById('submit');\n  const add = (t) => { const li = document.createElement('li'); li.textContent = t; diag.appendChild(li); };\n\n  // show diag\n  try {\n    const q = location.search || '';\n    add('path='+ location.pathname.replace(/\\/+$/,'').split('/').slice(-3).join('/'));\n    add('query='+ (q || '\u2014'));\n    const hasBX = typeof window.BX24 !== 'undefined';\n    add('typeof BX24='+ (hasBX ? 'object' : 'undefined'));\n  } catch(e){ add('diag error: '+ e.message); }\n\n  // Try to read BX24 placement (when inside Bitrix iframe)\n  if (window.BX24 && typeof BX24.placement !== 'undefined') {\n    try {\n      BX24.placement.info((d) => {\n        add('placement='+ (d && d.placement));\n        add('options='+ JSON.stringify(d && d.options || {}));\n        statusEl.textContent = 'BX24 \u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d. \u0413\u043e\u0442\u043e\u0432\u043e \u043a \u0440\u0430\u0431\u043e\u0442\u0435';\n        statusEl.className = 'status ok';\n        submit.removeAttribute('disabled');\n      });\n    } catch(e){\n      add('placement error: '+ e.message);\n    }\n  } else {\n    statusEl.textContent = 'BX24 \u043d\u0435 \u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d. \u041e\u0442\u043a\u0440\u043e\u0439\u0442\u0435 \u0432\u0438\u0434\u0436\u0435\u0442 \u0438\u0437 \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0438 \u0441\u0434\u0435\u043b\u043a\u0438.';\n    statusEl.className = 'status error';\n  }\n\n  // Fake submit\n  submit.addEventListener('click', () => {\n    submit.setAttribute('disabled','');\n    statusEl.textContent = '\u041e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u043c\u2026';\n    statusEl.className = 'status info';\n    setTimeout(() => {\n      document.getElementById('done').hidden = false;\n      statusEl.textContent = '\u0413\u043e\u0442\u043e\u0432\u043e';\n      statusEl.className = 'status ok';\n    }, 750);\n  });\n})();\n";
-const XLSX_BASE64 = "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";
+const widgetHeader = { "X-Widget": "b24-soglasovanie-v19" };
+const noStore = { "Cache-Control": "no-store" };
 
-function text(body: string, contentType = 'text/plain; charset=utf-8') {
-  return new Response(body, {
+async function serveFile(fileName: string, type: string) {
+  const filePath = path.join(process.cwd(), "app", "api", "b24", "soglasovanie-ceny", fileName);
+  const data = await fs.readFile(filePath);
+  return new Response(data, {
     status: 200,
     headers: {
-      'Content-Type': contentType,
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'X-Widget': 'b24-soglasovanie-v18'
-    }
+      "Content-Type": type,
+      ...noStore,
+      ...widgetHeader,
+    },
   });
 }
 
-function fileBase64(b64: string, contentType: string, filename?: string) {
-  const buf = Buffer.from(b64, 'base64');
-  const headers: Record<string,string> = {
-    'Content-Type': contentType,
-    'Cache-Control': 'no-store, no-cache, must-revalidate',
-    'Content-Length': String(buf.length),
-    'X-Widget': 'b24-soglasovanie-v18',
-  };
-  if (filename) headers['Content-Disposition'] = `inline; filename="{filename}"`;
-  return new Response(buf, { status: 200, headers });
+async function handler(req: NextRequest) {
+  const url = new URL(req.url);
+  const asset = url.searchParams.get("asset");
+
+  if (asset === "styles.css") return serveFile("styles.css", "text/css; charset=utf-8");
+  if (asset === "app.js") return serveFile("app.js", "text/javascript; charset=utf-8");
+  if (asset === "reestr_sopostavleniya.xlsx")
+    return serveFile("reestr_sopostavleniya.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+  // default: HTML
+  return serveFile("index.html", "text/html; charset=utf-8");
 }
 
 export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const asset = url.searchParams.get('asset');
-  if (asset === 'styles.css') return text(CSS, 'text/css; charset=utf-8');
-  if (asset === 'app.js')    return text(JS,  'text/javascript; charset=utf-8');
-  if (asset === 'reestr_sopostavleniya.xlsx') return fileBase64(XLSX_BASE64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'reestr_sopostavleniya.xlsx');
-  return text(HTML, 'text/html; charset=utf-8');
+  return handler(req);
 }
 
-export async function HEAD(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  // Bitrix24 iframe навигация присылает POST. Обрабатываем как обычный GET.
+  return handler(req);
+}
+
+export async function OPTIONS() {
   return new Response(null, {
-    status: 200,
+    status: 204,
     headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'X-Widget': 'b24-soglasovanie-v18'
-    }
+      ...noStore,
+      ...widgetHeader,
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
   });
 }
