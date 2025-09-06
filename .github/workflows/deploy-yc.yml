@@ -90,27 +90,31 @@ jobs:
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.YC_VM_HOST }}
-          username: ${{ secrets.YC_VM_USER }}
-          key: ${{ secrets.YC_VM_SSH_KEY }}
-          script: |
-            set -e
-            DEPLOY_DIR=~/app/deploy/yandex-single-vm
-            mkdir -p "$DEPLOY_DIR"
+    host: ${{ secrets.YC_VM_HOST }}
+    username: ${{ secrets.YC_VM_USER }}
+    key: ${{ secrets.YC_VM_SSH_KEY }}
+    script: |
+      set -e
+      DEPLOY_DIR=~/app/deploy/yandex-single-vm
+      mkdir -p "$DEPLOY_DIR"
 
-            if [ ! -f "$DEPLOY_DIR/.env" ]; then
-              printf '%s\n' \
-                'NODE_ENV=production' \
-                'PORT=3000' \
-                'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
-                'NEXT_TELEMETRY_DISABLED=1' \
-                > "$DEPLOY_DIR/.env"
-            fi
+      # создаём .env один раз
+      if [ ! -f "$DEPLOY_DIR/.env" ]; then
+        printf '%s\n' \
+          'NODE_ENV=production' \
+          'PORT=3000' \
+          'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
+          'NEXT_TELEMETRY_DISABLED=1' \
+          > "$DEPLOY_DIR/.env"
+      fi
 
-            # GHCR login (нужны секреты GHCR_USERNAME и YC_GHCR_TOKEN)
-            echo '${{ secrets.YC_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.GHCR_USERNAME }}' --password-stdin
+      # === GHCR login ===
+      # GHCR_USERNAME = твой логин GitHub (например, ivanlakoza-cloud)
+      # YC_GHCR_TOKEN  = PAT с как минимум read:packages (и write:packages, если пушишь)
+      echo "${{ secrets.YC_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            cd "$DEPLOY_DIR"
-            docker compose pull web || true
-            docker compose up -d --no-build --remove-orphans
-            docker image prune -f || true
+      cd "$DEPLOY_DIR"
+      docker compose pull web || true
+      docker compose up -d --no-build --remove-orphans
+      docker image prune -f || true
+
