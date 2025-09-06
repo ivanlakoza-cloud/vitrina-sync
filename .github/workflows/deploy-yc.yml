@@ -63,20 +63,28 @@ jobs:
     needs: build_and_push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (только взять compose/Caddyfile)
+      - name: Checkout (только чтобы взять compose/Caddyfile)
         uses: actions/checkout@v4
 
-      - name: Copy compose & Caddyfile to VM
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.YC_VM_HOST }}
-          username: ${{ secrets.YC_VM_USER }}
-          key: ${{ secrets.YC_VM_SSH_KEY }}
-          source: |
-            deploy/yandex-single-vm/docker-compose.yml
-            deploy/yandex-single-vm/Caddyfile
-          target: "~/app/deploy/yandex-single-vm"
-          strip_components: 2
+      # --- Диагностика: увидеть, что реально попало в рабочую папку раннера
+      - name: Debug: list files we expect to copy
+        run: |
+          echo "branch=$GITHUB_REF_NAME  commit=$GITHUB_SHA"
+          echo "pwd=$(pwd)"
+          ls -lah
+          echo "----- deploy dir -----"
+          ls -lah deploy || true
+          echo "----- yandex-single-vm -----"
+          ls -lah deploy/yandex-single-vm || true
+          echo "----- files in deploy (max depth 2) -----"
+          find deploy -maxdepth 2 -type f -print || true
+
+      # --- Страж: упасть, если нужных файлов нет (чтобы не ловить `tar: empty archive`)
+      - name: Guard: ensure deploy files exist
+        run: |
+          test -f deploy/yandex-single-vm/docker-compose.yml
+          test -f deploy/yandex-single-vm/Caddyfile
+
 
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
