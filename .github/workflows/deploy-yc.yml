@@ -1,7 +1,7 @@
 name: Deploy to Yandex Cloud (1 VM)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   push:
     branches: [ main ]
     paths:
@@ -11,59 +11,73 @@ on:
       - 'public/**'
       - 'next.config.*'
       - 'Dockerfile'
-      - 'deploy/yandex-single-vm/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'yarn.lock'
       - 'package-lock.json'
+      - 'deploy/yandex-single-vm/**'
 
-# чтобы новый деплой отменял предыдущий в той же ветке
+permissions:
+  contents: read
+  packages: write   # нужно для push в GHCR
+
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/web
 
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure clean ~/app/src on VM (keep deploy/.env)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.YC_VM_HOST }}
-          username: ${{ secrets.YC_VM_USER }}
-          key: ${{ secrets.YC_VM_SSH_KEY }}
-          script: |
-            set -e
-            mkdir -p ~/app/src
-            rm -rf ~/app/src/*
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Copy repo to VM (to ~/app/src)
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image (with cache)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src              # ← если Dockerfile в корне, поставьте "."
+          file: ./src/Dockerfile      # ← и здесь "./Dockerfile"
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (только чтобы взять compose/Caddyfile)
+        uses: actions/checkout@v4
+
+      - name: Copy compose & Caddyfile to VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
-          source: "."
-          target: "~/app/src"
-          overwrite: true
-          rm: true
-          exclude: |
-            .git*
-            .github/*
-            node_modules/*
-            **/.next/*
-            **/dist/*
-            **/*.log
-            .env
-            **/.env
-            **/.env.*
+          # кладём ровно эти два файла в каталог деплоя
+          source: |
+            deploy/yandex-single-vm/docker-compose.yml
+            deploy/yandex-single-vm/Caddyfile
+          target: "~/app/deploy/yandex-single-vm"
+          strip_components: 2  # уберёт "deploy/yandex-single-vm" из пути
 
-      - name: Build & restart containers on VM
+      - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.YC_VM_HOST }}
@@ -72,11 +86,9 @@ jobs:
           script: |
             set -e
             DEPLOY_DIR=~/app/deploy/yandex-single-vm
-            SRC_DIR=~/app/src
-
             mkdir -p "$DEPLOY_DIR"
 
-            # Создаём .env один раз (без here-doc, чтобы не ловить YAML-отступы)
+            # создаём .env только если его ещё нет
             if [ ! -f "$DEPLOY_DIR/.env" ]; then
               printf '%s\n' \
                 'NODE_ENV=production' \
@@ -86,11 +98,8 @@ jobs:
                 > "$DEPLOY_DIR/.env"
             fi
 
-            # Копируем compose и Caddyfile из репозитория в папку деплоя
-            cp -f "$SRC_DIR/deploy/yandex-single-vm/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
-            cp -f "$SRC_DIR/deploy/yandex-single-vm/Caddyfile"        "$DEPLOY_DIR/Caddyfile"
-
-            # Сборка и перезапуск
             cd "$DEPLOY_DIR"
-            docker compose up -d --build --remove-orphans
-            docker image prune -f
+            # образ теперь приходит из GHCR — просто тянем и перезапускаем
+            docker compose pull web || true
+            docker compose up -d --no-build --remove-orphans
+            docker image prune -f || true
