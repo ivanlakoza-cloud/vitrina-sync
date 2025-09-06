@@ -1,22 +1,105 @@
+name: Deploy to Yandex Cloud (1 VM)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'public/**'
+      - 'next.config.*'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'yarn.lock'
+      - 'package-lock.json'
+      - 'deploy/yandex-single-vm/**'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/web
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image (with cache)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (только чтобы взять compose/Caddyfile)
+        uses: actions/checkout@v4
+
+      - name: Debug: list files we expect to copy
+        run: |
+          echo "branch=${GITHUB_REF_NAME}  commit=${GITHUB_SHA}"
+          echo "pwd=$(pwd)"
+          ls -lah
+          echo "----- deploy dir tree -----"
+          find deploy -maxdepth 2 -type f -print || true
+
+      - name: Copy compose & Caddyfile to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          source: |
+            deploy/yandex-single-vm/docker-compose.yml
+            deploy/yandex-single-vm/Caddyfile
+          target: "~/app/deploy/yandex-single-vm"
+          strip_components: 2
+
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
         env:
-          # user: GHCR_USERNAME или по умолчанию – автор коммита
           GHCR_USER: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
-          # token: YC_GHCR_TOKEN или запасной GHCR_TOKEN
           GHCR_TOKEN: ${{ secrets.YC_GHCR_TOKEN != '' && secrets.YC_GHCR_TOKEN || secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
-          # передаём env на ВМ
           envs: GHCR_USER,GHCR_TOKEN
           script: |
             set -e
             DEPLOY_DIR=~/app/deploy/yandex-single-vm
             mkdir -p "$DEPLOY_DIR"
 
-            # .env создаём один раз
+            # Создаём .env один раз
             if [ ! -f "$DEPLOY_DIR/.env" ]; then
               printf '%s\n' \
                 'NODE_ENV=production' \
@@ -26,13 +109,13 @@
                 > "$DEPLOY_DIR/.env"
             fi
 
-            # Проверяем, что креды есть
+            # Проверяем креды GHCR
             if [ -z "$GHCR_USER" ] || [ -z "$GHCR_TOKEN" ]; then
               echo "GHCR creds are missing. Set repo secrets: GHCR_USERNAME and YC_GHCR_TOKEN (or GHCR_TOKEN)." >&2
               exit 1
             fi
 
-            # Логин в GHCR и обновление контейнера
+            # Логин и перезапуск
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
             cd "$DEPLOY_DIR"
