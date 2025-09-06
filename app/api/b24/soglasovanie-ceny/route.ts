@@ -10,10 +10,18 @@ function toErrorMessage(e: unknown): string {
   try { return JSON.stringify(e) } catch { return String(e) }
 }
 
+// Ensures that relative assets inside index.html resolve to /b24/soglasovanie-ceny/*
+function injectBaseHref(html: string): string {
+  const hasBase = /<base\s+href=/i.test(html)
+  if (hasBase) return html
+  return html.replace(/<head(\s[^>]*)?>/i, '<head$1><base href="/b24/soglasovanie-ceny/">')
+}
+
 async function serve() {
   const filePath = path.join(process.cwd(), 'public', 'b24', 'soglasovanie-ceny', 'index.html')
   try {
-    const html = await readFile(filePath, 'utf8')
+    const htmlRaw = await readFile(filePath, 'utf8')
+    const html = injectBaseHref(htmlRaw)
     return new Response(html, {
       status: 200,
       headers: {
