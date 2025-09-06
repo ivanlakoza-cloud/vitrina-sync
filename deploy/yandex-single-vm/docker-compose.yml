@@ -1,0 +1,27 @@
+services:
+  web:
+    image: cr.yandex/${CR_REGISTRY}/${CR_REPOSITORY}:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks: [ webnet ]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    networks: [ webnet ]
+
+networks:
+  webnet:
+
+volumes:
+  caddy_data:
+  caddy_config:

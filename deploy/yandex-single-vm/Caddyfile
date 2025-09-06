@@ -1,0 +1,11 @@
+{
+    email admin@example.ru
+}
+
+example.ru, www.example.ru {
+    encode gzip
+    reverse_proxy web:3000
+
+    @health path /healthz
+    respond @health 200
+}
