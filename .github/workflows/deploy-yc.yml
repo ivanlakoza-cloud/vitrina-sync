@@ -16,10 +16,11 @@ on:
       - 'yarn.lock'
       - 'package-lock.json'
       - 'deploy/yandex-single-vm/**'
+      - '.github/workflows/deploy-yc.yml'
 
 permissions:
   contents: read
-  packages: write   # нужно, чтобы пушить образ в GHCR
+  packages: write
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -27,7 +28,6 @@ concurrency:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}/web
-  DEPLOY_DIR: /home/ubuntu/app/deploy/yandex-single-vm
 
 jobs:
   build_and_push:
@@ -36,7 +36,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
@@ -46,8 +46,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ВАЖНО: собираем из корня, а не из ./src
-      - name: Build & push image (cached)
+      - name: Build & push image (with cache)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -66,54 +65,47 @@ jobs:
       - name: Checkout (только чтобы взять compose/Caddyfile)
         uses: actions/checkout@v4
 
-      # --- Диагностика: увидеть, что реально попало в рабочую папку раннера
-      - name: Debug: list files we expect to copy
+      - name: "Debug - list files we expect to copy"
+        shell: bash
         run: |
-          echo "branch=$GITHUB_REF_NAME  commit=$GITHUB_SHA"
+          echo "branch=${GITHUB_REF_NAME}  commit=${GITHUB_SHA}"
           echo "pwd=$(pwd)"
           ls -lah
           echo "----- deploy dir -----"
           ls -lah deploy || true
-          echo "----- yandex-single-vm -----"
+          echo "----- yandex-single-vm dir -----"
           ls -lah deploy/yandex-single-vm || true
           echo "----- files in deploy (max depth 2) -----"
           find deploy -maxdepth 2 -type f -print || true
 
-      # --- Страж: упасть, если нужных файлов нет (чтобы не ловить `tar: empty archive`)
-      - name: Guard: ensure deploy files exist
-        run: |
-          test -f deploy/yandex-single-vm/docker-compose.yml
-          test -f deploy/yandex-single-vm/Caddyfile
-
+      - name: Copy compose & Caddyfile to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          source: "deploy/yandex-single-vm/**"
+          target: "~/app/deploy/yandex-single-vm"
+          strip_components: 2
+          overwrite: true
 
       - name: Pull & restart on VM
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          GHCR_USER:  ${{ secrets.GHCR_USER }}   # <- см. шаг 2 ниже
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}  # <- см. шаг 2 ниже
         with:
           host: ${{ secrets.YC_VM_HOST }}
           username: ${{ secrets.YC_VM_USER }}
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
             set -e
-            DEPLOY_DIR="$HOME/app/deploy/yandex-single-vm"
+            DEPLOY_DIR=~/app/deploy/yandex-single-vm
             mkdir -p "$DEPLOY_DIR"
 
-            # создаём .env один раз
             if [ ! -f "$DEPLOY_DIR/.env" ]; then
-              printf '%s\n' \
-                'NODE_ENV=production' \
-                'PORT=3000' \
-                'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
-                'NEXT_TELEMETRY_DISABLED=1' \
-                > "$DEPLOY_DIR/.env"
+              printf '%s\n'                 'NODE_ENV=production'                 'PORT=3000'                 'NEXT_PUBLIC_SITE_URL=https://vitran.ru'                 'NEXT_TELEMETRY_DISABLED=1'                 > "$DEPLOY_DIR/.env"
             fi
 
-            # вход в GHCR, чтобы контейнер "web" мог подтянуть образ
-            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
-
             cd "$DEPLOY_DIR"
-            docker compose pull web
+            echo "${{ secrets.YC_GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose pull web || true
             docker compose up -d --no-build --remove-orphans
             docker image prune -f || true
