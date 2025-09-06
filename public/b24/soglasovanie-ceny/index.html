@@ -1,25 +1,25 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Проверка полей сделки — расширенная диагностика</title>
-  <link rel="stylesheet" href="styles.css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Проверка полей сделки</title>
+  <link rel="stylesheet" href="./styles.css?v=1757129547245" />
 </head>
 <body>
-  <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+  <main class="container">
+    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+    <div id="status" class="status">Подключаемся к порталу...</div>
 
-  <div id="status" class="status status-info">Подключаемся к порталу…</div>
-
-  <section class="card">
-    <h2>Диагностика</h2>
-    <pre id="log" class="log"></pre>
-    <div class="actions">
-      <button id="btn-retry">Повторить</button>
-      <button id="btn-copy">Скопировать логи</button>
-    </div>
-  </section>
-
-  <script src="app.js?v=1757128590442"></script>
+    <section class="card">
+      <h2>Диагностика</h2>
+      <pre id="log" class="log"></pre>
+      <div class="actions">
+        <button id="btnReload" class="btn">Перезагрузить</button>
+        <button id="btnCopy" class="btn">Скопировать логи</button>
+      </div>
+    </section>
+  </main>
+  <script src="./app.js?v=1757129547245"></script>
 </body>
 </html>

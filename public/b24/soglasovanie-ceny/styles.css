@@ -1,22 +1,27 @@
 
-:root{
-  --bg:#0e141f; --panel:#0f1726; --ink:#e7f0ff; --ink-d:#a9b4c7;
-  --ok:#a6f3c1; --warn:#f8d77e; --err:#ff9aa6; --muted:#253149;
-  --border:#1b2741; --brand:#5b7cfa;
-  font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+:root {
+  --bg: #0f1520;
+  --panel: #121a27;
+  --text: #dbe6ff;
+  --muted: #98a6c7;
+  --ok: #30d158;
+  --warn: #ffd60a;
+  --err: #ff453a;
+  --accent: #3b82f6;
+  --border: #223049;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
-*{box-sizing:border-box}
-body{margin:0; background:var(--bg); color:var(--ink); padding:24px 28px 64px}
-h1{font-weight:800; letter-spacing:.4px; margin:0 0 22px}
-h2{margin:0 0 12px; color:var(--ink-d); font-weight:700; font-size:18px}
-.card{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px 16px 8px}
-.log{background:#0b1220; border:1px dashed var(--muted); border-radius:12px; padding:12px 14px; max-height:50vh; overflow:auto; font:13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace}
-.actions{display:flex; gap:8px; margin:10px 0 4px}
-button{background:var(--brand); color:#081024; border:none; border-radius:10px; padding:10px 12px; font-weight:700; cursor:pointer}
-button:hover{filter:brightness(1.05)}
-.status{border-radius:14px; padding:14px 16px; margin:6px 0 18px; font-weight:700}
-.status-info{background:#101a30; border:1px solid #1a2a52}
-.status-ok{background:#0f2a20; border:1px solid #1f4d37; color:var(--ok)}
-.status-warn{background:#2a2410; border:1px solid #52461a; color:var(--warn)}
-.status-error{background:#2a1418; border:1px solid #51202a; color:var(--err)}
-small.mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; color:var(--ink-d)}
+* { box-sizing:border-box }
+html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji" }
+.container{ max-width:1280px; margin:24px auto; padding:0 16px }
+h1{ font-size:clamp(24px,3vw,40px); margin:0 0 16px }
+h2{ margin:0 0 12px; color:var(--muted); font-size:20px }
+.card{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px }
+.status{ background:#0e1a31; border:1px solid var(--border); color:var(--muted); padding:14px 16px; border-radius:12px; margin:12px 0 18px; white-space:pre-wrap }
+.status.ok{ color:var(--ok); background:rgba(48,209,88,.1); border-color:rgba(48,209,88,.35) }
+.status.warn{ color:var(--warn); background:rgba(255,214,10,.08); border-color:rgba(255,214,10,.3) }
+.status.err{ color:var(--err); background:rgba(255,69,58,.08); border-color:rgba(255,69,58,.3) }
+.log{ font-family:var(--mono); font-size:14px; line-height:1.5; background:#0b1424; border:1px dashed var(--border); border-radius:10px; padding:12px; min-height:160px; max-height:60vh; overflow:auto; margin:0 }
+.actions{ display:flex; gap:10px; margin-top:12px }
+.btn{ border:1px solid var(--border); background:#0f1f3c; color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer }
+.btn:hover{ border-color:var(--accent); box-shadow:0 0 0 2px rgba(59,130,246,.25) inset }
