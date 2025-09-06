@@ -1,27 +1,26 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Согласование цены — виджет</title>
-  <!-- Версия оболочки: v34 (используется для анти‑кэша) -->
-  <link rel="preload" href="styles.css?v=34" as="style">
-  <link rel="stylesheet" href="styles.css?v=34">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Проверка полей сделки перед отправкой на согласование</title>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <!-- Оболочка загружена (v34). Дальше подключаем основное приложение с анти‑кэшем. -->
-  <div id="app"><noscript>Требуется JavaScript</noscript></div>
-  <script>
-    // Доп. защита от кэша: если CDN/браузер перепутает, добавим случайный параметр.
-    (function() {
-      var s = document.createElement('script');
-      var rnd = Date.now().toString().slice(-6);
-      s.src = 'app.js?v=34&cb=' + rnd;
-      s.defer = true;
-      document.currentScript.after(s);
-      // Маркер версии оболочки, чтобы можно было проверить в консоли
-      window.__WIDGET_SHELL_VERSION__ = 'v34';
-    })();
-  </script>
+  <main class="wrap">
+    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+    <div id="status" class="status">Подключаемся к порталу...</div>
+
+    <section class="card">
+      <h2>Диагностика</h2>
+      <pre id="diag"></pre>
+    </section>
+
+    <noscript>
+      <div class="card error">Для работы виджета включите JavaScript.</div>
+    </noscript>
+  </main>
+
+  <script src="app.js?v=30"></script>
 </body>
 </html>
