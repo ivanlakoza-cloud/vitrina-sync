@@ -1,25 +1,28 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Проверка полей сделки</title>
-  <link rel="stylesheet" href="./styles.css?v=1757129547245" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Проверка полей сделки перед отправкой на согласование</title>
+  <!-- ВАЖНО: абсолютные пути, чтобы работать из /api/... -->
+  <link rel="stylesheet" href="/b24/soglasovanie-ceny/styles.css">
 </head>
 <body>
-  <main class="container">
+  <main class="page">
     <h1>Проверка полей сделки перед отправкой на согласование:</h1>
     <div id="status" class="status">Подключаемся к порталу...</div>
 
     <section class="card">
       <h2>Диагностика</h2>
-      <pre id="log" class="log"></pre>
+      <div id="log" class="log"></div>
       <div class="actions">
-        <button id="btnReload" class="btn">Перезагрузить</button>
-        <button id="btnCopy" class="btn">Скопировать логи</button>
+        <button id="reloadBtn">Перезагрузить</button>
+        <button id="copyBtn">Скопировать логи</button>
       </div>
     </section>
   </main>
-  <script src="./app.js?v=1757129547245"></script>
+
+  <!-- Абсолютный путь к JS -->
+  <script defer src="/b24/soglasovanie-ceny/app.js"></script>
 </body>
 </html>

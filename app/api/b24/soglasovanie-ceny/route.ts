@@ -1,24 +1,23 @@
-import type { NextRequest } from 'next/server';
-import { readFile } from 'fs/promises';
-import path from 'path';
+import { NextRequest } from 'next/server'
+import path from 'path'
+import { readFile } from 'fs/promises'
 
-async function serve(): Promise<Response> {
-  const filePath = path.join(process.cwd(), 'public', 'b24', 'soglasovanie-ceny', 'index.html');
+async function serve() {
+  const p = path.join(process.cwd(), 'public', 'b24', 'soglasovanie-ceny', 'index.html')
   try {
-    const html = await readFile(filePath, 'utf8');
+    const html = await readFile(p, 'utf8')
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-      },
-    });
-  } catch (e: unknown) {
-    const err: any = e || {};
-    const msg = 'B24 Widget route error\n' + (err.stack || err.message || String(e));
-    return new Response(msg, { status: 500 });
+        'cache-control': 'no-store'
+      }
+    })
+  } catch (e: any) {
+    const msg = 'B24 Widget route error\n' + (e?.stack || e?.message || String(e))
+    return new Response(msg, { status: 500 })
   }
 }
 
-export async function GET(_req: NextRequest) { return serve(); }
-export async function POST(_req: NextRequest) { return serve(); }
+export async function GET(req: NextRequest) { return serve() }
+export async function POST(req: NextRequest) { return serve() }
