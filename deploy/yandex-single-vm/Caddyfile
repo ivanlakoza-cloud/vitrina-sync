@@ -1,8 +1,8 @@
 {
-    email admin@example.ru
+    email lakoza@ya.ru
 }
 
-example.ru, www.example.ru {
+vitran.ru {
     encode gzip
     reverse_proxy web:3000
 
