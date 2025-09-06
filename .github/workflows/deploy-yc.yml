@@ -2,7 +2,6 @@ name: Deploy to Yandex Cloud (1 VM)
 
 on:
   workflow_dispatch: {}
-  # автозапуск при изменениях (можно оставить, если нужно)
   push:
     branches: [ main ]
     paths:
@@ -18,14 +17,21 @@ on:
       - 'yarn.lock'
       - 'package-lock.json'
 
+# чтобы новый деплой отменял предыдущий в той же ветке
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Clean target dir on VM (keep deploy/.env)
+      - name: Ensure clean ~/app/src on VM (keep deploy/.env)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.YC_VM_HOST }}
@@ -53,8 +59,11 @@ jobs:
             **/.next/*
             **/dist/*
             **/*.log
+            .env
+            **/.env
+            **/.env.*
 
-      - name: Build & restart containers
+      - name: Build & restart containers on VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.YC_VM_HOST }}
@@ -62,27 +71,26 @@ jobs:
           key: ${{ secrets.YC_VM_SSH_KEY }}
           script: |
             set -e
-            mkdir -p ~/app/deploy/yandex-single-vm
+            DEPLOY_DIR=~/app/deploy/yandex-single-vm
+            SRC_DIR=~/app/src
 
-            # Создаём .env один раз
-            if [ ! -f ~/app/deploy/yandex-single-vm/.env ]; then
-              cat > ~/app/deploy/yandex-single-vm/.env <<'EOF'
-NODE_ENV=production
-PORT=3000
-NEXT_PUBLIC_SITE_URL=https://vitran.ru
-NEXT_TELEMETRY_DISABLED=1
-EOF
+            mkdir -p "$DEPLOY_DIR"
+
+            # Создаём .env один раз (без here-doc, чтобы не ловить YAML-отступы)
+            if [ ! -f "$DEPLOY_DIR/.env" ]; then
+              printf '%s\n' \
+                'NODE_ENV=production' \
+                'PORT=3000' \
+                'NEXT_PUBLIC_SITE_URL=https://vitran.ru' \
+                'NEXT_TELEMETRY_DISABLED=1' \
+                > "$DEPLOY_DIR/.env"
             fi
 
-            # Кладём compose и Caddyfile из репозитория в папку деплоя
-            cp -f ~/app/src/deploy/yandex-single-vm/docker-compose.yml ~/app/deploy/yandex-single-vm/docker-compose.yml
-            cp -f ~/app/src/deploy/yandex-single-vm/Caddyfile        ~/app/deploy/yandex-single-vm/Caddyfile
+            # Копируем compose и Caddyfile из репозитория в папку деплоя
+            cp -f "$SRC_DIR/deploy/yandex-single-vm/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
+            cp -f "$SRC_DIR/deploy/yandex-single-vm/Caddyfile"        "$DEPLOY_DIR/Caddyfile"
 
-            # Собирать/перезапускать
-            cd ~/app/deploy/yandex-single-vm
-            docker compose up -d --build --remove-orphans
-            docker image prune -f
-
-            cd ~/app/deploy/yandex-single-vm
+            # Сборка и перезапуск
+            cd "$DEPLOY_DIR"
             docker compose up -d --build --remove-orphans
             docker image prune -f
