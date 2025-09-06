@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Проверка полей сделки</title>
+  <link rel="stylesheet" href="?asset=styles.css" />
+</head>
+<body>
+  <header class="sticky">
+    <h1>Проверка полей сделки перед отправкой на согласование:</h1>
+    <button id="submitBtn" class="primary" disabled>ОТПРАВИТЬ СТОИМОСТЬ М² НА СОГЛАСОВАНИЕ</button>
+  </header>
+
+  <main id="app">
+    <section id="diag" class="card">
+      <h2>Диагностика</h2>
+      <ul id="diagList">
+        <li>boot v182</li>
+        <li id="diagPath">path=/api/b24/soglasovanie-ceny</li>
+        <li id="diagQuery"></li>
+        <li id="diagBx">typeof BX24=unknown</li>
+      </ul>
+    </section>
+
+    <section id="status" class="status info">Подключаемся к порталу…</section>
+
+    <section id="formWrap" class="card hidden">
+      <form id="dealForm" novalidate>
+        <div class="grid two">
+          <!-- поля будут вставлены сюда -->
+        </div>
+
+        <div class="grid long">
+          <div class="long-pair" id="longPair1"></div>
+          <div class="long-pair" id="longPair2"></div>
+        </div>
+      </form>
+    </section>
+
+    <section id="thanks" class="card hidden center">
+      <h2 class="ok">Спасибо :) Отправлено!</h2>
+      <p>Благодарю за заявку! Желаю продуктивного дня 🚀</p>
+    </section>
+  </main>
+
+  <script src="?asset=app.js"></script>
+</body>
+</html>
