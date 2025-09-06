@@ -1,13 +1,13 @@
+// app/api/b24/soglasovanie-ceny/route.ts
 import { NextRequest } from 'next/server';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUB_ROOT = path.join(process.cwd(), 'public', 'b24', 'soglasovanie-ceny');
 
 function ok(
   body: string | Uint8Array,
@@ -20,15 +20,13 @@ function ok(
     headers: {
       'Content-Type': type,
       'Cache-Control': 'no-store',
-      'X-Widget': 'b24-soglasovanie-v20',
+      'X-Widget': 'b24-soglasovanie-v21',
       ...extra,
     },
   });
 }
 
-async function serveAsset(name: string) {
-  if (!name) return null;
-
+async function serveStatic(name: string) {
   const map: Record<string, string> = {
     'styles.css': 'text/css; charset=utf-8',
     'app.js': 'application/javascript; charset=utf-8',
@@ -36,19 +34,17 @@ async function serveAsset(name: string) {
     'reestr_sopostavleniya.xlsx':
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   };
-
   const ctype = map[name];
   if (!ctype) return new Response('Not found', { status: 404 });
 
-  const p = path.join(__dirname, name);
-  const buf = await readFile(p);
+  const filePath = path.join(PUB_ROOT, name);
+  const buf = await readFile(filePath);
 
   const extra: HeadersInit = {};
   if (name.endsWith('.xlsx')) {
     (extra as any)['Content-Disposition'] =
       'attachment; filename="reestr_sopostavleniya.xlsx"';
   }
-
   return ok(buf, ctype, extra);
 }
 
@@ -57,20 +53,21 @@ async function handler(req: NextRequest) {
     const url = new URL(req.url);
     const asset = url.searchParams.get('asset');
 
-    // Раздача ассетов /api/b24/soglasovanie-ceny?asset=styles.css
+    // Раздача ассетов через этот же endpoint (опционально)
     if (asset) {
-      const res = await serveAsset(asset);
+      const res = await serveStatic(asset);
       return res!;
     }
 
-    // Отдаём страницу — и подменяем ссылки на ассеты, чтобы они уходили в этот же роут
-    const htmlPath = path.join(__dirname, 'index.html');
+    // Читаем index.html из public
+    const htmlPath = path.join(PUB_ROOT, 'index.html');
     let html = await readFile(htmlPath, 'utf8');
 
-    const base = `${url.origin}${url.pathname}`;
+    // Подменим относительные ссылки на абсолютные к /public
+    const publicBase = `${url.origin}/b24/soglasovanie-ceny`;
     html = html
-      .replace(/href="\.?\/?styles\.css"/g, `href="${base}?asset=styles.css"`)
-      .replace(/src="\.?\/?app\.js"/g, `src="${base}?asset=app.js"`);
+      .replace(/href="\.?\/?styles\.css"/g, `href="${publicBase}/styles.css"`)
+      .replace(/src="\.?\/?app\.js"/g, `src="${publicBase}/app.js"`);
 
     return ok(html, 'text/html; charset=utf-8');
   } catch (e: any) {
